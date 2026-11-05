@@ -1,0 +1,30 @@
+import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowUpRight, FlaskConical, Inbox } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { duration, formatTimestamp, type DemoOrder, type MonitoringStatus } from './demo-data'
+
+export function DemoNotice() {
+  return <div role="note" className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><FlaskConical className="mt-0.5 size-5 shrink-0 text-primary"/><div><strong className="text-primary">DEMO · Prototipe Tahap 2</strong><p className="mt-1 text-xs leading-5 text-muted-foreground">Seluruh data pada tampilan ini fiktif. Tidak terhubung ke API operasional, Telegram, atau pembaruan real-time. Aksi pekerjaan belum diaktifkan.</p></div></div>
+}
+export function Section({title, description, children}: {title:string; description?:string; children:ReactNode}) {
+  return <Card className="min-w-0 shadow-sm"><div className="border-b px-5 pb-4"><h2 className="font-semibold">{title}</h2>{description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}</div><CardContent className="px-5">{children}</CardContent></Card>
+}
+export function Metric({label,value,detail}: {label:string;value:string|number;detail:string}) {
+  return <Card className="shadow-sm"><CardContent className="space-y-3 px-5"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="text-3xl font-semibold tracking-tight tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{detail}</p></CardContent></Card>
+}
+export function StatusBadge({status}:{status:MonitoringStatus}) {
+  const variant = status === 'DONE' ? 'success' : status === 'GAGAL' ? 'warning' : status === 'PROSES CEK' ? 'info' : 'muted'
+  return <Badge variant={variant}>{status}</Badge>
+}
+export function Empty({text='Tidak ada order yang cocok. Coba ubah filter.'}:{text?:string}) {
+  return <div role="status" className="grid min-h-48 place-content-center justify-items-center gap-3 p-6 text-center text-sm text-muted-foreground"><Inbox className="size-8"/>{text}</div>
+}
+export function OrderTable({orders,basePath}:{orders:DemoOrder[];basePath:string}) {
+  if (!orders.length) return <Empty/>
+  return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><caption className="sr-only">Daftar order DEMO</caption><thead className="border-b text-xs text-muted-foreground"><tr>{['Identifier monitoring','Kategori','Status','Petugas','Waktu tunggu','Pengerjaan'].map(label=><th key={label} scope="col" className="px-2 pb-3 font-medium">{label}</th>)}</tr></thead><tbody>{orders.map(order=><tr key={order.monitoringId} className="border-b last:border-0 hover:bg-muted/40"><td className="p-3"><Link className="inline-flex items-center gap-1 font-medium text-primary hover:underline" to={`${basePath}/${order.monitoringId}`}>{order.monitoringId}<ArrowUpRight className="size-3"/></Link><p className="mt-1 text-[11px] text-muted-foreground">{formatTimestamp(order.receivedAt)}</p></td><td className="p-3 text-xs">{order.category}{order.module && <span className="mt-1 block text-[10px] text-muted-foreground">{order.module}</span>}</td><td className="p-3"><StatusBadge status={order.status}/></td><td className="p-3 text-xs">{order.handlerAlias ?? 'Belum ditugaskan'}</td><td className="p-3 text-xs tabular-nums">{order.status === 'DUPLICATE' ? '—' : duration(order.waitingStartedAt ?? order.receivedAt,order.startedAt)}</td><td className="p-3 text-xs tabular-nums">{order.startedAt ? duration(order.startedAt,order.finishedAt) : '—'}</td></tr>)}</tbody></table></div>
+}
+export function OrderOverview({order}:{order:DemoOrder}) {
+  return <div className="grid gap-5 lg:grid-cols-2"><Section title="Detail terbatas" description="Identifier sintetis dan alias petugas; tidak memuat identitas pelanggan."><dl className="grid grid-cols-2 gap-4 text-sm"><div><dt className="text-xs text-muted-foreground">Identifier</dt><dd className="mt-1 break-all font-medium">{order.monitoringId}</dd></div><div><dt className="text-xs text-muted-foreground">Status</dt><dd className="mt-1"><StatusBadge status={order.status}/></dd></div><div><dt className="text-xs text-muted-foreground">Kategori</dt><dd className="mt-1">{order.category}</dd></div><div><dt className="text-xs text-muted-foreground">Petugas</dt><dd className="mt-1">{order.handlerAlias ?? 'Belum ditugaskan'}</dd></div></dl>{order.duplicateOf && <p className="mt-5 rounded-lg bg-muted p-3 text-xs">DEMO: duplikat dari {order.duplicateOf}. Tetap tampil sebagai kiriman; dikecualikan dari statistik unik.</p>}</Section><Section title="Riwayat status" description="Contoh riwayat perubahan, bukan data produksi."><ol className="space-y-4">{order.history.map((event,index)=><li key={index} className="flex flex-wrap items-center justify-between gap-2 border-l-2 border-primary/30 pl-3"><StatusBadge status={event.status}/><time dateTime={event.at} className="text-xs text-muted-foreground">{formatTimestamp(event.at)}</time></li>)}</ol></Section><div className="lg:col-span-2"><Section title="Pesan aman untuk publik" description="Hanya contoh pesan yang ditandai layak publik. Lampiran tidak ditampilkan.">{order.publicMessages.length ? order.publicMessages.filter(message=>message.publicApproved).map((message,index)=><article key={index} className="rounded-lg border p-4"><p className="text-xs font-medium">{message.handlerAlias} <span className="font-normal text-muted-foreground">· {formatTimestamp(message.at)}</span></p><p className="mt-2 text-sm leading-6">{message.text}</p><Badge variant="outline" className="mt-3">DEMO · layak publik</Badge></article>) : <Empty text="Belum ada pesan yang dinyatakan aman untuk publik."/>}</Section></div></div>
+}

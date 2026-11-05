@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import {
   AlertCircle, ArrowRight, ChevronUp, Eye, EyeOff, LoaderCircle,
   LockKeyhole, UserRound,
@@ -191,6 +191,8 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-8 border-t pt-6 text-center">
+            <Link to="/preview/login" className="mb-4 block text-sm font-medium text-primary hover:underline">Coba HD Work 2.0 · Preview interaktif</Link>
+            <Link to="/monitoring" className="mb-4 inline-block text-sm font-medium text-primary hover:underline">Lihat Monitoring Publik · tanpa login</Link>
             <p className="text-xs leading-relaxed text-muted-foreground">
               Belum memiliki akun atau mengalami kendala?<br />
               Hubungi admin untuk bantuan akses.

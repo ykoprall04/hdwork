@@ -1,45 +1,42 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { PreviewProvider } from "@/features/preview/store";
+import PreviewApp from "@/features/preview/PreviewApp";
+import PublicMonitoringPage from "@/pages/PublicMonitoringPage";
 
-import ProtectedRoute from "@/components/ProtectedRoute";
-import AppSidebar from "@/components/AppSidebar";
-import { AuthProvider } from "@/contexts/AuthContext";
-import DashboardPage from "@/pages/DashboardPage";
-import AttendancePage from "@/pages/AttendancePage";
-import LoginPage from "@/pages/LoginPage";
-import OrdersPage from "@/pages/OrdersPage";
-import OrderDetailPage from "@/pages/OrderDetailPage";
-import TeamPage from "@/pages/TeamPage";
-import ReportsPage from "@/pages/ReportsPage";
-import UserManagementPage from "@/pages/UserManagementPage";
-import GroupManagementPage from "@/pages/GroupManagementPage";
-import { NetworkToolsRoute } from "@/components/WorkspaceOutlet";
+// Internal auth, API configuration and sockets are loaded only for internal routes.
+const InternalRoutes = lazy(() => import("./InternalRoutes"));
 
-function App() {
+export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
+    <PreviewProvider>
+      <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
-
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AppSidebar />}>
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/attendance" element={<AttendancePage />} />
-              <Route path="/orders" element={<OrdersPage />} />
-              <Route path="/orders/:id" element={<OrderDetailPage />} />
-              <Route path="/team" element={<TeamPage />} />
-              <Route path="/reports" element={<ReportsPage />} />
-              <Route path="/users" element={<UserManagementPage />} />
-              <Route path="/groups" element={<GroupManagementPage />} />
-              <Route path="/network-tools" element={<NetworkToolsRoute />} />
-            </Route>
-          </Route>
-
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/preview/*" element={<PreviewApp />} />
+          <Route path="/monitoring" element={<PublicMonitoringPage />} />
+          <Route
+            path="/monitoring/:monitoringId"
+            element={<PublicMonitoringPage />}
+          />
+          <Route
+            path="/*"
+            element={
+              <Suspense
+                fallback={
+                  <div
+                    role="status"
+                    className="min-h-screen bg-background p-8 text-sm text-muted-foreground"
+                  >
+                    Memuat HD Workspace…
+                  </div>
+                }
+              >
+                <InternalRoutes />
+              </Suspense>
+            }
+          />
         </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+      </BrowserRouter>
+    </PreviewProvider>
   );
 }
-
-export default App;

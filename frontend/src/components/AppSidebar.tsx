@@ -1,7 +1,7 @@
 import {
   BarChart3, Clock3, LayoutDashboard, ListTodo, LogOut, Menu,
   MessagesSquare, PanelLeftClose, PanelLeftOpen, TerminalSquare,
-  UserCog, Users, X,
+  UserCog, Users, X, Globe2, BriefcaseBusiness,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { NavLink, useLocation } from "react-router-dom"
@@ -14,6 +14,9 @@ import { cn } from "@/lib/utils"
 import WorkspaceOutlet from "@/components/WorkspaceOutlet"
 
 const navigation = [
+  { label: "Preview HD Work 2.0", to: "/preview/jobs", icon: BriefcaseBusiness },
+  { label: "HD Workspace", to: "/workspace", icon: BriefcaseBusiness, hdOnly: true },
+  { label: "Monitoring Publik", to: "/monitoring", icon: Globe2 },
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
   { label: "Orders", to: "/orders", icon: ListTodo },
   { label: "Attendance", to: "/attendance", icon: Clock3, hdOnly: true },
