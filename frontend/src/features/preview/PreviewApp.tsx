@@ -1,3 +1,4 @@
+import WorkDashboard from "./CategoryWorkspace";
 import {
   Link,
   NavLink,
@@ -6,11 +7,9 @@ import {
   Routes,
   useLocation,
   useNavigate,
-  useParams,
 } from "react-router-dom";
 import { useState } from "react";
 import {
-  ArrowLeft,
   ArrowRight,
   ArrowRightLeft,
   BriefcaseBusiness,
@@ -24,18 +23,19 @@ import {
 import ThemeToggle from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { categories, statuses, jakartaDate } from "../operations/demo-data";
-import { Empty, Metric, OrderTable, Section } from "../operations/components";
+import { categories } from "../operations/demo-data";
+import { Empty, Section } from "../operations/components";
 import PreviewAuth, { field } from "./PreviewAuth";
 import { usePreview } from "./context";
 import PreviewOrderDetail from "./PreviewOrderDetail";
 import PreviewAdmin from "./PreviewAdmin";
 import MyWorkPage from "./MyWorkPage";
-import OrderPickButton from "./OrderPickButton";
-import OrderEscalationBadge from "./OrderEscalationBadge";
+import CheckInPage from "./CheckInPage";
+import { workStatus, newOrderCount, type WorkStatus } from "./work-status";
+import { unreadCount } from "./chat-model";
 
 export default function PreviewApp() {
-  const { state, dispatch } = usePreview();
+  const { state, dispatch, storageError } = usePreview();
   const location = useLocation();
   const navigate = useNavigate();
   const user = state.users.find((u) => u.id === state.sessionId);
@@ -43,6 +43,12 @@ export default function PreviewApp() {
     return <PreviewAuth key={location.pathname} />;
   if (!user || !user.active || user.approval !== "APPROVED")
     return <Navigate to="/preview/login" replace />;
+  if (
+    user.role === "HD" &&
+    state.checkInRequired &&
+    location.pathname !== "/preview/check-in"
+  )
+    return <Navigate to="/preview/check-in" replace />;
   const links = [
     { to: "/preview/jobs", label: "Pilih Pekerjaan", icon: LayoutGrid },
     { to: "/preview/my-work", label: "Pekerjaan Saya", icon: MessagesSquare },
@@ -75,6 +81,27 @@ export default function PreviewApp() {
             <span className="text-xs text-muted-foreground">
               {user.name} · {user.role}
             </span>
+            {user.role === "HD" &&
+              location.pathname !== "/preview/check-in" && (
+                <label className="text-[11px] text-muted-foreground">
+                  Status kerja
+                  <select
+                    aria-label="Status kerja"
+                    className="ml-2 rounded-lg border bg-card p-2 text-xs text-foreground"
+                    value={workStatus(state)}
+                    onChange={(e) =>
+                      dispatch({
+                        type: "work-status",
+                        status: e.target.value as WorkStatus,
+                      })
+                    }
+                  >
+                    {["ONLINE", "SIBUK", "OFFLINE"].map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             <ThemeToggle compact />
             <Button
               variant="outline"
@@ -97,6 +124,7 @@ export default function PreviewApp() {
           {links.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
+              aria-label={label}
               to={to}
               className={({ isActive }) =>
                 `inline-flex shrink-0 items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-medium ${isActive ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground"}`
@@ -104,6 +132,26 @@ export default function PreviewApp() {
             >
               <Icon className="size-4" />
               {label}
+              {to === "/preview/my-work" && (
+                <>
+                  <span
+                    aria-label={`${newOrderCount(state)} order baru`}
+                    className="rounded-full bg-background/20 px-1.5"
+                  >
+                    BARU {newOrderCount(state)}
+                  </span>
+                  <span
+                    aria-label={`${state.orders.reduce((n, o) => n + unreadCount(o, user.id), 0)} pesan belum dibaca`}
+                    className="rounded-full bg-background/20 px-1.5"
+                  >
+                    Pesan{" "}
+                    {state.orders.reduce(
+                      (n, o) => n + unreadCount(o, user.id),
+                      0,
+                    )}
+                  </span>
+                </>
+              )}
             </NavLink>
           ))}
           <Link
@@ -116,13 +164,21 @@ export default function PreviewApp() {
         </nav>
         <div className="my-5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-primary">
           <span>
-            DEMO INTERAKTIF · data di memori browser · reset saat reload · tanpa
-            MySQL/Telegram
+            DEMO LOKAL · status/notifikasi tersimpan per akun · lampiran
+            sementara · tanpa MySQL/Telegram
           </span>
           <Link className="underline" to="/workspace">
             Workspace sebelumnya
           </Link>
         </div>
+        {storageError && (
+          <p
+            role="alert"
+            className="mb-4 rounded-lg border border-destructive/30 p-4 text-sm text-destructive"
+          >
+            {storageError}
+          </p>
+        )}
         {state.notice && (
           <p
             role="status"
@@ -133,11 +189,18 @@ export default function PreviewApp() {
         )}
         <main className="space-y-6 pb-10">
           <Routes>
+            <Route path="check-in" element={<CheckInPage />} />
             <Route path="jobs" element={<Jobs />} />
             <Route path="my-work" element={<MyWorkPage />} />
             <Route path="my-work/:monitoringId" element={<MyWorkPage />} />
-            <Route path="work/:category" element={<WorkDashboard />} />
-            <Route path="work/:category/:module" element={<WorkDashboard />} />
+            <Route
+              path="work/:category"
+              element={<WorkDashboard key={location.pathname} />}
+            />
+            <Route
+              path="work/:category/:module"
+              element={<WorkDashboard key={location.pathname} />}
+            />
             <Route
               path="orders/:monitoringId"
               element={<PreviewOrderDetail />}
@@ -204,210 +267,6 @@ function Jobs() {
           </Link>
         ))}
       </div>
-    </>
-  );
-}
-function WorkDashboard() {
-  const { state } = usePreview();
-  const { category, module } = useParams();
-  const [status, setStatus] = useState("");
-  const [date, setDate] = useState(jakartaDate);
-  const [sto, setSto] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  if (
-    !categories.includes(category as (typeof categories)[number]) ||
-    (module && !["TIAL", "LOGIC"].includes(module))
-  )
-    return <Empty text="Workspace tidak ditemukan." />;
-  const scope = state.orders.filter(
-    (o) => o.category === category && (!module || o.module === module),
-  );
-  const orders = scope
-    .filter(
-      (o) =>
-        (!status || o.status === status) &&
-        (!date || jakartaDate(new Date(o.receivedAt)) === date) &&
-        (!sto || o.sto === sto) &&
-        `${o.monitoringId} ${o.handlerAlias ?? ""}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
-    )
-    .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt));
-  const pages = Math.max(1, Math.ceil(orders.length / 8));
-  const current = Math.min(page, pages);
-  return (
-    <>
-      <Link
-        className="inline-flex items-center gap-2 text-sm text-primary"
-        to="/preview/jobs"
-      >
-        <ArrowLeft className="size-4" />
-        Kembali ke Pilih Pekerjaan
-      </Link>
-      <header>
-        <p className="text-xs font-semibold tracking-widest text-primary">
-          HD WORKSPACE / {category}
-          {module && ` / ${module}`}
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold">
-          Dashboard {module ?? category}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Ambil manual, satu pemilik aktif, tanpa batas order. Seluruh data dan
-          tindakan adalah simulasi.
-        </p>
-      </header>
-      {category === "B2C" && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {["TIAL", "LOGIC"].map((value) => (
-            <Link
-              key={value}
-              className={`rounded-xl border p-5 ${module === value ? "border-primary bg-primary/5" : "bg-card"}`}
-              to={`/preview/work/B2C/${value}`}
-            >
-              <h2 className="flex items-center justify-between font-semibold">
-                {value}
-                <ArrowRight className="size-4 text-primary" />
-              </h2>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Dashboard & daftar order {value} · alur pengecekan khusus belum
-                ditentukan.
-              </p>
-            </Link>
-          ))}
-        </div>
-      )}
-      <section
-        aria-label="Filter order"
-        className="grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        <label className="text-xs">
-          Status
-          <select
-            aria-label="Status order"
-            className={field}
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">Semua status</option>
-            {statuses.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs">
-          Tanggal WIB
-          <input
-            aria-label="Tanggal order"
-            className={field}
-            type="date"
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              setPage(1);
-            }}
-          />
-        </label>
-        <label className="text-xs">
-          STO
-          <select
-            aria-label="STO"
-            className={field}
-            value={sto}
-            onChange={(e) => {
-              setSto(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">Semua STO</option>
-            {Array.from(new Set(scope.map((o) => o.sto))).map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs">
-          Pencarian
-          <input
-            className={field}
-            aria-label="Cari order"
-            placeholder="Kode monitoring / HD"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-          />
-        </label>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            setStatus("");
-            setDate(jakartaDate());
-            setSto("");
-            setSearch("");
-            setPage(1);
-          }}
-        >
-          Reset filter
-        </Button>
-      </section>
-      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <Metric
-          label="Total order"
-          value={orders.length}
-          detail="Seluruh kiriman sesuai filter"
-        />
-        {statuses.map((value) => (
-          <Metric
-            key={value}
-            label={value}
-            value={orders.filter((o) => o.status === value).length}
-            detail="DEMO · status terakhir"
-          />
-        ))}
-      </div>
-      <Section
-        title={`Daftar order ${module ?? category}`}
-        description="Terbaru di atas · buka kode monitoring untuk pengerjaan."
-      >
-        <OrderTable
-          orders={orders.slice((current - 1) * 8, current * 8)}
-          basePath="/preview/orders"
-          statusDetail={(order) => (
-            <div className="mt-1">
-              <OrderEscalationBadge orderId={order.monitoringId} />
-            </div>
-          )}
-          identifierAction={(order) => (
-            <OrderPickButton orderId={order.monitoringId} />
-          )}
-        />
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <span className="text-xs text-muted-foreground">
-            Halaman {current}/{pages} · {orders.length} order
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              disabled={current === 1}
-              onClick={() => setPage(current - 1)}
-            >
-              Sebelumnya
-            </Button>
-            <Button
-              variant="outline"
-              disabled={current === pages}
-              onClick={() => setPage(current + 1)}
-            >
-              Berikutnya
-            </Button>
-          </div>
-        </div>
-      </Section>
     </>
   );
 }

@@ -165,7 +165,7 @@ export default function OrderOutcomeActions({ orderId }: { orderId: string }) {
                     close();
                   }}
                 >
-                  Konfirmasi
+                  Konfirmasi {kind}
                 </Button>
               </DialogFooter>
             </>

@@ -1,4 +1,10 @@
 import {
+  canClaim,
+  workStatus,
+  type Attendance,
+  type WorkStatus,
+} from "./work-status.ts";
+import {
   seedConversation,
   originalMessageId,
   reconcileChat,
@@ -19,6 +25,7 @@ export type DemoUser = {
   telegramId: string;
 };
 export type Message = {
+  attachmentCount?: number;
   orderId?: string;
   replyToMessageId?: string;
   id: string;
@@ -31,6 +38,9 @@ export type Message = {
   session: number;
 };
 export type WorkOrder = DemoOrder & {
+  unopenedBy: string[];
+  handlingDurationMs?: number;
+  searchReferences?: { sc: string; inet: string; telp: string };
   outcomes: {
     status: "DONE" | "GAGAL";
     by: string;
@@ -68,6 +78,8 @@ export type Transfer = {
   at: string;
 };
 export type State = {
+  attendance: Record<string, Attendance>;
+  checkInRequired: boolean;
   users: DemoUser[];
   sessionId: string | null;
   orders: WorkOrder[];
@@ -89,6 +101,7 @@ export type Action =
   | { type: "active"; id: string; active: boolean; kind?: string }
   | {
       type: "claim";
+      mode?: "pick" | "takeover";
       id: string;
       expectedOwner?: string | null;
       expectedStatus?: string;
@@ -104,7 +117,9 @@ export type Action =
   | { type: "reopen"; id: string; reason: string }
   | { type: "template"; text: string }
   | { type: "notify" }
-  | { type: "chat-read"; id: string }
+  | { type: "chat-read"; id: string; messageIds?: string[] }
+  | { type: "order-opened"; id: string }
+  | { type: "work-status"; status: WorkStatus }
   | { type: "telegram-incoming"; id: string; source: "bot" | "telegram" };
 export function initialState(): State {
   const users: DemoUser[] = [
@@ -151,6 +166,12 @@ export function initialState(): State {
             : "TIAL"
           : null,
       sto: ["STO-DEMO-A", "STO-DEMO-B", "STO-DEMO-C"][i % 3],
+      unopenedBy: [],
+      searchReferences: {
+        sc: `SC-DEMO-${i + 1}`,
+        inet: `INET-DEMO-${i + 1}`,
+        telp: `TELP-DEMO-${i + 1}`,
+      },
       outcomes: [],
       escalations: [],
       originalMessageId: originalMessageId(o.monitoringId),
@@ -182,6 +203,8 @@ export function initialState(): State {
   return {
     users,
     sessionId: null,
+    attendance: {},
+    checkInRequired: false,
     orders,
     transfers: [],
     templates: [
@@ -211,6 +234,13 @@ export function reducePreview(state: State, action: Action): State {
     return {
       ...next,
       sessionId: null,
+      attendance: state.sessionId
+        ? {
+            ...state.attendance,
+            [state.sessionId]: { status: "OFFLINE", checkedAt: at },
+          }
+        : state.attendance,
+      checkInRequired: false,
       notice:
         "Logout preview. Kepemilikan order tetap tersimpan selama sesi browser ini.",
     };
@@ -223,6 +253,8 @@ export function reducePreview(state: State, action: Action): State {
     return {
       ...next,
       sessionId: account.id,
+      checkInRequired:
+        account.role === "HD" && workStatus(state, account.id) === "OFFLINE",
       notice: "Login DEMO berhasil. Tidak ada autentikasi ke server.",
     };
   }
@@ -254,18 +286,66 @@ export function reducePreview(state: State, action: Action): State {
   } else {
     if (!user || !user.active || user.approval !== "APPROVED")
       return fail("Silakan login dengan akun preview aktif.");
+    if (action.type === "work-status") {
+      if (
+        user.role !== "HD" ||
+        !["ONLINE", "SIBUK", "OFFLINE"].includes(action.status)
+      )
+        return fail("Status kerja hanya berlaku untuk petugas HD.");
+      log = `${user.name} mengubah status kerja menjadi ${action.status}`;
+      return {
+        ...next,
+        attendance: {
+          ...state.attendance,
+          [user.id]: { status: action.status, checkedAt: at },
+        },
+        checkInRequired: false,
+        notice: log,
+        audit: [{ text: log, at }, ...state.audit],
+      };
+    }
+    if (action.type === "order-opened") {
+      const order = state.orders.find((o) => o.monitoringId === action.id);
+      if (
+        !order ||
+        order.handlerAlias !== user.id ||
+        !order.unopenedBy.includes(user.id)
+      )
+        return state;
+      return {
+        ...state,
+        orders: state.orders.map((o) =>
+          o === order
+            ? { ...o, unopenedBy: o.unopenedBy.filter((id) => id !== user.id) }
+            : o,
+        ),
+      };
+    }
     if (action.type === "chat-read" || action.type === "telegram-incoming") {
       const order = state.orders.find((o) => o.monitoringId === action.id);
       if (!order || order.handlerAlias !== user.id)
         return fail("Percakapan ini bukan milik akun aktif.");
       if (action.type === "chat-read") {
-        const ids = conversation(order).map((m) => m.id);
+        const validIds = conversation(order).map((m) => m.id);
+        const ids = action.messageIds
+          ? action.messageIds.filter((id) => validIds.includes(id))
+          : validIds;
         if (ids.every((id) => (order.readBy[user.id] ?? []).includes(id)))
           return state;
         return {
           ...state,
           orders: state.orders.map((o) =>
-            o === order ? { ...o, readBy: { ...o.readBy, [user.id]: ids } } : o,
+            o === order
+              ? {
+                  ...o,
+                  readBy: {
+                    ...o.readBy,
+                    [user.id]: Array.from(
+                      new Set([...(order.readBy[user.id] ?? []), ...ids]),
+                    ),
+                  },
+                }
+              : o,
           ),
         };
       }
@@ -467,6 +547,17 @@ export function reducePreview(state: State, action: Action): State {
       if (!order) return fail("Order tidak ditemukan.");
       let changed = { ...order };
       if (action.type === "claim") {
+        if (!canClaim(state))
+          return fail(
+            "PICK/Ambil Alih hanya tersedia saat status kerja ONLINE.",
+          );
+        if (order.handlerAlias && action.mode !== "takeover")
+          return fail(
+            "Order sudah dimiliki. Gunakan Ambil Alih dengan konfirmasi.",
+          );
+        if (order.handlerAlias === user.id)
+          return fail("Order sudah menjadi pekerjaan Anda. Gunakan Buka.");
+
         if (
           (action.expectedOwner !== undefined &&
             action.expectedOwner !== order.handlerAlias) ||
@@ -482,7 +573,7 @@ export function reducePreview(state: State, action: Action): State {
           ...order,
           status: "PROSES CEK",
           handlerAlias: user.id,
-          startedAt: order.startedAt ?? at,
+          startedAt: order.status === "MENUNGGU" ? at : (order.startedAt ?? at),
           history:
             order.status === "MENUNGGU"
               ? [...order.history, { status: "PROSES CEK", at }]
@@ -583,6 +674,10 @@ export function reducePreview(state: State, action: Action): State {
           ...order,
           status: action.status,
           finishedAt: at,
+          handlingDurationMs: Math.max(
+            0,
+            Date.parse(at) - Date.parse(order.startedAt ?? at),
+          ),
           outcomes: [
             ...order.outcomes,
             {
@@ -617,6 +712,7 @@ export function reducePreview(state: State, action: Action): State {
           handlerAlias: user.id,
           startedAt: at,
           waitingStartedAt: at,
+          handlingDurationMs: undefined,
           finishedAt: null,
           session: order.session + 1,
           history: [...order.history, { status: "PROSES CEK", at }],

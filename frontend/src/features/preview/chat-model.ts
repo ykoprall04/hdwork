@@ -1,5 +1,6 @@
 import type { State, WorkOrder, Action } from "./model.ts";
 export type ChatEntry = {
+  attachmentCount?: number;
   id: string;
   orderId: string;
   replyToMessageId: string;
@@ -48,6 +49,7 @@ export function conversation(order: WorkOrder): ChatEntry[] {
       at: m.at,
       text: m.text,
       images: m.images,
+      attachmentCount: m.attachmentCount,
     })),
   ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
@@ -113,6 +115,10 @@ export function reconcileChat(
       return {
         ...order,
         participants,
+        unopenedBy:
+          order.handlerAlias && previous.handlerAlias !== order.handlerAlias
+            ? Array.from(new Set([...order.unopenedBy, order.handlerAlias]))
+            : order.unopenedBy,
         telegramMessages,
         messages: order.messages.map((m) => ({
           ...m,

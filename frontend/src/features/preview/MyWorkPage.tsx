@@ -1,3 +1,6 @@
+import { workStatus, type WorkStatus } from "./work-status";
+import HandlingDuration from "../operations/HandlingDuration";
+import { useOrderOpened } from "./use-order-opened";
 import { useEffect, useRef, useState, type ClipboardEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -39,6 +42,7 @@ export default function MyWorkPage() {
   const navigate = useNavigate();
   const { monitoringId } = useParams();
   const userId = state.sessionId!;
+  useOrderOpened(monitoringId);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 767px)");
     const previous = document.body.style.overflow;
@@ -273,6 +277,12 @@ export default function MyWorkPage() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <strong className="text-xs">{o.monitoringId}</strong>
+                    {o.handlerAlias === userId &&
+                      o.unopenedBy.includes(userId) && (
+                        <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                          BARU
+                        </span>
+                      )}
                     {unread > 0 && (
                       <span
                         aria-label={`${unread} pesan belum dibaca`}
@@ -288,6 +298,9 @@ export default function MyWorkPage() {
                     </span>
                     <StatusBadge status={o.status} />
                     <OrderEscalationBadge orderId={o.monitoringId} />
+                    <span className="text-[10px] text-muted-foreground">
+                      <HandlingDuration order={o} />
+                    </span>
                   </div>
                   <p className="mt-2 truncate text-xs text-muted-foreground">
                     {latest?.text || "Lampiran gambar"}
@@ -354,15 +367,64 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
   const [error, setError] = useState("");
   const [reading, setReading] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const messageRoot = useRef<HTMLDivElement>(null);
   const messages = conversation(order);
   const ids = messages.map((m) => m.id).join("|");
   const owner = order.handlerAlias === userId;
   const canSend = owner && order.status === "PROSES CEK";
   const unread = unreadCount(order, userId);
+  const seen = (order.readBy[userId] ?? []).join("|");
   useEffect(() => {
-    if (owner && unread)
-      dispatch({ type: "chat-read", id: order.monitoringId });
-  }, [dispatch, owner, unread, ids, order.monitoringId]);
+    const root = messageRoot.current;
+    if (!root || !owner) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      if (
+        document.visibilityState !== "visible" ||
+        document.querySelector('[role="dialog"][data-open]')
+      )
+        return;
+      const bounds = root.getBoundingClientRect();
+      const visible = Array.from(
+        root.querySelectorAll<HTMLElement>("[data-message-id]"),
+      )
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return (
+            Math.min(r.bottom, bounds.bottom, window.innerHeight) >
+              Math.max(r.top, bounds.top, 0) + 8 &&
+            Math.min(r.right, bounds.right, window.innerWidth) >
+              Math.max(r.left, bounds.left, 0)
+          );
+        })
+        .map((el) => el.dataset.messageId!)
+        .filter((id) => !(seen ? seen.split("|") : []).includes(id));
+      if (visible.length)
+        dispatch({
+          type: "chat-read",
+          id: order.monitoringId,
+          messageIds: visible,
+        });
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    schedule();
+    root.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    document.addEventListener("visibilitychange", schedule);
+    document.addEventListener("click", schedule);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      root.removeEventListener("scroll", schedule);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("visibilitychange", schedule);
+      document.removeEventListener("click", schedule);
+    };
+  }, [ids, seen, owner, dispatch, order.monitoringId, userId]);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
   }, [ids]);
@@ -438,7 +500,38 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <label className="text-[10px] text-muted-foreground md:hidden">
+            Status kerja
+            <select
+              aria-label="Status kerja di percakapan"
+              className="ml-2 rounded border bg-card p-1 text-foreground"
+              value={workStatus(state)}
+              onChange={(e) =>
+                dispatch({
+                  type: "work-status",
+                  status: e.target.value as WorkStatus,
+                })
+              }
+            >
+              {["ONLINE", "SIBUK", "OFFLINE"].map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
           <StatusBadge status={order.status} />
+          {unread > 0 && (
+            <button
+              className="text-[10px] text-primary"
+              onClick={() => {
+                const first = messageRoot.current?.querySelector<HTMLElement>(
+                  `[data-message-id="${messages.find((m) => m.sender !== userId && !(order.readBy[userId] ?? []).includes(m.id))?.id}"]`,
+                );
+                first?.scrollIntoView({ block: "center" });
+              }}
+            >
+              {unread} pesan belum dilihat
+            </button>
+          )}
           <OrderOutcomeActions orderId={order.monitoringId} />
           <Link
             className="text-xs text-primary"
@@ -449,6 +542,9 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
         </div>
       </header>
       <div className="border-b bg-muted/40 px-4 py-2 text-[10px] text-muted-foreground">
+        <span className="mr-3">
+          Durasi: <HandlingDuration order={order} />
+        </span>
         DEMO · setiap pesan web adalah reply ke {order.originalMessageId} · sesi{" "}
         {order.session}
       </div>
@@ -467,6 +563,7 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
         </div>
       )}
       <div
+        ref={messageRoot}
         aria-label={`Percakapan ${order.monitoringId}`}
         className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-muted/30 p-4 sm:p-6"
       >
@@ -478,6 +575,7 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
             <article
               key={m.id}
               data-message-order={m.orderId}
+              data-message-id={m.id}
               className={`max-w-[92%] rounded-2xl border p-3 shadow-sm sm:max-w-[80%] ${own ? "ml-auto rounded-tr-sm border-primary/15 bg-primary/10" : "mr-auto rounded-tl-sm bg-card"}`}
             >
               <div className="mb-2 flex flex-wrap justify-between gap-3 text-[10px]">

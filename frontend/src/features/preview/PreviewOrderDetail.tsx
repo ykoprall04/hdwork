@@ -13,12 +13,16 @@ import { Badge } from "@/components/ui/badge";
 import { Empty, OrderOverview, Section } from "../operations/components";
 import { formatTimestamp } from "../operations/demo-data";
 import { usePreview } from "./context";
+import { useOrderOpened } from "./use-order-opened";
+import HandlingDuration from "../operations/HandlingDuration";
+import { canClaim } from "./work-status";
 import OrderOutcomeActions from "./OrderOutcomeActions";
 import { field } from "./PreviewAuth";
 import { publicProjection, type Action } from "./model";
 export default function PreviewOrderDetail() {
-  const { state, dispatch } = usePreview();
+  const { state, dispatch, claimOrder } = usePreview();
   const { monitoringId } = useParams();
+  useOrderOpened(monitoringId);
   const order = state.orders.find((o) => o.monitoringId === monitoringId);
   const [text, setText] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -113,17 +117,30 @@ export default function PreviewOrderDetail() {
       <div className="flex flex-wrap gap-2">
         {order.status === "MENUNGGU" && (
           <Button
-            onClick={() => dispatch({ type: "claim", id: order.monitoringId })}
+            disabled={!canClaim(state)}
+            onClick={() =>
+              void claimOrder({
+                id: order.monitoringId,
+                expectedOwner: order.handlerAlias,
+                expectedStatus: order.status,
+                mode: "pick",
+              })
+            }
           >
             Ambil Order
           </Button>
         )}
         {active && !mine && (
           <Button
+            disabled={!canClaim(state)}
             onClick={() =>
               setConfirm({
                 text: `Ambil alih dari ${order.handlerAlias}? Kepemilikan langsung berpindah dan dicatat.`,
-                action: { type: "claim", id: order.monitoringId },
+                action: {
+                  type: "claim",
+                  id: order.monitoringId,
+                  mode: "takeover",
+                },
               })
             }
           >
@@ -160,6 +177,9 @@ export default function PreviewOrderDetail() {
       >
         Buka percakapan di Pekerjaan Saya →
       </Link>
+      <p className="text-xs text-muted-foreground">
+        Durasi penanganan: <HandlingDuration order={order} />
+      </p>
       <OrderOverview order={publicProjection([order])[0]} />
       <div className="grid items-start gap-6 xl:grid-cols-[1.5fr_1fr]">
         <div className="space-y-6">
@@ -493,7 +513,14 @@ export default function PreviewOrderDetail() {
             </Button>
             <Button
               onClick={() => {
-                if (confirm) dispatch(confirm.action);
+                if (confirm?.action.type === "claim")
+                  void claimOrder({
+                    id: order.monitoringId,
+                    expectedOwner: order.handlerAlias,
+                    expectedStatus: order.status,
+                    mode: "takeover",
+                  });
+                else if (confirm) dispatch(confirm.action);
                 setConfirm(null);
               }}
             >

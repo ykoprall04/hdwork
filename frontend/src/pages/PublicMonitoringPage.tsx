@@ -114,7 +114,7 @@ export default function PublicMonitoringPage() {
           <p>
             Data fiktif dan pembaruan simulasi di browser yang sama. Tidak
             terhubung MySQL/Telegram atau real-time server. Lampiran, NIK, INET
-            lengkap, dan kredensial tidak ditampilkan. Data reset saat reload.
+            lengkap, dan kredensial tidak ditampilkan. Status dan notifikasi demo tersimpan lokal per akun; lampiran tetap sementara.
           </p>
         </div>
         <section

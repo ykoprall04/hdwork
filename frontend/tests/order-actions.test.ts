@@ -8,7 +8,13 @@ import {
 } from "../src/features/preview/model.ts";
 import { conversation } from "../src/features/preview/chat-model.ts";
 const run = (s: State, ...actions: Action[]) =>
-  actions.reduce(reducePreview, s);
+  actions
+    .flatMap((action): Action[] =>
+      action.type === "login"
+        ? [action, { type: "work-status", status: "ONLINE" }]
+        : [action],
+    )
+    .reduce(reducePreview, s);
 const login = (username: string): Action => ({ type: "login", username });
 function owned() {
   let state = run(initialState(), login("hd_demo_1"));
@@ -41,6 +47,7 @@ test("takeover records both owners; stale confirmation cannot override a newly a
     type: "claim",
     id,
     expectedOwner: "hd_demo_1",
+    mode: "takeover",
     expectedStatus: "PROSES CEK",
   });
   const order = result.orders.find((o) => o.monitoringId === id)!;
@@ -52,6 +59,7 @@ test("takeover records both owners; stale confirmation cannot override a newly a
     type: "claim",
     id,
     expectedOwner: "hd_demo_1",
+    mode: "takeover",
     expectedStatus: "PROSES CEK",
   });
   assert.equal(result.orders, orders);

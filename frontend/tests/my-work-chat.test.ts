@@ -1,13 +1,150 @@
-import {test} from 'node:test'
-import assert from 'node:assert/strict'
-import {initialState,reducePreview,publicProjection,type State,type Action} from '../src/features/preview/model.ts'
-import {conversation,unreadCount,latestActivity} from '../src/features/preview/chat-model.ts'
-const run=(state:State,...actions:Action[])=>actions.reduce(reducePreview,state)
-const login=(username:string):Action=>({type:'login',username})
-function setup(){const state=run(initialState(),login('hd_demo_1'));const orders=state.orders.filter(o=>o.handlerAlias==='hd_demo_1'&&o.status==='PROSES CEK');return {state,ids:orders.map(o=>o.monitoringId)}}
-test('every order has its own seeded Telegram conversation and original message ID',()=>{const state=initialState();const ids=new Set();for(const o of state.orders){assert.ok(conversation(o).every(m=>m.orderId===o.monitoringId&&m.replyToMessageId===o.originalMessageId));ids.add(o.originalMessageId)}assert.equal(ids.size,state.orders.length)})
-test('web messages retain exact text and reply directly to their own original order',()=>{const {state,ids}=setup();const result=run(state,{type:'message',id:ids[0],text:'Isi pesan murni',images:[]});const first=result.orders.find(o=>o.monitoringId===ids[0])!;const other=result.orders.find(o=>o.monitoringId===ids[1])!;assert.equal(first.messages[0].text,'Isi pesan murni');assert.equal(first.messages[0].orderId,ids[0]);assert.equal(first.messages[0].replyToMessageId,first.originalMessageId);assert.equal(other.messages.length,0)})
-test('incoming notifications are personal, mark-read is scoped, and incoming updates activity',()=>{const {state,ids}=setup();const result=run(state,{type:'telegram-incoming',id:ids[0],source:'telegram'},{type:'telegram-incoming',id:ids[1],source:'bot'});const first=result.orders.find(o=>o.monitoringId===ids[0])!;assert.equal(unreadCount(first,'hd_demo_1'),1);assert.equal(unreadCount(first,'hd_demo_2'),0);assert.ok(latestActivity(first)>Date.parse(first.receivedAt));const read=run(result,{type:'chat-read',id:ids[0]});assert.equal(unreadCount(read.orders.find(o=>o.monitoringId===ids[0])!,'hd_demo_1'),0);assert.equal(unreadCount(read.orders.find(o=>o.monitoringId===ids[1])!,'hd_demo_1'),1);const blocked=run(result,login('hd_demo_2'),{type:'chat-read',id:ids[0]});assert.equal(blocked.orders,result.orders)})
-test('claim adds only one matching bot message and preserves previous involvement on takeover',()=>{let state=run(initialState(),login('hd_demo_1'));const id=state.orders.find(o=>o.status==='MENUNGGU')!.monitoringId;state=run(state,{type:'claim',id});let order=state.orders.find(o=>o.monitoringId===id)!;assert.equal(order.telegramMessages.at(-1)!.text,'🟡 Data di cek Alya Demo');assert.equal(order.telegramMessages.at(-1)!.orderId,id);state=run(state,login('hd_demo_2'),{type:'claim',id});order=state.orders.find(o=>o.monitoringId===id)!;assert.equal(order.handlerAlias,'hd_demo_2');assert.deepEqual(order.participants,['hd_demo_1','hd_demo_2']);assert.equal(order.telegramMessages.at(-1)!.text,'🟡 Data di cek Bima Demo');assert.equal(unreadCount(order,'hd_demo_1'),0)})
-test('transfers keep conversation and participants, completion and reopen retain chat',()=>{let {state,ids}=setup();state=run(state,{type:'message',id:ids[0],text:'sebelum transfer',images:[]},{type:'transfer',ids:[ids[0]],to:'hd_demo_2'});const transfer=state.transfers.at(-1)!;state=run(state,login('hd_demo_2'),{type:'decide',id:transfer.id,accept:true},{type:'finish',id:ids[0],status:'DONE'},login('hd_demo_3'),{type:'reopen',id:ids[0],reason:'cek ulang'});const order=state.orders.find(o=>o.monitoringId===ids[0])!;assert.deepEqual(order.participants,['hd_demo_1','hd_demo_2','hd_demo_3']);assert.ok(conversation(order).some(m=>m.text==='sebelum transfer'));assert.equal(order.session,2)})
-test('private Telegram chat and read metadata never enter public projection',()=>{const {state,ids}=setup();const updated=run(state,{type:'telegram-incoming',id:ids[0],source:'telegram'});const result=publicProjection(updated.orders).find(o=>o.monitoringId===ids[0])!;for(const key of ['readBy','participants','telegramMessages','originalMessageId'])assert.ok(!(key in result));assert.ok(!JSON.stringify(result).includes('Pesan Telegram masuk'))})
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  initialState,
+  reducePreview,
+  publicProjection,
+  type State,
+  type Action,
+} from "../src/features/preview/model.ts";
+import {
+  conversation,
+  unreadCount,
+  latestActivity,
+} from "../src/features/preview/chat-model.ts";
+const run = (state: State, ...actions: Action[]) =>
+  actions
+    .flatMap((action): Action[] =>
+      action.type === "login"
+        ? [action, { type: "work-status", status: "ONLINE" }]
+        : [action],
+    )
+    .reduce(reducePreview, state);
+const login = (username: string): Action => ({ type: "login", username });
+function setup() {
+  const state = run(initialState(), login("hd_demo_1"));
+  const orders = state.orders.filter(
+    (o) => o.handlerAlias === "hd_demo_1" && o.status === "PROSES CEK",
+  );
+  return { state, ids: orders.map((o) => o.monitoringId) };
+}
+test("every order has its own seeded Telegram conversation and original message ID", () => {
+  const state = initialState();
+  const ids = new Set();
+  for (const o of state.orders) {
+    assert.ok(
+      conversation(o).every(
+        (m) =>
+          m.orderId === o.monitoringId &&
+          m.replyToMessageId === o.originalMessageId,
+      ),
+    );
+    ids.add(o.originalMessageId);
+  }
+  assert.equal(ids.size, state.orders.length);
+});
+test("web messages retain exact text and reply directly to their own original order", () => {
+  const { state, ids } = setup();
+  const result = run(state, {
+    type: "message",
+    id: ids[0],
+    text: "Isi pesan murni",
+    images: [],
+  });
+  const first = result.orders.find((o) => o.monitoringId === ids[0])!;
+  const other = result.orders.find((o) => o.monitoringId === ids[1])!;
+  assert.equal(first.messages[0].text, "Isi pesan murni");
+  assert.equal(first.messages[0].orderId, ids[0]);
+  assert.equal(first.messages[0].replyToMessageId, first.originalMessageId);
+  assert.equal(other.messages.length, 0);
+});
+test("incoming notifications are personal, mark-read is scoped, and incoming updates activity", () => {
+  const { state, ids } = setup();
+  const result = run(
+    state,
+    { type: "telegram-incoming", id: ids[0], source: "telegram" },
+    { type: "telegram-incoming", id: ids[1], source: "bot" },
+  );
+  const first = result.orders.find((o) => o.monitoringId === ids[0])!;
+  assert.equal(unreadCount(first, "hd_demo_1"), 1);
+  assert.equal(unreadCount(first, "hd_demo_2"), 0);
+  assert.ok(latestActivity(first) > Date.parse(first.receivedAt));
+  const read = run(result, { type: "chat-read", id: ids[0] });
+  assert.equal(
+    unreadCount(
+      read.orders.find((o) => o.monitoringId === ids[0])!,
+      "hd_demo_1",
+    ),
+    0,
+  );
+  assert.equal(
+    unreadCount(
+      read.orders.find((o) => o.monitoringId === ids[1])!,
+      "hd_demo_1",
+    ),
+    1,
+  );
+  const blocked = run(result, login("hd_demo_2"), {
+    type: "chat-read",
+    id: ids[0],
+  });
+  assert.equal(blocked.orders, result.orders);
+});
+test("claim adds only one matching bot message and preserves previous involvement on takeover", () => {
+  let state = run(initialState(), login("hd_demo_1"));
+  const id = state.orders.find((o) => o.status === "MENUNGGU")!.monitoringId;
+  state = run(state, { type: "claim", id });
+  let order = state.orders.find((o) => o.monitoringId === id)!;
+  assert.equal(order.telegramMessages.at(-1)!.text, "🟡 Data di cek Alya Demo");
+  assert.equal(order.telegramMessages.at(-1)!.orderId, id);
+  state = run(state, login("hd_demo_2"), {
+    type: "claim",
+    id,
+    mode: "takeover",
+  });
+  order = state.orders.find((o) => o.monitoringId === id)!;
+  assert.equal(order.handlerAlias, "hd_demo_2");
+  assert.deepEqual(order.participants, ["hd_demo_1", "hd_demo_2"]);
+  assert.equal(order.telegramMessages.at(-1)!.text, "🟡 Data di cek Bima Demo");
+  assert.equal(unreadCount(order, "hd_demo_1"), 0);
+});
+test("transfers keep conversation and participants, completion and reopen retain chat", () => {
+  let { state, ids } = setup();
+  state = run(
+    state,
+    { type: "message", id: ids[0], text: "sebelum transfer", images: [] },
+    { type: "transfer", ids: [ids[0]], to: "hd_demo_2" },
+  );
+  const transfer = state.transfers.at(-1)!;
+  state = run(
+    state,
+    login("hd_demo_2"),
+    { type: "decide", id: transfer.id, accept: true },
+    { type: "finish", id: ids[0], status: "DONE" },
+    login("hd_demo_3"),
+    { type: "reopen", id: ids[0], reason: "cek ulang" },
+  );
+  const order = state.orders.find((o) => o.monitoringId === ids[0])!;
+  assert.deepEqual(order.participants, ["hd_demo_1", "hd_demo_2", "hd_demo_3"]);
+  assert.ok(conversation(order).some((m) => m.text === "sebelum transfer"));
+  assert.equal(order.session, 2);
+});
+test("private Telegram chat and read metadata never enter public projection", () => {
+  const { state, ids } = setup();
+  const updated = run(state, {
+    type: "telegram-incoming",
+    id: ids[0],
+    source: "telegram",
+  });
+  const result = publicProjection(updated.orders).find(
+    (o) => o.monitoringId === ids[0],
+  )!;
+  for (const key of [
+    "readBy",
+    "participants",
+    "telegramMessages",
+    "originalMessageId",
+  ])
+    assert.ok(!(key in result));
+  assert.ok(!JSON.stringify(result).includes("Pesan Telegram masuk"));
+});

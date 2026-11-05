@@ -29,7 +29,10 @@ const os = require("node:os");
     (process.env.HD_PREVIEW_URL || "http://127.0.0.1:5173") + "/preview/login",
   );
   await page.getByRole("button", { name: "Petugas HD", exact: true }).click();
-  await page.getByRole("link", { name: "HD B2C", exact: false }).click();
+  await page
+    .getByRole("button", { name: "Lanjutkan ke Pilih Pekerjaan", exact: true })
+    .click();
+  await page.getByRole("link", { name: "HD ASSUREN", exact: false }).click();
   await page.locator("tbody tr").first().waitFor();
   assert.equal(await page.locator("th").count(), 6);
   assert.doesNotMatch(await page.locator("thead").innerText(), /Aksi/);
@@ -89,7 +92,9 @@ const os = require("node:os");
     .getByLabel("Keterangan eskalasi", { exact: true })
     .fill("Perlu bantuan lanjutan");
   await page.getByRole("button", { name: "Lanjutkan", exact: true }).click();
-  await page.getByRole("button", { name: "Konfirmasi", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Konfirmasi ESKALASI", exact: true })
+    .click();
   await page
     .getByText("Dieskalasi · 1×", { exact: true })
     .filter({ visible: true })
@@ -114,7 +119,9 @@ const os = require("node:os");
     .getByLabel("Keterangan eskalasi", { exact: true })
     .fill("Eskalasi berikutnya");
   await page.getByRole("button", { name: "Lanjutkan", exact: true }).click();
-  await page.getByRole("button", { name: "Konfirmasi", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Konfirmasi ESKALASI", exact: true })
+    .click();
   await page
     .getByText("Dieskalasi · 2×", { exact: true })
     .filter({ visible: true })
@@ -131,7 +138,9 @@ const os = require("node:os");
     .getByRole("textbox", { name: "Alasan kegagalan", exact: true })
     .fill("DEMO alasan gagal");
   await page.getByRole("button", { name: "Lanjutkan", exact: true }).click();
-  await page.getByRole("button", { name: "Konfirmasi", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Konfirmasi GAGAL", exact: true })
+    .click();
   await page
     .getByText("Alasan GAGAL: DEMO alasan gagal", { exact: true })
     .waitFor();
@@ -154,7 +163,9 @@ const os = require("node:os");
   await page.getByRole("link", { name: "Pekerjaan Saya", exact: true }).click();
   await page.locator(`[data-order-id="${code}"]`).click();
   await page.getByRole("button", { name: "DONE", exact: true }).click();
-  await page.getByRole("button", { name: "Konfirmasi", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Konfirmasi DONE", exact: true })
+    .click();
   assert.equal(
     await page
       .getByRole("button", { name: "ESKALASI", exact: true })
@@ -207,8 +218,15 @@ const os = require("node:os");
     await page
       .getByRole("link", { name: `HD ${category}`, exact: false })
       .click();
+    if (category === "B2C" && !module) {
+      assert.equal(await page.locator("table").count(), 0);
+      continue;
+    }
     if (module)
-      await page.getByRole("link", { name: module, exact: false }).click();
+      await page
+        .getByRole("navigation", { name: "Menu workspace B2C" })
+        .getByRole("link", { name: module, exact: true })
+        .click();
     await page.locator("tbody tr").first().waitFor();
     assert.equal(await page.locator("th").count(), 6);
     for (const status of ["DONE", "GAGAL", "DUPLICATE"]) {
@@ -243,13 +261,15 @@ const os = require("node:os");
   await page.getByLabel("Tujuan eskalasi", { exact: true }).fill("Tim Mobile");
   await page.getByLabel("Keterangan eskalasi", { exact: true }).fill("Uji HP");
   await page.getByRole("button", { name: "Lanjutkan", exact: true }).click();
-  await page.getByRole("button", { name: "Konfirmasi", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Konfirmasi ESKALASI", exact: true })
+    .click();
   await page
     .getByText("Dieskalasi · 1×", { exact: true })
     .filter({ visible: true })
     .first()
     .waitFor();
-  await page.getByRole("dialog").waitFor({state:"detached"});
+  await page.getByRole("dialog").waitFor({ state: "detached" });
   await page.screenshot({
     path: path.join(output, "chat-mobile.png"),
     fullPage: false,

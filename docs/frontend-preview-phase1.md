@@ -1,5 +1,10 @@
 # HD Work 2.0 — Frontend Preview
 
+> Pembaruan workspace v2: status/notifikasi dan canonical order demo kini tersimpan
+> lokal; gambar tetap sementara. Lihat [checkin-workspace-v2.md](checkin-workspace-v2.md)
+> untuk alur login/check-in dan batas simulasi terbaru.
+
+
 Branch: `feat/hdwork2-frontend-preview`. Perubahan dashboard dan prototipe sebelumnya dipertahankan.
 
 ## Melihat preview

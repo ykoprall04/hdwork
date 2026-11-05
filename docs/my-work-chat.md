@@ -1,5 +1,10 @@
 # Pekerjaan Saya & percakapan order — prototype
 
+> Pembaruan workspace v2: status/notifikasi dan canonical order demo kini tersimpan
+> lokal; gambar tetap sementara. Lihat [checkin-workspace-v2.md](checkin-workspace-v2.md)
+> untuk alur login/check-in dan batas simulasi terbaru.
+
+
 Branch fitur: `feat/my-work-chat`, dibuat dari remote terbaru
 `feat/hdwork2-frontend-preview` pada commit `763652a` (termasuk perbaikan dependency Socket.IO).
 Tidak ada perubahan backend, database, bot Telegram atau deployment.

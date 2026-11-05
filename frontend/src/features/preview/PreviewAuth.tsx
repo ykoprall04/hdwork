@@ -5,6 +5,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Section } from "../operations/components";
 import { usePreview } from "./context";
+import { loginDestination } from "./work-status";
 export const field =
   "mt-2 block min-h-10 w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground";
 export default function PreviewAuth() {
@@ -21,7 +22,7 @@ export default function PreviewAuth() {
     const account = state.users.find((u) => u.username === username);
     dispatch({ type: "login", username });
     if (account?.active && account.approval === "APPROVED")
-      navigate(account.role === "HD" ? "/preview/jobs" : "/preview/admin");
+      navigate(loginDestination(state, account));
   }
   function signup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,7 +42,9 @@ export default function PreviewAuth() {
   }
   function persona(username: string) {
     dispatch({ type: "login", username });
-    navigate(username.startsWith("hd_") ? "/preview/jobs" : "/preview/admin");
+    const account = state.users.find((u) => u.username === username);
+    if (account?.active && account.approval === "APPROVED")
+      navigate(loginDestination(state, account));
   }
   return (
     <div className="min-h-screen bg-muted/40 p-4 sm:p-8">
@@ -74,8 +77,9 @@ export default function PreviewAuth() {
                 PREVIEW FRONTEND · DATA DEMO
               </strong>
               Tidak menggunakan kredensial nyata. Password hanya validasi form
-              dan tidak disimpan. Data simulasi berada di memori dan reset saat
-              reload. Telegram belum diverifikasi atau terhubung.
+              dan tidak disimpan. Status kerja dan notifikasi demo tersimpan
+              lokal per akun; lampiran gambar hanya tersedia pada sesi upload.
+              Telegram belum diverifikasi atau terhubung.
             </p>
           </div>
           <Link

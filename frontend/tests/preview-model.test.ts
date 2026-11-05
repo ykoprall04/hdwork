@@ -8,7 +8,13 @@ import {
   type Action,
 } from "../src/features/preview/model.ts";
 function run(state: State, ...actions: Action[]) {
-  return actions.reduce(reducePreview, state);
+  return actions
+    .flatMap((action): Action[] =>
+      action.type === "login"
+        ? [action, { type: "work-status", status: "ONLINE" }]
+        : [action],
+    )
+    .reduce(reducePreview, state);
 }
 const login = (username: string): Action => ({ type: "login", username });
 function owned() {
@@ -80,7 +86,7 @@ test("reject-all retains old owner; takeover invalidates stale pending packages"
     login("hd_demo_1"),
     { type: "transfer", ids: setup.ids, to: "hd_demo_2" },
     login("hd_demo_3"),
-    { type: "claim", id: setup.ids[0] },
+    { type: "claim", id: setup.ids[0], mode: "takeover" },
   );
   assert.equal(state.transfers.at(-1)!.status, "CANCELLED");
   const before = state.orders;
