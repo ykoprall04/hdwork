@@ -1,3 +1,4 @@
+const { chooseCategory } = require("./preview-navigation.helpers.cjs");
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 (async () => {
@@ -21,6 +22,7 @@ const assert = require("node:assert/strict");
   await page
     .getByRole("button", { name: "Lanjutkan ke Pilih Pekerjaan", exact: true })
     .click();
+  await chooseCategory(page, "B2C");
   await page
     .getByRole("navigation", { name: "Navigasi preview" })
     .getByRole("link", { name: "Pekerjaan Saya", exact: true })

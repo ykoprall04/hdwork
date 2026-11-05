@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Link, NavLink, useParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { categories, statuses, jakartaDate } from "../operations/demo-data";
 import { Empty, Metric, OrderTable, Section } from "../operations/components";
@@ -50,13 +49,6 @@ export default function CategoryWorkspace() {
   const current = Math.min(page, pages);
   return (
     <>
-      <Link
-        className="inline-flex items-center gap-2 text-sm text-primary"
-        to="/preview/jobs"
-      >
-        <ArrowLeft className="size-4" />
-        Kembali ke Pilih Pekerjaan
-      </Link>
       <header>
         <p className="text-xs font-semibold tracking-[.18em] text-primary">
           WORKSPACE / {category}
@@ -75,30 +67,6 @@ export default function CategoryWorkspace() {
             : "Satu pemilik aktif per order. Data demo dan workflow khusus tetap terpisah."}
         </p>
       </header>
-      {category === "B2C" && (
-        <nav
-          aria-label="Menu workspace B2C"
-          className="flex gap-2 overflow-x-auto border-b pb-3"
-        >
-          {[
-            ["/preview/work/B2C", "Dashboard B2C"],
-            ["/preview/work/B2C/TIAL", "TIAL"],
-            ["/preview/work/B2C/LOGIC", "LOGIC"],
-            ["/preview/my-work", "Pekerjaan Saya"],
-          ].map(([to, label]) => (
-            <NavLink
-              end
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `shrink-0 rounded-lg border px-4 py-2.5 text-xs font-medium ${isActive ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground"}`
-              }
-            >
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-      )}
       {dashboard ? (
         <>
           <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
@@ -143,13 +111,6 @@ export default function CategoryWorkspace() {
                       </div>
                     ))}
                   </div>
-                  <Link
-                    className="mt-5 inline-flex items-center gap-2 text-sm text-primary"
-                    to={`/preview/work/B2C/${value}`}
-                  >
-                    Buka daftar {value}
-                    <ArrowRight className="size-4" />
-                  </Link>
                 </Section>
               );
             })}

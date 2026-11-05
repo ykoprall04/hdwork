@@ -1,3 +1,4 @@
+const { chooseCategory, allJobs } = require("./preview-navigation.helpers.cjs");
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -70,9 +71,7 @@ const path = require("node:path");
     path: path.join(output, "dashboard-b2c.png"),
     fullPage: true,
   });
-  const moduleNav = page.getByRole("navigation", {
-    name: "Menu workspace B2C",
-  });
+  const moduleNav = nav;
   await moduleNav.getByRole("link", { name: "TIAL", exact: true }).click();
   await page
     .getByRole("heading", { name: "Daftar order TIAL", exact: true, level: 1 })
@@ -228,16 +227,14 @@ const path = require("node:path");
     0,
   );
   // Navigation and persona changes must not release ownership or mix work status.
-  await nav.getByRole("link", { name: "Pilih Pekerjaan", exact: true }).click();
+  await allJobs(page);
   await page.getByLabel("Status kerja", { exact: true }).selectOption("SIBUK");
   await page.getByRole("link", { name: "HD B2B", exact: false }).click();
   assert.equal(
     await page.getByLabel("Status kerja", { exact: true }).inputValue(),
     "SIBUK",
   );
-  await page
-    .getByRole("link", { name: "Kembali ke Pilih Pekerjaan", exact: true })
-    .click();
+  await allJobs(page);
   await page
     .getByRole("link", { name: "HD REPLACEMENT", exact: false })
     .click();
@@ -253,6 +250,7 @@ const path = require("node:path");
     .getByRole("button", { name: "Lanjutkan ke Pilih Pekerjaan", exact: true })
     .click();
   await page.waitForURL("**/preview/jobs");
+  await chooseCategory(page, "B2C");
   await page
     .getByRole("link", { name: "Monitoring Publik", exact: true })
     .click();
@@ -270,6 +268,7 @@ const path = require("node:path");
   await page
     .getByRole("button", { name: "Lanjutkan ke Pilih Pekerjaan", exact: true })
     .click();
+  await chooseCategory(page, "B2C");
   assert.match(await nav.innerText(), /BARU 0/);
   await nav.getByRole("link", { name: "Pekerjaan Saya", exact: true }).click();
   assert.equal(await page.locator(`[data-order-id="${code}"]`).count(), 0);

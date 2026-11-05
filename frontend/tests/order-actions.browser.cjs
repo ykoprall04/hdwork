@@ -1,3 +1,4 @@
+const { allJobs } = require("./preview-navigation.helpers.cjs");
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -181,9 +182,7 @@ const os = require("node:os");
   await page.getByRole("button", { name: "Riwayat", exact: true }).click();
   await page.locator(`[data-order-id="${code}"]`).waitFor();
   // Logout/persona switch preserves state; takeover must record a different active owner.
-  await page
-    .getByRole("link", { name: "Pilih Pekerjaan", exact: true })
-    .click();
+  await allJobs(page);
   await page.getByRole("link", { name: "HD ASSUREN", exact: false }).click();
   await page.getByLabel("Status order").selectOption("PROSES CEK");
   const takeover = page
@@ -212,9 +211,7 @@ const os = require("node:os");
     ["B2B", null],
     ["REPLACEMENT", null],
   ]) {
-    await page
-      .getByRole("link", { name: "Pilih Pekerjaan", exact: true })
-      .click();
+    await allJobs(page);
     await page
       .getByRole("link", { name: `HD ${category}`, exact: false })
       .click();
@@ -224,7 +221,7 @@ const os = require("node:os");
     }
     if (module)
       await page
-        .getByRole("navigation", { name: "Menu workspace B2C" })
+        .getByRole("navigation", { name: "Navigasi preview" })
         .getByRole("link", { name: module, exact: true })
         .click();
     await page.locator("tbody tr").first().waitFor();

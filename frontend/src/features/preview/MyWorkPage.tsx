@@ -109,9 +109,6 @@ export default function MyWorkPage() {
             {totalUnread} pesan belum dibaca.
           </p>
         </div>
-        <Link className="text-sm text-primary" to="/preview/jobs">
-          Ambil pekerjaan baru →
-        </Link>
       </header>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
@@ -318,7 +315,7 @@ export default function MyWorkPage() {
           </div>
         </aside>
         <div
-          className={`${monitoringId ? "fixed inset-0 z-40 flex bg-card md:static md:z-auto" : "hidden md:flex"} min-h-0 min-w-0 flex-col`}
+          className={`${monitoringId ? "fixed inset-x-0 bottom-0 top-[var(--hd-preview-header-height,0px)] z-40 flex bg-card md:static md:z-auto" : "hidden md:flex"} min-h-0 min-w-0 flex-col`}
         >
           {selected ? (
             <ChatPane
@@ -382,10 +379,13 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
       frame = 0;
       if (
         document.visibilityState !== "visible" ||
-        document.querySelector('[role="dialog"][data-open]')
+        document.querySelector('[role="dialog"][data-open], [role="menu"]')
       )
         return;
       const bounds = root.getBoundingClientRect();
+      const headerBottom =
+        document.querySelector("[data-preview-header]")?.getBoundingClientRect()
+          .bottom ?? 0;
       const visible = Array.from(
         root.querySelectorAll<HTMLElement>("[data-message-id]"),
       )
@@ -393,7 +393,7 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
           const r = el.getBoundingClientRect();
           return (
             Math.min(r.bottom, bounds.bottom, window.innerHeight) >
-              Math.max(r.top, bounds.top, 0) + 8 &&
+              Math.max(r.top, bounds.top, headerBottom, 0) + 8 &&
             Math.min(r.right, bounds.right, window.innerWidth) >
               Math.max(r.left, bounds.left, 0)
           );
