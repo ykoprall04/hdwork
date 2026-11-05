@@ -153,6 +153,12 @@ export default function PreviewOrderDetail() {
           </div>
         )}
       </div>
+      <Link
+        className="inline-flex items-center gap-2 text-sm text-primary"
+        to={`/preview/my-work/${order.monitoringId}`}
+      >
+        Buka percakapan di Pekerjaan Saya →
+      </Link>
       <OrderOverview order={publicProjection([order])[0]} />
       <div className="grid items-start gap-6 xl:grid-cols-[1.5fr_1fr]">
         <div className="space-y-6">

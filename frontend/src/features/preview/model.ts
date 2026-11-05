@@ -1,3 +1,10 @@
+import {
+  seedConversation,
+  originalMessageId,
+  reconcileChat,
+  conversation,
+  type ChatEntry,
+} from "./chat-model.ts";
 import { createDemoOrders, type DemoOrder } from "../operations/demo-data.ts";
 export type DemoUser = {
   id: string;
@@ -12,6 +19,8 @@ export type DemoUser = {
   telegramId: string;
 };
 export type Message = {
+  orderId?: string;
+  replyToMessageId?: string;
   id: string;
   text: string;
   images: string[];
@@ -22,6 +31,10 @@ export type Message = {
   session: number;
 };
 export type WorkOrder = DemoOrder & {
+  originalMessageId: string;
+  telegramMessages: ChatEntry[];
+  readBy: Record<string, string[]>;
+  participants: string[];
   module: "TIAL" | "LOGIC" | null;
   sto: string;
   messages: Message[];
@@ -67,7 +80,9 @@ export type Action =
   | { type: "finish"; id: string; status: "DONE" | "GAGAL" }
   | { type: "reopen"; id: string; reason: string }
   | { type: "template"; text: string }
-  | { type: "notify" };
+  | { type: "notify" }
+  | { type: "chat-read"; id: string }
+  | { type: "telegram-incoming"; id: string; source: "bot" | "telegram" };
 export function initialState(): State {
   const users: DemoUser[] = [
     "hd_demo_1",
@@ -113,6 +128,17 @@ export function initialState(): State {
             : "TIAL"
           : null,
       sto: ["STO-DEMO-A", "STO-DEMO-B", "STO-DEMO-C"][i % 3],
+      originalMessageId: originalMessageId(o.monitoringId),
+      telegramMessages: seedConversation(o.monitoringId, o.receivedAt),
+      readBy: o.handlerAlias
+        ? {
+            [o.handlerAlias]: seedConversation(
+              o.monitoringId,
+              o.receivedAt,
+            ).map((m) => m.id),
+          }
+        : {},
+      participants: o.handlerAlias ? [o.handlerAlias] : [],
       messages: [],
       events: [{ text: "Order DEMO diterima", at: o.receivedAt }],
       session: 1,
@@ -203,6 +229,45 @@ export function reducePreview(state: State, action: Action): State {
   } else {
     if (!user || !user.active || user.approval !== "APPROVED")
       return fail("Silakan login dengan akun preview aktif.");
+    if (action.type === "chat-read" || action.type === "telegram-incoming") {
+      const order = state.orders.find((o) => o.monitoringId === action.id);
+      if (!order || order.handlerAlias !== user.id)
+        return fail("Percakapan ini bukan milik akun aktif.");
+      if (action.type === "chat-read") {
+        const ids = conversation(order).map((m) => m.id);
+        if (ids.every((id) => (order.readBy[user.id] ?? []).includes(id)))
+          return state;
+        return {
+          ...state,
+          orders: state.orders.map((o) =>
+            o === order ? { ...o, readBy: { ...o.readBy, [user.id]: ids } } : o,
+          ),
+        };
+      }
+      const incoming: ChatEntry = {
+        id: id(),
+        orderId: order.monitoringId,
+        replyToMessageId: order.originalMessageId,
+        source: action.source,
+        sender:
+          action.source === "bot" ? "HD Work Bot" : "Petugas Telegram Demo",
+        at,
+        text:
+          action.source === "bot"
+            ? `DEMO · Bot memperbarui ${order.monitoringId}.`
+            : `DEMO · Pesan Telegram masuk untuk ${order.monitoringId}.`,
+        images: [],
+      };
+      return {
+        ...next,
+        orders: state.orders.map((o) =>
+          o === order
+            ? { ...o, telegramMessages: [...o.telegramMessages, incoming] }
+            : o,
+        ),
+        notice: "Pesan masuk disimulasikan lokal. Tidak ada koneksi Telegram.",
+      };
+    }
     if (
       action.type === "approval" ||
       action.type === "active" ||
@@ -489,11 +554,16 @@ export function reducePreview(state: State, action: Action): State {
       );
     }
   }
-  return {
-    ...next,
-    notice: log || next.notice,
-    audit: [{ text: log, at }, ...state.audit],
-  };
+  return reconcileChat(
+    state,
+    {
+      ...next,
+      notice: log || next.notice,
+      audit: [{ text: log, at }, ...state.audit],
+    },
+    action,
+    at,
+  );
 }
 // Explicit public projection. Private messages, revisions, images and employee records never leave this boundary.
 export function publicProjection(orders: WorkOrder[]): DemoOrder[] {
@@ -525,5 +595,9 @@ export function publicProjection(orders: WorkOrder[]): DemoOrder[] {
 }
 
 function publicAlias(id: string | null) {
-  return id ? (id.startsWith("hd_demo_") ? id : `hd_demo_${id.replace(/-/g, "").slice(0, 8)}`) : null;
+  return id
+    ? id.startsWith("hd_demo_")
+      ? id
+      : `hd_demo_${id.replace(/-/g, "").slice(0, 8)}`
+    : null;
 }

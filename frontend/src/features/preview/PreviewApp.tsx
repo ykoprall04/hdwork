@@ -17,6 +17,7 @@ import {
   ChartNoAxesCombined,
   Globe2,
   LayoutGrid,
+  MessagesSquare,
   LogOut,
   ShieldCheck,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import PreviewAuth, { field } from "./PreviewAuth";
 import { usePreview } from "./context";
 import PreviewOrderDetail from "./PreviewOrderDetail";
 import PreviewAdmin from "./PreviewAdmin";
+import MyWorkPage from "./MyWorkPage";
 
 export default function PreviewApp() {
   const { state, dispatch } = usePreview();
@@ -41,6 +43,7 @@ export default function PreviewApp() {
     return <Navigate to="/preview/login" replace />;
   const links = [
     { to: "/preview/jobs", label: "Pilih Pekerjaan", icon: LayoutGrid },
+    { to: "/preview/my-work", label: "Pekerjaan Saya", icon: MessagesSquare },
     { to: "/preview/transfers", label: "Transfer Order", icon: ArrowRightLeft },
     {
       to: "/preview/productivity",
@@ -129,6 +132,8 @@ export default function PreviewApp() {
         <main className="space-y-6 pb-10">
           <Routes>
             <Route path="jobs" element={<Jobs />} />
+            <Route path="my-work" element={<MyWorkPage />} />
+            <Route path="my-work/:monitoringId" element={<MyWorkPage />} />
             <Route path="work/:category" element={<WorkDashboard />} />
             <Route path="work/:category/:module" element={<WorkDashboard />} />
             <Route
