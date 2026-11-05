@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Empty, OrderOverview, Section } from "../operations/components";
 import { formatTimestamp } from "../operations/demo-data";
 import { usePreview } from "./context";
+import OrderOutcomeActions from "./OrderOutcomeActions";
 import { field } from "./PreviewAuth";
 import { publicProjection, type Action } from "./model";
 export default function PreviewOrderDetail() {
@@ -398,39 +399,23 @@ export default function PreviewOrderDetail() {
             title="Penyelesaian order"
             description="Tindakan terpisah dari pengiriman pesan."
           >
-            <div className="flex gap-3">
-              <Button
-                disabled={!mine || !active}
-                onClick={() =>
-                  setConfirm({
-                    text: "Tandai order DONE? Pesan dan riwayat tetap tersimpan.",
-                    action: {
-                      type: "finish",
-                      id: order.monitoringId,
-                      status: "DONE",
-                    },
-                  })
-                }
+            <OrderOutcomeActions orderId={order.monitoringId} />
+            {order.outcomes.map((outcome, index) => (
+              <p
+                key={index}
+                className="mt-3 text-xs leading-5 text-muted-foreground"
               >
-                DONE
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!mine || !active}
-                onClick={() =>
-                  setConfirm({
-                    text: "Tandai order GAGAL? Riwayat tetap tersimpan dan order dapat dibuka ulang.",
-                    action: {
-                      type: "finish",
-                      id: order.monitoringId,
-                      status: "GAGAL",
-                    },
-                  })
-                }
-              >
-                GAGAL
-              </Button>
-            </div>
+                {formatTimestamp(outcome.at)} · {outcome.name} ·{" "}
+                {outcome.status} · sesi {outcome.session}
+                {outcome.reason && ` · Alasan: ${outcome.reason}`}
+              </p>
+            ))}
+            {order.escalations.map((e) => (
+              <p key={e.id} className="mt-3 text-xs leading-5 text-primary">
+                ESKALASI · {formatTimestamp(e.at)} · {e.name} → {e.target}:{" "}
+                {e.description}
+              </p>
+            ))}
           </Section>
           <Section
             title="Kirim ke Teman"

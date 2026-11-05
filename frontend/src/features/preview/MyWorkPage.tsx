@@ -21,6 +21,8 @@ import { usePreview } from "./context";
 import { conversation, latestActivity, unreadCount } from "./chat-model";
 import type { WorkOrder } from "./model";
 import { field } from "./PreviewAuth";
+import OrderOutcomeActions from "./OrderOutcomeActions";
+import OrderEscalationBadge from "./OrderEscalationBadge";
 const categoryOptions = [
   "B2C/TIAL",
   "B2C/LOGIC",
@@ -38,13 +40,19 @@ export default function MyWorkPage() {
   const { monitoringId } = useParams();
   const userId = state.sessionId!;
   useEffect(() => {
-    const media=window.matchMedia("(max-width: 767px)");
-    const previous=document.body.style.overflow;
-    const apply=()=>{document.body.style.overflow=media.matches && monitoringId ? "hidden" : previous;};
+    const media = window.matchMedia("(max-width: 767px)");
+    const previous = document.body.style.overflow;
+    const apply = () => {
+      document.body.style.overflow =
+        media.matches && monitoringId ? "hidden" : previous;
+    };
     apply();
-    media.addEventListener("change",apply);
-    return ()=>{media.removeEventListener("change",apply);document.body.style.overflow=previous;};
-  },[monitoringId]);
+    media.addEventListener("change", apply);
+    return () => {
+      media.removeEventListener("change", apply);
+      document.body.style.overflow = previous;
+    };
+  }, [monitoringId]);
   const [tab, setTab] = useState<"active" | "history">("active");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -279,6 +287,7 @@ export default function MyWorkPage() {
                       {categoryLabel(o)}
                     </span>
                     <StatusBadge status={o.status} />
+                    <OrderEscalationBadge orderId={o.monitoringId} />
                   </div>
                   <p className="mt-2 truncate text-xs text-muted-foreground">
                     {latest?.text || "Lampiran gambar"}
@@ -428,8 +437,9 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <StatusBadge status={order.status} />
+          <OrderOutcomeActions orderId={order.monitoringId} />
           <Link
             className="text-xs text-primary"
             to={`/preview/orders/${order.monitoringId}`}
@@ -442,6 +452,20 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
         DEMO · setiap pesan web adalah reply ke {order.originalMessageId} · sesi{" "}
         {order.session}
       </div>
+      {order.escalations.some((e) => e.session === order.session) && (
+        <div
+          className="max-h-28 overflow-y-auto border-b bg-primary/5 px-4 py-2 text-xs leading-5 text-primary"
+          aria-label="Riwayat eskalasi"
+        >
+          {order.escalations
+            .filter((e) => e.session === order.session)
+            .map((e) => (
+              <p key={e.id}>
+                {formatTimestamp(e.at)} · {e.name} → {e.target}: {e.description}
+              </p>
+            ))}
+        </div>
+      )}
       <div
         aria-label={`Percakapan ${order.monitoringId}`}
         className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-muted/30 p-4 sm:p-6"
@@ -494,6 +518,11 @@ function ChatPane({ order, userId }: { order: WorkOrder; userId: string }) {
         })}
         <div ref={end} />
       </div>
+      {order.status === "GAGAL" && order.outcomes.at(-1)?.reason && (
+        <p className="border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+          Alasan GAGAL: {order.outcomes.at(-1)?.reason}
+        </p>
+      )}
       <form
         className="border-t bg-background p-3 sm:p-4"
         onSubmit={(e) => {

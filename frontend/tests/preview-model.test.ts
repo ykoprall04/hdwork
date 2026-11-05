@@ -166,7 +166,7 @@ test("reopen needs reason, creates sessions, retains messages and historical cre
   state = run(
     state,
     { type: "reopen", id, reason: "verify again" },
-    { type: "finish", id, status: "GAGAL" },
+    { type: "finish", id, status: "GAGAL", reason: "DEMO verifikasi gagal" },
   );
   const order = state.orders.find((o) => o.monitoringId === id)!;
   assert.equal(order.session, 2);

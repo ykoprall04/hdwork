@@ -31,6 +31,8 @@ import { usePreview } from "./context";
 import PreviewOrderDetail from "./PreviewOrderDetail";
 import PreviewAdmin from "./PreviewAdmin";
 import MyWorkPage from "./MyWorkPage";
+import OrderPickButton from "./OrderPickButton";
+import OrderEscalationBadge from "./OrderEscalationBadge";
 
 export default function PreviewApp() {
   const { state, dispatch } = usePreview();
@@ -375,6 +377,14 @@ function WorkDashboard() {
         <OrderTable
           orders={orders.slice((current - 1) * 8, current * 8)}
           basePath="/preview/orders"
+          statusDetail={(order) => (
+            <div className="mt-1">
+              <OrderEscalationBadge orderId={order.monitoringId} />
+            </div>
+          )}
+          identifierAction={(order) => (
+            <OrderPickButton orderId={order.monitoringId} />
+          )}
         />
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
           <span className="text-xs text-muted-foreground">

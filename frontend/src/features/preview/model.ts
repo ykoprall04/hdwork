@@ -31,6 +31,23 @@ export type Message = {
   session: number;
 };
 export type WorkOrder = DemoOrder & {
+  outcomes: {
+    status: "DONE" | "GAGAL";
+    by: string;
+    name: string;
+    at: string;
+    reason?: string;
+    session: number;
+  }[];
+  escalations: {
+    id: string;
+    target: string;
+    description: string;
+    by: string;
+    name: string;
+    at: string;
+    session: number;
+  }[];
   originalMessageId: string;
   telegramMessages: ChatEntry[];
   readBy: Record<string, string[]>;
@@ -70,14 +87,20 @@ export type Action =
   | { type: "resubmit"; id: string }
   | { type: "approval"; id: string; approved: boolean }
   | { type: "active"; id: string; active: boolean; kind?: string }
-  | { type: "claim"; id: string }
+  | {
+      type: "claim";
+      id: string;
+      expectedOwner?: string | null;
+      expectedStatus?: string;
+    }
   | { type: "transfer"; ids: string[]; to: string }
   | { type: "decide"; id: string; accept: boolean }
   | { type: "move"; ids: string[]; to: string }
   | { type: "message"; id: string; text: string; images: string[] }
   | { type: "edit"; id: string; messageId: string; text: string }
   | { type: "publish"; id: string; messageId: string }
-  | { type: "finish"; id: string; status: "DONE" | "GAGAL" }
+  | { type: "finish"; id: string; status: "DONE" | "GAGAL"; reason?: string }
+  | { type: "escalate"; id: string; target: string; description: string }
   | { type: "reopen"; id: string; reason: string }
   | { type: "template"; text: string }
   | { type: "notify" }
@@ -128,6 +151,8 @@ export function initialState(): State {
             : "TIAL"
           : null,
       sto: ["STO-DEMO-A", "STO-DEMO-B", "STO-DEMO-C"][i % 3],
+      outcomes: [],
+      escalations: [],
       originalMessageId: originalMessageId(o.monitoringId),
       telegramMessages: seedConversation(o.monitoringId, o.receivedAt),
       readBy: o.handlerAlias
@@ -428,14 +453,29 @@ export function reducePreview(state: State, action: Action): State {
     }
     if (
       "id" in action &&
-      ["claim", "message", "edit", "publish", "finish", "reopen"].includes(
-        action.type,
-      )
+      [
+        "claim",
+        "message",
+        "edit",
+        "publish",
+        "finish",
+        "reopen",
+        "escalate",
+      ].includes(action.type)
     ) {
       const order = state.orders.find((o) => o.monitoringId === action.id);
       if (!order) return fail("Order tidak ditemukan.");
       let changed = { ...order };
       if (action.type === "claim") {
+        if (
+          (action.expectedOwner !== undefined &&
+            action.expectedOwner !== order.handlerAlias) ||
+          (action.expectedStatus !== undefined &&
+            action.expectedStatus !== order.status)
+        )
+          return fail(
+            "Order berubah sejak dialog dibuka. Periksa status dan pemilik terbaru.",
+          );
         if (!["MENUNGGU", "PROSES CEK"].includes(order.status))
           return fail("Hanya order menunggu/proses yang dapat diambil.");
         changed = {
@@ -455,7 +495,11 @@ export function reducePreview(state: State, action: Action): State {
             : t,
         );
       }
-      if (action.type === "message" || action.type === "finish")
+      if (
+        action.type === "message" ||
+        action.type === "finish" ||
+        action.type === "escalate"
+      )
         if (order.handlerAlias !== user.id || order.status !== "PROSES CEK")
           return fail(
             "Tindakan ini membutuhkan pemilik aktif pada status PROSES CEK.",
@@ -515,18 +559,49 @@ export function reducePreview(state: State, action: Action): State {
         log =
           "Penandaan aman publik diubah secara simulasi. Gambar tetap privat.";
       }
+      if (action.type === "escalate") {
+        if (!action.target.trim() || !action.description.trim())
+          return fail("Tujuan dan keterangan eskalasi wajib diisi.");
+        changed.escalations = [
+          ...order.escalations,
+          {
+            id: id(),
+            target: action.target.trim(),
+            description: action.description.trim(),
+            by: user.id,
+            name: user.name,
+            at,
+            session: order.session,
+          },
+        ];
+        log = `${user.name} (${user.id}) melakukan ESKALASI ke ${action.target.trim()} pada sesi ${order.session}. Keterangan: ${action.description.trim()}`;
+      }
       if (action.type === "finish") {
+        if (action.status === "GAGAL" && !action.reason?.trim())
+          return fail("Alasan kegagalan wajib diisi.");
         changed = {
           ...order,
           status: action.status,
           finishedAt: at,
+          outcomes: [
+            ...order.outcomes,
+            {
+              status: action.status,
+              by: user.id,
+              name: user.name,
+              at,
+              reason:
+                action.status === "GAGAL" ? action.reason?.trim() : undefined,
+              session: order.session,
+            },
+          ],
           history: [...order.history, { status: action.status, at }],
           credits: [
             ...order.credits,
             { by: user.id, status: action.status, session: order.session, at },
           ],
         };
-        log = `${user.id} menetapkan ${action.status} pada sesi ${order.session}`;
+        log = `${user.name} (${user.id}) menetapkan ${action.status} pada sesi ${order.session}${action.status === "GAGAL" ? `. Alasan: ${action.reason!.trim()}` : ""}`;
         next.transfers = state.transfers.map((t) =>
           t.status === "PENDING" && t.ids.includes(order.monitoringId)
             ? { ...t, status: "CANCELLED" }
