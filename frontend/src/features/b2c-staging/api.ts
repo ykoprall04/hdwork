@@ -1,7 +1,7 @@
 import { API_URL } from '@/config/api';
 export type StagingModule = 'TIAL' | 'LOGIC_PSB' | 'LOGIC_MO';
-export type StagingOrder = { reference_verified: boolean; reference_syntax_valid: boolean; reference_complete: boolean; id: string; module: StagingModule; date: string; status: string; sto: string; scIn: string | null; inet: string | null };
-export type StagingResult = { source: 'MYSQL_STAGING'; readOnly: true; data: StagingOrder[]; page: number; hasMore: boolean };
+export type StagingOrder = { reference_verified: boolean; reference_syntax_valid: boolean; reference_complete: boolean; id: string; module: StagingModule; date: string; status: string; sto: string | null; scIn: string | null; inet: string | null };
+export type StagingResult = { source: 'MYSQL_STAGING'; readOnly: true; data: StagingOrder[]; page: number; hasMore: boolean; stoFilterAvailable?: boolean; identityScope?: string; dateBasis?: string };
 export type StagingFilters = { module: StagingModule; date: string; status: string; sto: string; q: string; page: number };
 // No PreviewProvider, reducer, localStorage persistence or operational mutations.
 export async function fetchStagingOrders(token: string, filters: StagingFilters, signal?: AbortSignal): Promise<StagingResult> {
