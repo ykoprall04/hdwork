@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppSidebar from "@/components/AppSidebar";
 import { AuthProvider } from "@/contexts/AuthContext";
+import B2cStagingPage from "@/pages/B2cStagingPage";
 import DashboardPage from "@/pages/DashboardPage";
 import AttendancePage from "@/pages/AttendancePage";
 import LoginPage from "@/pages/LoginPage";
@@ -31,6 +32,7 @@ export default function InternalRoutes() {
               <Route path="/workspace" element={<HdWorkspacePage />} />
               <Route path="/workspace/orders/:monitoringId" element={<HdWorkspacePage />} />
               <Route path="/workspace/:section" element={<HdWorkspacePage />} />
+              <Route path="/b2c/staging" element={<B2cStagingPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/attendance" element={<AttendancePage />} />
               <Route path="/orders" element={<OrdersPage />} />

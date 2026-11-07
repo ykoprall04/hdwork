@@ -30,6 +30,8 @@ app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/agents", agentRoutes);
 
+app.use("/api/b2c-staging/orders", require("./routes/b2c-staging.routes"));
+
 app.use("/api/orders", orderRoutes)
 
 app.use("/api/attendance", attendanceRoutes);
