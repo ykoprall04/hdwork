@@ -39,7 +39,7 @@ test('actual API-only dependency graph starts with mocks without Telegram/worker
   assert.deepEqual(f.events, []); await entry.startApiOnly(); assert.deepEqual(f.events, ['listen']);
   assert.ok(!f.loaded.some(name => name.endsWith('/src/app.js')));
   const mounts = f.app.stack.filter(([m, url]) => m === 'use' && typeof url === 'string').map(([, url]) => url);
-  assert.deepEqual(mounts, ['/api/auth', '/api/b2c-staging/orders']);
+  assert.deepEqual(mounts, ['/api/auth', '/api/b2c-staging/orders', '/api/b2c/orders']);
 });
 test('actual staging route rejects unauthenticated/bad tokens, HD and disabled Super Admin without DB', async () => {
   const f = fixture(); f.load(path.join(__dirname, '../src/api-only-app.js')).createApiOnlyApp();

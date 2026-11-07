@@ -25,7 +25,7 @@ export default function Shell() {
   const [remembered, setRemembered] = useState<typeof workspaces[number] | null>(() => { try { const saved = sessionStorage.getItem(`hdwork:operational:navigation:${user?.id}`); return workspaces.find(value => value === saved) || null; } catch { return null; } });
   function remember(value: typeof workspaces[number]) { setRemembered(value); try { sessionStorage.setItem(`hdwork:operational:navigation:${user?.id}`, value); } catch { /* local navigation only */ } }
   const fromPath = location.pathname.match(/^\/work\/([^/]+)/)?.[1];
-  const current = location.pathname === '/b2c/staging' ? 'B2C' : workspaces.find(value => value === fromPath);
+  const current = (location.pathname === '/b2c/staging' || /^\/orders\/[^/]+$/.test(location.pathname)) ? 'B2C' : workspaces.find(value => value === fromPath);
   const isJobs = location.pathname === '/jobs', isCheckIn = location.pathname === '/check-in';
   const category = isJobs || isCheckIn ? null : current || remembered;
   const links = [

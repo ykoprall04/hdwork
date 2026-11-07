@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
+const { list } = require('./b2c-orders.helpers.cjs');
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.HD_CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
   try {
@@ -17,6 +18,7 @@ const assert = require('node:assert/strict');
         return route.fulfill({ headers, json: { success: true, data: { token: 'dummy-operational-token', user: { id: 1, name: 'Dummy Admin', username: 'dummy', role: 'SUPER_ADMIN', city_id: null } } } });
       }
       if (url.pathname === '/api/auth/me') return route.fulfill({ status: meStatus, headers, json: { success: meStatus === 200, data: { id: 1, name: 'Dummy Admin', username: 'dummy', role: 'SUPER_ADMIN', city_id: null } } });
+      if (url.pathname === '/api/b2c/orders') return route.fulfill({headers,json:list(1,1)});
       if (url.pathname === '/api/b2c-staging/orders') return route.fulfill({ headers, json: { success: true, source: 'MYSQL_STAGING', readOnly: true, data: [{ id: 'stg_dummy', module: 'TIAL', date: '2026-11-07', status: 'MENUNGGU', sto: null, scIn: 'SC-SYNTHETIC', inet: 'INET-SYNTHETIC', reference_syntax_valid: true, reference_complete: true, reference_verified: false }], page: 1, hasMore: false } });
       return route.fulfill({ status: 404, headers, json: { message: 'Mock unsupported' } });
     });

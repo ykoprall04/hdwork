@@ -12,6 +12,7 @@ function createApiOnlyApp(env = process.env) {
   app.get('/health', (_req, res) => res.json({ ok: true, mode: 'api-only' }));
   app.use('/api/auth', require('./routes/auth.routes'));
   app.use('/api/b2c-staging/orders', createRateLimit({ limit: 120, windowMs: 60_000 }), require('./routes/b2c-staging.routes'));
+  app.use('/api/b2c/orders', createRateLimit({ limit: 120, windowMs: 60_000 }), require('./b2c-read/routes'));
   app.use((_req, res) => res.status(404).json({ success: false, message: 'Endpoint tidak tersedia pada API-only' }));
   app.use((error, _req, res, _next) => {
     const status = error.statusCode === 403 ? 403 : error.type === 'entity.too.large' ? 413 : error.type === 'entity.parse.failed' ? 400 : 500;
