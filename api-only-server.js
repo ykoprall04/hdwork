@@ -1,10 +1,11 @@
 // Dedicated HTTP entry point: no legacy app, Telegram, sockets, agent or worker.
 async function startApiOnly() {
+  // Validate before loading the app, database drivers/pools or HTTP listener.
+  const config = require('./src/config/api-only-startup').validateApiOnlyConfig();
   const http = require('node:http');
   const { createApiOnlyApp } = require('./src/api-only-app');
   const app = createApiOnlyApp();
-  const port = Number(process.env.PORT || 3090);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT tidak valid');
+  const port = config.port;
   const server = http.createServer(app);
   await new Promise((resolve, reject) => {
     server.once('error', reject);

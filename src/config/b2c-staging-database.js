@@ -1,15 +1,24 @@
+const { stagingOptions } = require('./api-only-startup');
 let pool;
-function getPool() {
-  const env = process.env;
-  if (env.B2C_STAGING_ENABLED !== 'true' || !['HOST', 'PORT', 'USER', 'PASSWORD'].every(key => env[`B2C_STAGING_DB_${key}`])) {
-    throw Object.assign(new Error('Konfigurasi database staging belum lengkap'), { statusCode: 503 });
+// Do not expose the raw pool/query API to staging consumers.
+async function execute(sql, values) {
+  const options = stagingOptions(process.env);
+  if (typeof sql !== 'string' || !/^\s*SELECT\b/i.test(sql) || !/FROM\s+`hd_b2c`\.`sheet_import_test`\s+WHERE\b/i.test(sql)) {
+    throw Object.assign(new Error('Query staging tidak diizinkan'), { statusCode: 503 });
   }
-  if (!pool) pool = require('mysql2/promise').createPool({
-    host: env.B2C_STAGING_DB_HOST, port: Number(env.B2C_STAGING_DB_PORT),
-    user: env.B2C_STAGING_DB_USER, password: env.B2C_STAGING_DB_PASSWORD,
-    database: 'hd_b2c', connectionLimit: 2, connectTimeout: 5000,
-    dateStrings: true, multipleStatements: false,
-  });
-  return pool;
+  if (!pool) pool = require('mysql2/promise').createPool(options);
+  const connection = await pool.getConnection();
+  try {
+    await connection.query('START TRANSACTION READ ONLY');
+    return await connection.execute(sql, values);
+  } finally {
+    try { await connection.rollback(); } finally { connection.release(); }
+  }
+}
+const reader = Object.freeze({ execute });
+function getPool() {
+  // Disabled/malformed configuration must not load the driver or make a pool.
+  stagingOptions(process.env);
+  return reader;
 }
 module.exports = { getPool };

@@ -5,7 +5,7 @@ const { corsOptions } = require('../src/config/api-cors');
 const { browserResult } = require('../src/adapters/staging-browser-dto');
 function fixture() {
   const loaded = [], events = [], cache = new Map();
-  const env = { PORT: '4321', FRONTEND_ORIGINS: 'https://hdwork.yoloo.space', TELEGRAM_BOT_TOKEN: 'dummy', TELEGRAM_POLLING_ENABLED: 'true' };
+  const env = { DB_NAME: 'hdwork2', DB_HOST: '127.0.0.1', DB_USER: 'dummy_main', DB_PASSWORD: 'dummy_only', JWT_SECRET: 'dummy_jwt', PORT: '4321', FRONTEND_ORIGINS: 'https://hdwork.yoloo.space', TELEGRAM_BOT_TOKEN: 'dummy', TELEGRAM_POLLING_ENABLED: 'true' };
   let app;
   function router() {
     const r = { stack: [], disable() {} };
@@ -16,7 +16,7 @@ function fixture() {
   const external = {
     express, cors: () => () => {}, bcrypt: {},
     jsonwebtoken: { verify(token) { if (token === 'dummy-super') return { role: 'SUPER_ADMIN' }; if (token === 'dummy-hd') return { role: 'HD' }; throw Error('bad'); } },
-    'mysql2/promise': { createPool() { return { query() { throw Error('No DB access allowed'); } }; } },
+    'mysql2/promise': { createPool(options) { assert.equal(options.database, 'hdwork2'); assert.equal(options.user, 'dummy_main'); return { query() { throw Error('No DB access allowed'); } }; } },
     'node:http': { createServer() { return { once() {}, listen(port, host, ready) { assert.equal(port, 4321); assert.equal(host, '127.0.0.1'); events.push('listen'); ready(); } }; } },
   };
   function load(file) {
