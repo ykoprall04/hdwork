@@ -36,6 +36,25 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           row = state.inbox.find(r => r.id === p.at(-2) && r.bot_id === p.at(-1));
           if (sql.includes('processed_at')) Object.assign(row,{state:p[0],attempts:row.attempts+1});
           else Object.assign(row,{attempts:p[0],state:p[1],due_ms:p[2],last_error_code:p[3]});
+        } else if (sql.startsWith('INSERT INTO hd2_daily_keys')) {
+          if (!state.keys.some(r=>r.bot_id===p[0] && r.module===p[1] && r.business_day===p[2] && r.dedupe_key===p[3])) state.keys.push({bot_id:p[0],module:p[1],business_day:p[2],dedupe_key:p[3],order_id:null});
+        } else if (sql.startsWith('SELECT order_id FROM hd2_daily_keys')) {
+          rows=state.keys.filter(r=>r.bot_id===p[0] && r.module===p[1] && r.business_day===p[2] && r.dedupe_key===p[3]);
+        } else if (sql.startsWith('UPDATE hd2_daily_keys')) {
+          row=state.keys.find(r=>r.bot_id===p[1] && r.module===p[2] && r.business_day===p[3] && r.dedupe_key===p[4]); row.order_id=p[0];
+        } else if (sql.startsWith('SELECT * FROM hd2_orders')) {
+          rows=state.orders.filter(r=>r.bot_id===p[0] && r.chat_id===p[1] && r.message_id===p[2]);
+        } else if (sql.startsWith('INSERT INTO hd2_orders')) {
+          if (state.orders.some(r=>r.bot_id===p[1] && r.chat_id===p[4] && r.message_id===p[5])) throw Error('Unique original message');
+          const names=['id','bot_id','module','business_day','chat_id','message_id','thread_id','sc_in','inet','status','duplicate_of'];
+          state.orders.push(Object.fromEntries(names.map((name,i)=>[name,p[i]])));
+        } else if (sql.startsWith('UPDATE hd2_orders')) {
+          row=state.orders.find(r=>r.id===p[4] && r.bot_id===p[5]);
+          Object.assign(row,{status:p[0],last_actor_id:p[1]});
+          if (p[0]==='IN_PROGRESS') row.started_at='mock-processing-time'; else row.finished_at='mock-processing-time';
+        } else if (sql.startsWith('INSERT INTO hd2_audit')) {
+          const names=['id','inbox_id','order_id','action','actor_id','from_status','to_status','detail'];
+          state.audit.push(Object.fromEntries(names.map((name,i)=>[name,p[i]])));
         } else throw Error('Unrecognized SQL contract');
         return [clone(rows)];
       }
