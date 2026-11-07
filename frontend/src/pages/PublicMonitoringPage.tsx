@@ -64,7 +64,7 @@ export default function PublicMonitoringPage() {
     <div className="min-h-screen bg-muted/40 text-foreground">
       <header className="border-b bg-background">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-8">
-          <Link to="/monitoring" className="flex items-center gap-3">
+          <Link to="/preview/monitoring" className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-xl bg-primary text-sm font-bold text-primary-foreground">
               HD
             </span>
@@ -263,7 +263,7 @@ export default function PublicMonitoringPage() {
                         <td className="p-3">
                           <Link
                             className="font-medium text-primary hover:underline"
-                            to={`/monitoring/${o.monitoringId}`}
+                            to={`/preview/monitoring/${o.monitoringId}`}
                           >
                             {o.monitoringId}
                           </Link>
@@ -347,7 +347,7 @@ export default function PublicMonitoringPage() {
                 description="Hanya field yang diizinkan pada proyeksi demo."
               >
                 <Link
-                  to="/monitoring"
+                  to="/preview/monitoring"
                   className="mb-4 inline-flex items-center gap-2 text-xs text-primary"
                 >
                   <X className="size-4" />

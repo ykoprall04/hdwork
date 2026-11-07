@@ -1,0 +1,4 @@
+import { Metric, Section } from '../operations/components';
+export default function B2cSummary({ metrics, summaries }: { metrics: { label: string; value: number | string; detail: string }[]; summaries: { title: string; cells: { label: string; value: number | string }[] }[] }) {
+  return <><div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">{metrics.map(metric => <Metric key={metric.label} {...metric} />)}</div><div className="grid gap-5 lg:grid-cols-2">{summaries.map(summary => <Section key={summary.title} title={summary.title} description="Workflow dan data tidak digabung."><div className="grid grid-cols-3 gap-3">{summary.cells.map(cell => <div key={cell.label} className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">{cell.label}</p><p className={`mt-2 font-semibold ${typeof cell.value === 'number' ? 'text-2xl' : 'text-xs leading-5 text-muted-foreground'}`}>{cell.value}</p></div>)}</div></Section>)}</div></>;
+}

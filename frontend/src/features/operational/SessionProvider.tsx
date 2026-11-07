@@ -13,7 +13,8 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
     try { localStorage.removeItem(AUTH_KEY); } catch { /* memory-only session */ }
     setToken(null); setUser(null); setStatus('anonymous'); setError('');
   }
-  function login(next: string) {
+  function login(next: string, newUser: User) {
+    try { sessionStorage.removeItem(`hdwork:operational:checkin:${newUser.id}`); } catch { /* local preference */ }
     try { localStorage.setItem(AUTH_KEY, next); } catch { /* memory-only session */ }
     setUser(null); setStatus('loading'); setError(''); setToken(next); setRevision(n => n + 1);
   }

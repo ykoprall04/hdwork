@@ -1,3 +1,5 @@
+import WorkspaceHeader from "../workspace-ui/WorkspaceHeader";
+import JobSelection from "../workspace-ui/JobSelection";
 import WorkDashboard from "./CategoryWorkspace";
 import {
   Link,
@@ -16,21 +18,16 @@ import {
   useLayoutEffect,
 } from "react";
 import {
-  ArrowRight,
   ArrowRightLeft,
-  BriefcaseBusiness,
   ChartNoAxesCombined,
   Globe2,
   LayoutDashboard,
   ListTodo,
   MessagesSquare,
-  LogOut,
   ShieldCheck,
 } from "lucide-react";
-import ThemeToggle from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { categories } from "../operations/demo-data";
 import { Empty, Section } from "../operations/components";
 import PreviewAuth, { field } from "./PreviewAuth";
 import { usePreview } from "./context";
@@ -134,40 +131,9 @@ function PreviewWorkspaceLayout({ user }: { user: DemoUser }) {
 
   return (
     <div className="min-h-screen bg-muted/40">
-      <header
-        ref={header}
-        data-preview-header
-        className="sticky top-0 z-50 border-b bg-background"
-      >
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-8">
-          <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-5">
-            <Link
-              to="/preview/jobs"
-              className="flex shrink-0 items-center gap-3"
-            >
-              <span className="grid size-10 place-items-center rounded-xl bg-primary text-sm font-bold text-primary-foreground">
-                HD
-              </span>
-              <span className="text-sm font-semibold">
-                HD Work 2.0
-                <span className="hidden text-xs font-normal text-muted-foreground sm:block">
-                  Interactive workspace · DEMO
-                </span>
-              </span>
-            </Link>
-            {!isCheckIn && (
-              <WorkspacePicker
-                category={category}
-                onSelect={(value) => navigate(`/preview/work/${value}`)}
-                onAll={() => navigate("/preview/jobs")}
-              />
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              {user.name} · {user.role}
-            </span>
-            {user.role === "HD" &&
+      <WorkspaceHeader headerRef={header} demo home="/preview/jobs" subtitle="Interactive workspace · DEMO" user={user}
+        picker={!isCheckIn && <WorkspacePicker category={category} onSelect={(value) => navigate(`/preview/work/${value}`)} onAll={() => navigate("/preview/jobs")} />}
+        statusControl={user.role === "HD" &&
               location.pathname !== "/preview/check-in" && (
                 <label className="text-[11px] text-muted-foreground">
                   <span className="hidden sm:inline">Status kerja</span>
@@ -188,20 +154,7 @@ function PreviewWorkspaceLayout({ user }: { user: DemoUser }) {
                   </select>
                 </label>
               )}
-            <ThemeToggle compact />
-            <Button
-              variant="outline"
-              onClick={() => {
-                dispatch({ type: "logout" });
-                navigate("/preview/login");
-              }}
-            >
-              <LogOut />
-              Logout
-            </Button>
-          </div>
-        </div>
-      </header>
+        onLogout={() => { dispatch({ type: "logout" }); navigate("/preview/login"); }} />
       <div className="mx-auto max-w-[1600px] px-4 sm:px-8">
         {showOperationalNav && (
           <nav
@@ -311,52 +264,8 @@ function PreviewWorkspaceLayout({ user }: { user: DemoUser }) {
     </div>
   );
 }
-function Jobs() {
-  return (
-    <>
-      <div className="py-5">
-        <p className="text-xs font-semibold tracking-[.18em] text-primary">
-          YOUR NEXT WORKSPACE
-        </p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">
-          Apa yang Anda kerjakan hari ini?
-        </h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Seluruh petugas HD dapat mengakses empat kategori. Pilih ruang kerja
-          untuk mulai.
-        </p>
-      </div>
-      <div className="grid gap-5 sm:grid-cols-2">
-        {categories.map((category, index) => (
-          <Link
-            key={category}
-            to={`/preview/work/${category}`}
-            className="group rounded-2xl border bg-card p-7 shadow-sm transition hover:border-primary/50 hover:shadow-md"
-          >
-            <div className="flex justify-between">
-              <span className="grid size-12 place-items-center rounded-xl bg-primary/10 text-primary">
-                <BriefcaseBusiness className="size-6" />
-              </span>
-              <span className="text-xs text-muted-foreground">
-                0{index + 1} / WORKSPACE
-              </span>
-            </div>
-            <h2 className="mt-7 text-2xl font-semibold">HD {category}</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {category === "B2C"
-                ? "Dua alur pengecekan: TIAL dan LOGIC."
-                : "Dashboard, antrean, dan kolaborasi pengecekan."}
-            </p>
-            <span className="mt-7 inline-flex items-center gap-2 text-sm font-medium text-primary">
-              Buka workspace
-              <ArrowRight className="size-4 transition group-hover:translate-x-1" />
-            </span>
-          </Link>
-        ))}
-      </div>
-    </>
-  );
-}
+function Jobs() { return <JobSelection />; }
+
 function Transfers() {
   const { state, dispatch } = usePreview();
   const [ids, setIds] = useState<string[]>([]);

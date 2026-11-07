@@ -1,3 +1,4 @@
+import B2cSummary from "../workspace-ui/B2cSummary";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -68,54 +69,10 @@ export default function CategoryWorkspace() {
         </p>
       </header>
       {dashboard ? (
-        <>
-          <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-6">
-            <Metric
-              label="Total order"
-              value={scope.length}
-              detail="B2C gabungan"
-            />
-            {statuses.map((s) => (
-              <Metric
-                key={s}
-                label={s}
-                value={scope.filter((o) => o.status === s).length}
-                detail="Status terakhir"
-              />
-            ))}
-          </div>
-          <div className="grid gap-5 lg:grid-cols-2">
-            {["TIAL", "LOGIC"].map((value) => {
-              const orders = scope.filter((o) => o.module === value);
-              return (
-                <Section
-                  key={value}
-                  title={`Ringkasan ${value}`}
-                  description="Workflow dan data tidak digabung."
-                >
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      ["Total", orders.length],
-                      [
-                        "Menunggu",
-                        orders.filter((o) => o.status === "MENUNGGU").length,
-                      ],
-                      [
-                        "Proses",
-                        orders.filter((o) => o.status === "PROSES CEK").length,
-                      ],
-                    ].map(([label, count]) => (
-                      <div key={label} className="rounded-lg border p-4">
-                        <p className="text-xs text-muted-foreground">{label}</p>
-                        <p className="mt-2 text-2xl font-semibold">{count}</p>
-                      </div>
-                    ))}
-                  </div>
-                </Section>
-              );
-            })}
-          </div>
-        </>
+        <B2cSummary metrics={[{ label: "Total order", value: scope.length, detail: "B2C gabungan" }, ...statuses.map(label => ({ label, value: scope.filter(order => order.status === label).length, detail: "Status terakhir" }))]} summaries={["TIAL", "LOGIC"].map(value => {
+          const orders = scope.filter(order => order.module === value);
+          return { title: `Ringkasan ${value}`, cells: [{ label: "Total", value: orders.length }, { label: "Menunggu", value: orders.filter(order => order.status === "MENUNGGU").length }, { label: "Proses", value: orders.filter(order => order.status === "PROSES CEK").length }] };
+        })} />
       ) : (
         <>
           <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-primary">

@@ -50,7 +50,7 @@ export function workspaceMenu(
       label: "Produktivitas HD",
       icon: "productivity" as const,
     },
-    { to: "/monitoring", label: "Monitoring Publik", icon: "public" as const },
+    { to: "/preview/monitoring", label: "Monitoring Publik", icon: "public" as const },
     ...(["ADMIN", "SUPER_ADMIN"].includes(role)
       ? [
           {

@@ -1,7 +1,7 @@
+import AuthLayout from "../workspace-ui/AuthLayout";
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, ShieldCheck, UserRoundPlus } from "lucide-react";
-import ThemeToggle from "@/components/ThemeToggle";
+import { ArrowRight, UserRoundPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Section } from "../operations/components";
 import { usePreview } from "./context";
@@ -47,49 +47,13 @@ export default function PreviewAuth() {
       navigate(loginDestination(state, account));
   }
   return (
-    <div className="min-h-screen bg-muted/40 p-4 sm:p-8">
-      <header className="mx-auto flex max-w-6xl items-center justify-between">
-        <Link className="font-semibold" to="/monitoring">
-          HD Work <span className="text-primary">2.0</span>
-        </Link>
-        <ThemeToggle compact />
-      </header>
-      <main className="mx-auto grid max-w-6xl items-center gap-10 py-10 lg:min-h-[80vh] lg:grid-cols-2">
-        <div>
-          <span className="text-xs font-semibold tracking-[.2em] text-primary">
-            OPERATIONS, REIMAGINED.
-          </span>
-          <h1 className="mt-5 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-            Satu workspace.
-            <br />
-            Setiap pekerjaan
-            <br />
-            <span className="text-primary">lebih terarah.</span>
-          </h1>
-          <p className="mt-6 max-w-md text-sm leading-7 text-muted-foreground">
-            Pilih pekerjaan, kendalikan antrean, dan kolaborasikan pengecekan
-            dalam satu ruang kerja modern.
-          </p>
-          <div className="mt-8 flex items-start gap-3 rounded-xl border bg-card p-5">
-            <ShieldCheck className="size-6 shrink-0 text-primary" />
-            <p className="text-xs leading-6 text-muted-foreground">
-              <strong className="block text-foreground">
+    <AuthLayout home="/preview/monitoring" linkLabel="Monitoring tanpa login" notice={<>               <strong className="block text-foreground">
                 PREVIEW FRONTEND · DATA DEMO
               </strong>
               Tidak menggunakan kredensial nyata. Password hanya validasi form
               dan tidak disimpan. Status kerja dan notifikasi demo tersimpan
               lokal per akun; lampiran gambar hanya tersedia pada sesi upload.
-              Telegram belum diverifikasi atau terhubung.
-            </p>
-          </div>
-          <Link
-            to="/monitoring"
-            className="mt-6 inline-flex items-center gap-2 text-sm text-primary"
-          >
-            Monitoring tanpa login
-            <ArrowRight className="size-4" />
-          </Link>
-        </div>
+              Telegram belum diverifikasi atau terhubung. </>}>
         <Section
           title={register ? "Registrasi petugas HD" : "Selamat datang kembali"}
           description={
@@ -229,11 +193,10 @@ export default function PreviewAuth() {
               {register ? "Sudah punya akun? Login" : "Daftar sebagai HD"}
             </Link>
             <Link to="/login" className="text-muted-foreground hover:underline">
-              Login operasional lama
+              Login operasional
             </Link>
           </div>
         </Section>
-      </main>
-    </div>
+    </AuthLayout>
   );
 }

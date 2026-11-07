@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import { Check, ChevronDown, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { categories } from "../operations/demo-data";
+import { workspaces as categories } from "../operational/workspaces";
 import type { WorkspaceCategory } from "./workspace-navigation";
 export default function WorkspacePicker({
   category,
