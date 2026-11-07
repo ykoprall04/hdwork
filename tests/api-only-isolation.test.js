@@ -43,7 +43,7 @@ test('actual API-only dependency graph starts with mocks without Telegram/worker
 });
 test('actual staging route rejects unauthenticated/bad tokens, HD and disabled Super Admin without DB', async () => {
   const f = fixture(); f.load(path.join(__dirname, '../src/api-only-app.js')).createApiOnlyApp();
-  const mounted = f.app.stack.find(([, url]) => url === '/api/b2c-staging/orders')[2];
+  const mounted = f.app.stack.find(([, url]) => url === '/api/b2c-staging/orders')[3];
   const auth = mounted.stack.find(([method]) => method === 'use')[1];
   const list = mounted.stack.find(([method]) => method === 'get')[2];
   for (const [token, expected] of [[null, 401], ['bad', 401], ['dummy-hd', 403], ['dummy-super', 503]]) {
@@ -64,4 +64,19 @@ test('browser DTO strips internal Telegram references and any unexpected secrets
   const result = browserResult({ data: [{ id: 'dummy', module: 'TIAL', reference_verified: true, reference_syntax_valid: true, reference_complete: true, telegram_chat_id: 'private', telegram_message_id: 'private', telegram_thread_id: 'private', source_bot: 'private', password: 'private', token: 'private', payload: {} }], page: 1, hasMore: false });
   assert.equal(result.data[0].reference_verified, false);
   for (const key of ['telegram_chat_id', 'telegram_message_id', 'telegram_thread_id', 'source_bot', 'password', 'token', 'payload']) assert.equal(Object.hasOwn(result.data[0], key), false);
+});
+
+
+test('API-only mounts login and staging limiters before handlers with expected budgets', () => {
+  const f = fixture(); f.load(path.join(__dirname, '../src/api-only-app.js')).createApiOnlyApp();
+  const login = f.app.stack.find(([method, url]) => method === 'post' && url === '/api/auth/login')[2];
+  const staging = f.app.stack.find(([method, url]) => method === 'use' && url === '/api/b2c-staging/orders')[2];
+  for (const [limiter, budget] of [[login, 10], [staging, 120]]) {
+    for (let i = 0; i <= budget; i++) {
+      let code = 200;
+      const res = { set() {}, status(value) { code = value; return this; }, json() {} };
+      limiter({ socket: { remoteAddress: 'dummy' } }, res, () => {});
+      assert.equal(code, i < budget ? 200 : 429);
+    }
+  }
 });

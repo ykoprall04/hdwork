@@ -1,0 +1,65 @@
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+(async () => {
+  const browser = await chromium.launch({ executablePath: process.env.HD_CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const page = await context.newPage(); page.setDefaultTimeout(10000);
+    const calls = [], errors = [];
+    let meStatus = 200;
+    page.on('pageerror', error => errors.push(error.message));
+    await context.route('**/api/**', async route => {
+      const url = new URL(route.request().url()); calls.push(url.pathname);
+      const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' };
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+      if (url.pathname === '/api/auth/login') {
+        assert.deepEqual(route.request().postDataJSON(), { username: 'dummy', password: 'dummy-only' });
+        return route.fulfill({ headers, json: { success: true, data: { token: 'dummy-operational-token', user: { id: 1, name: 'Dummy Admin', username: 'dummy', role: 'SUPER_ADMIN', city_id: null } } } });
+      }
+      if (url.pathname === '/api/auth/me') return route.fulfill({ status: meStatus, headers, json: { success: meStatus === 200, data: { id: 1, name: 'Dummy Admin', username: 'dummy', role: 'SUPER_ADMIN', city_id: null } } });
+      if (url.pathname === '/api/b2c-staging/orders') return route.fulfill({ headers, json: { success: true, source: 'MYSQL_STAGING', readOnly: true, data: [{ id: 'stg_dummy', module: 'TIAL', date: '2026-11-07', status: 'MENUNGGU', sto: null, scIn: 'SC-SYNTHETIC', inet: 'INET-SYNTHETIC', reference_syntax_valid: true, reference_complete: true, reference_verified: false }], page: 1, hasMore: false } });
+      return route.fulfill({ status: 404, headers, json: { message: 'Mock unsupported' } });
+    });
+    const base = process.env.HD_PREVIEW_URL || 'http://127.0.0.1:5173';
+    await page.goto(base + '/login');
+    await page.getByLabel('Username', { exact: true }).fill('dummy');
+    await page.getByLabel('Password', { exact: true }).fill('dummy-only');
+    await page.getByRole('button', { name: 'Masuk workspace' }).click();
+    await page.getByRole('heading', { name: 'Pilih pekerjaan Anda' }).waitFor();
+    assert.ok(calls.includes('/api/auth/me'));
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('hdwork:workspace') || key.startsWith('hdwork:session'))), false);
+    await page.reload(); await page.getByRole('heading', { name: 'Pilih pekerjaan Anda' }).waitFor();
+    await page.screenshot({ path: '/tmp/hdwork-operational-desktop.png', fullPage: true });
+    await page.getByRole('link', { name: /HD B2C.*Buka workspace/ }).click();
+    await page.getByRole('link', { name: 'Buka order TIAL' }).click();
+    await page.getByRole('button', { name: 'Baca staging' }).click();
+    await page.getByRole('cell', { name: 'SC-SYNTHETIC', exact: true }).waitFor();
+    await page.goto(base + '/my-work'); await page.getByRole('heading', { name: 'Pekerjaan Saya' }).waitFor();
+    assert.ok((await page.locator('main').innerText()).includes('BELUM TERSEDIA'));
+    await page.setViewportSize({ width: 390, height: 844 }); await page.goto(base + '/jobs');
+    await page.getByRole('heading', { name: 'Pilih pekerjaan Anda' }).waitFor();
+    assert.equal(await page.getByRole('navigation', { name: 'Navigasi operasional mobile' }).isVisible(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: '/tmp/hdwork-operational-mobile.png', fullPage: true });
+    await page.getByRole('button', { name: 'Gunakan mode malam' }).click();
+    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dark')), true);
+    await page.screenshot({ path: '/tmp/hdwork-operational-mobile-dark.png', fullPage: true });
+    await page.getByRole('button', { name: /Logout/ }).click(); await page.waitForURL('**/login');
+    assert.equal(calls.some(url => /terminal|logout|telegram|claim|complete/.test(url)), false);
+    await page.goto(base + '/jobs'); await page.waitForURL('**/login');
+    await page.evaluate(() => localStorage.setItem('hdwork:operational:auth:v1', 'dummy'));
+    meStatus = 503; await page.goto(base + '/jobs'); await page.getByRole('button', { name: 'Coba verifikasi kembali' }).waitFor();
+    assert.equal(await page.getByRole('heading', { name: 'Pilih pekerjaan Anda' }).count(), 0);
+    meStatus = 403; await page.getByRole('button', { name: 'Coba verifikasi kembali' }).click(); await page.waitForURL('**/login');
+    const beforeDemo = calls.length;
+    await page.goto(base + '/preview/login'); await page.getByRole('heading', { name: 'Selamat datang kembali' }).waitFor();
+    assert.ok((await page.locator('body').innerText()).includes('PREVIEW FRONTEND · DATA DEMO'));
+    assert.equal(calls.length, beforeDemo);
+    await page.goto(base + '/monitoring'); await page.waitForURL('**/preview/monitoring');
+    assert.equal(calls.length, beforeDemo);
+    await page.goto(base + '/legacy/login'); await page.getByRole('heading', { name: 'LOGIN', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, '/legacy/login');
+    assert.deepEqual(errors, []);
+    console.log('PASS: operational API login/me, refresh session, TIAL, placeholders, mobile, safe logout, revoked/error guard, demo isolation and monitoring redirect (all API mocked).');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

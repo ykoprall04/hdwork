@@ -1,5 +1,4 @@
 import {
-  createContext,
   useContext,
   useEffect,
   useState,
@@ -9,25 +8,7 @@ import { useNavigate } from "react-router-dom"
 import { clearTerminalRecovery, TERMINAL_LOGOUT_EVENT } from "@/lib/terminal-session"
 import { API_URL } from "@/config/api"
 
-type User = {
-  id: number
-  name: string
-  username: string
-  role: string
-  city_id: number | null
-}
-
-type AuthContextType = {
-  user: User | null
-  token: string | null
-  login: (token: string, user: User) => void
-  logout: () => void
-}
-
-const AuthContext =
-  createContext<AuthContextType | undefined>(
-    undefined,
-  )
+import { AuthContext, type User } from "./auth-context";
 
 function getTokenExpiry(token: string) {
   try {

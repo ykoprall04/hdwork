@@ -8,6 +8,15 @@ async function list(req, res) {
   if (req.user?.role !== 'SUPER_ADMIN') return res.status(403).json({ success: false, message: 'Akses staging terbatas sampai pemetaan hak akses disetujui' });
   if (process.env.B2C_STAGING_ENABLED !== 'true') return res.status(503).json({ success: false, message: 'Integrasi staging belum diaktifkan' });
   try {
+    const id = req.user?.id;
+    if (!(typeof id === 'number' && Number.isSafeInteger(id) && id > 0) && !(typeof id === 'string' && /^[1-9]\d{0,19}$/.test(id))) {
+      return res.status(403).json({ success: false, message: 'Akses staging tidak diizinkan' });
+    }
+    const actor = await require('../repositories/auth.repository').findAccessById(id);
+    if (!actor || actor.role !== 'SUPER_ADMIN' || ![1, true].includes(actor.is_active)) {
+      return res.status(403).json({ success: false, message: 'Akses staging tidak diizinkan' });
+    }
+    if (!require('../middlewares/staging-account-limit').allow(id, res)) return;
     const filter = validateQuery(req.query);
     if (filter.module === 'TIAL') {
       const read = createTialReader({
@@ -28,7 +37,7 @@ async function list(req, res) {
     const read = createStagingReader({ execute: (sql, values) => pool.execute(sql, values), columns, jsonFields, telegramGroups, identityKey: process.env.B2C_STAGING_IDENTITY_KEY });
     return res.json({ success: true, ...browserResult(await read(req.query)) });
   } catch (error) {
-    return res.status(error.statusCode || 503).json({ success: false, message: error.statusCode ? error.message : 'Staging belum siap atau kontrak schema tidak sesuai' });
+    return res.status(error.statusCode === 400 ? 400 : 503).json({ success: false, message: error.statusCode === 400 ? 'Filter staging tidak valid' : 'Layanan staging sementara tidak tersedia' });
   }
 }
 module.exports = { list };
