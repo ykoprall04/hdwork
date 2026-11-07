@@ -1,6 +1,11 @@
+import { createInFlightRequests } from '../../lib/in-flight.ts';
+const pendingSession = createInFlightRequests();
 export type OperationalUser = { id: number; name: string; username: string; role: string; city_id: number | null };
 export const AUTH_KEY = 'hdwork:operational:auth:v1';
-export async function validateSession(token: string, base: string, request: typeof fetch, signal?: AbortSignal): Promise<OperationalUser> {
+export function validateSession(token: string, base: string, request: typeof fetch, signal?: AbortSignal): Promise<OperationalUser> {
+  return pendingSession(`${base}\n${token}`, sharedSignal => readSession(token, base, request, sharedSignal), signal);
+}
+async function readSession(token: string, base: string, request: typeof fetch, signal?: AbortSignal): Promise<OperationalUser> {
   const response = await request(`${base}/auth/me`, { signal, headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
   if (!response.ok) throw Object.assign(new Error(response.status === 401 || response.status === 403 ? 'Sesi tidak valid atau akun tidak aktif' : 'Sesi belum dapat diverifikasi. Coba kembali.'), { status: response.status });
   const result = await response.json();

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AuthContext, type User } from '@/contexts/auth-context';
 import { API_URL } from '@/config/api';
 import { AUTH_KEY, validateSession } from './session';
@@ -9,22 +9,22 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState(token ? 'loading' : 'anonymous');
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
-  function logout() {
+  const logout = useCallback(() => {
     try { localStorage.removeItem(AUTH_KEY); } catch { /* memory-only session */ }
     setToken(null); setUser(null); setStatus('anonymous'); setError('');
-  }
-  function login(next: string, newUser: User) {
+  }, []);
+  const login = useCallback(function login(next: string, newUser: User) {
     try { sessionStorage.removeItem(`hdwork:operational:checkin:${newUser.id}`); } catch { /* local preference */ }
     try { localStorage.setItem(AUTH_KEY, next); } catch { /* memory-only session */ }
     setUser(null); setStatus('loading'); setError(''); setToken(next); setRevision(n => n + 1);
-  }
+  }, []);
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
     async function verify() {
       try {
         const profile = await validateSession(token!, API_URL, fetch, controller.signal);
-        if (!controller.signal.aborted) { setUser(profile); setStatus('authenticated'); setError(''); }
+        if (!controller.signal.aborted) { setUser(previous => previous && ['id', 'name', 'username', 'role', 'city_id'].every(key => previous[key as keyof User] === profile[key as keyof User]) ? previous : profile); setStatus('authenticated'); setError(''); }
       } catch (cause) {
         if (controller.signal.aborted) return;
         setUser(null);
@@ -34,6 +34,9 @@ export default function SessionProvider({ children }: { children: ReactNode }) {
     }
     void verify();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [token, revision]);
-  return <AuthContext.Provider value={{ token, user, login, logout }}><SessionState.Provider value={{ status, error, retry: () => { setStatus('loading'); setRevision(n => n + 1); } }}>{children}</SessionState.Provider></AuthContext.Provider>;
+  }, [token, revision, logout]);
+  const retry = useCallback(() => { setStatus('loading'); setRevision(n => n + 1); }, []);
+  const authValue = useMemo(() => ({ token, user, login, logout }), [token, user, login, logout]);
+  const sessionValue = useMemo(() => ({ status, error, retry }), [status, error, retry]);
+  return <AuthContext.Provider value={authValue}><SessionState.Provider value={sessionValue}>{children}</SessionState.Provider></AuthContext.Provider>;
 }

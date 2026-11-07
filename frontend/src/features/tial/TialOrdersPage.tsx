@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import TialTable from './TialTable';
+import { reconcileTial } from './reconcile';
 import { Empty, Metric, Section } from '../operations/components';
 import { useLocalCheckIn } from '../operational/local-status';
 import { fetchStagingOrders, type StagingResult } from '../b2c-staging/api';
@@ -15,32 +16,46 @@ export default function TialOrdersPage() {
   const [page, setPage] = useState(1), [reload, setReload] = useState(0);
   const [result, setResult] = useState<StagingResult | null>(null);
   const [loading, setLoading] = useState(false), [error, setError] = useState('');
+  const [accessDenied, setAccessDenied] = useState(false);
   const [stoAvailable, setStoAvailable] = useState(false);
   const [updated, setUpdated] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const capability = useRef(false);
+  const queryKey = JSON.stringify(tialQuery(filters, page, stoAvailable));
+  const scope = useRef('');
   function change(next: Partial<TialFilters>) {
-    request.current?.abort(); setResult(null); setError(''); setUpdated(null); setPage(1);
-    setFilters(previous => ({ ...previous, ...next }));
+    const value = { ...filters, ...next };
+    if (JSON.stringify(tialQuery(value, 1, stoAvailable)) !== queryKey) {
+      request.current?.abort(); setResult(null); setError(''); setAccessDenied(false); setUpdated(null);
+    }
+    setPage(1); setFilters(value);
   }
+
   useEffect(() => {
     if (!token || user?.role !== 'SUPER_ADMIN') return;
+    const nextScope = `${token}\n${queryKey}`;
+    if (scope.current !== nextScope) { setResult(null); setError(''); setAccessDenied(false); setUpdated(null); scope.current = nextScope; }
     const controller = new AbortController(); request.current = controller;
     let stop = () => {};
     // Debounce filter edits and cancel old page requests; never mix result sets.
     const debounce = setTimeout(() => {
       stop = startRefreshLoop(async () => {
         if (controller.signal.aborted) return;
-        setLoading(true); setError(''); setResult(null); setUpdated(null);
+        setLoading(true);
         try {
-          const data = await fetchStagingOrders(token, tialQuery(filters, page, capability.current), controller.signal);
-          if (!controller.signal.aborted) { setResult(data); capability.current = data.stoFilterAvailable === true; setStoAvailable(capability.current); setUpdated(new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' })); }
-        } catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Gagal membaca order TIAL'); }
+          const data = await fetchStagingOrders(token, JSON.parse(queryKey), controller.signal);
+          if (!controller.signal.aborted) { setResult(previous => reconcileTial(previous, data)); setError(''); setAccessDenied(false); capability.current = data.stoFilterAvailable === true; setStoAvailable(capability.current); setUpdated(new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' })); }
+        } catch (cause) {
+          if (!controller.signal.aborted) {
+            setError(cause instanceof Error ? cause.message : 'Gagal membaca order TIAL');
+            if ([401, 403].includes((cause as { status?: number }).status || 0)) { setResult(null); setUpdated(null); setAccessDenied(true); stop(); }
+          }
+        }
         finally { if (!controller.signal.aborted) setLoading(false); }
       });
     }, 350);
     return () => { clearTimeout(debounce); stop(); controller.abort(); };
-  }, [token, user?.role, filters, page, reload]);
+  }, [token, user?.role, queryKey, reload]);
   function navigatePage(next: number) { request.current?.abort(); setResult(null); setUpdated(null); setPage(next); }
   return <>
     <header><p className="text-xs font-semibold tracking-[.18em] text-primary">WORKSPACE / B2C / TIAL</p><h1 className="mt-2 text-3xl font-semibold">Daftar order TIAL</h1><p className="mt-2 text-sm text-muted-foreground">Data sumber MySQL · read-only. Tidak ada tindakan order atau pengiriman Telegram.</p></header>
@@ -57,8 +72,8 @@ export default function TialOrdersPage() {
     <p className="text-xs text-muted-foreground">Tanggal adalah tanggal impor MySQL (Asia/Jakarta), bukan tanggal order asli. Kosongkan untuk semua tanggal. ID hanya identitas baris staging, belum permanen.</p>
     <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">{['Total order', 'MENUNGGU', 'PROSES CEK', 'DONE', 'GAGAL', 'DUPLICATE'].map(label => <Metric key={label} label={label} value="Belum tersedia" detail="API belum menyediakan agregasi global" />)}</div>
     <Section title="Daftar order TIAL" description="Terbaru menurut waktu impor · read-only · status dan STO ditampilkan sesuai sumber.">
-      {user?.role !== 'SUPER_ADMIN' ? <Empty text="Akses TIAL sementara terbatas untuk Super Admin." /> : error ? <div role="alert" className="space-y-3 rounded-lg border p-4 text-sm"><p>{error}</p><p className="text-muted-foreground">Data tidak diganti DEMO. Refresh otomatis akan mencoba kembali sekitar 60 detik.</p><Button variant="outline" onClick={() => setReload(value => value + 1)}>Coba lagi</Button></div> : loading || !result ? <p role="status" className="p-6 text-sm text-muted-foreground">Memuat order TIAL…</p> : !result.data.length ? <Empty text="Tidak ada order TIAL sesuai filter sumber." /> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><caption className="sr-only">Daftar order TIAL read-only</caption><thead className="border-b text-xs text-muted-foreground"><tr>{['Identifier staging', 'Kategori', 'Status sumber', 'Petugas', 'Waktu tunggu', 'Pengerjaan'].map(label => <th scope="col" key={label} className="px-2 pb-3 font-medium">{label}</th>)}</tr></thead><tbody>{result.data.map(order => <tr key={order.id} className="border-b last:border-0 hover:bg-muted/40"><td className="p-3"><span className="font-medium text-primary" title={order.id}>{order.id.slice(0, 20)}…</span><p className="mt-1 text-[11px] text-muted-foreground">Impor WIB: {order.date || 'Belum tersedia'}</p><p className="mt-1 text-[10px] text-muted-foreground">SC/IN: {order.scIn || 'Belum tersedia'} · INET: {order.inet || 'Belum tersedia'} · STO: {order.sto || 'Belum tersedia'}</p></td><td className="p-3 text-xs">B2C<span className="mt-1 block text-[10px] text-muted-foreground">TIAL</span></td><td className="p-3"><Badge variant="outline">{order.status || 'Belum tersedia'}</Badge></td>{['Petugas', 'Waktu tunggu', 'Pengerjaan'].map(label => <td key={label} className="p-3 text-xs text-muted-foreground">Belum tersedia</td>)}</tr>)}</tbody></table></div>}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><span className="text-xs text-muted-foreground">Halaman {page} · total global belum tersedia{updated && ` · diperbarui ${updated} WIB`} · refresh sekitar 60 detik</span><div className="flex gap-2"><Button variant="outline" disabled={loading || !result || page <= 1} onClick={() => navigatePage(page - 1)}>Sebelumnya</Button><Button variant="outline" disabled={loading || !result?.hasMore} onClick={() => navigatePage(page + 1)}>Berikutnya</Button></div></div>
+      {user?.role !== 'SUPER_ADMIN' ? <Empty text="Akses TIAL sementara terbatas untuk Super Admin." /> : <><div role="status" aria-live="polite" className="mb-3 min-h-4 text-xs text-muted-foreground">{loading && result ? "Memperbarui order TIAL… data terakhir tetap ditampilkan." : null}</div>{error && <div role="alert" className="space-y-3 rounded-lg border p-4 text-sm"><p>{error}</p><p className="text-muted-foreground">{result ? "Data terakhir belum berhasil diperbarui; jangan anggap sebagai data terkini." : "Data tidak diganti DEMO."} {accessDenied ? "Akses ditolak; pembaruan otomatis dihentikan sampai akses diperiksa kembali." : "Refresh otomatis akan mencoba kembali sekitar 60 detik."}</p><Button variant="outline" onClick={() => setReload(value => value + 1)}>Coba lagi</Button></div>}{!result && !error ? <p role="status" className="p-6 text-sm text-muted-foreground">Memuat order TIAL…</p> : result && !result.data.length ? <Empty text="Tidak ada order TIAL sesuai filter sumber." /> : result ? <TialTable orders={result.data} /> : null}</>}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><span className="text-xs text-muted-foreground">Halaman {page} · total global belum tersedia{updated && ` · terakhir berhasil ${updated} WIB`} · refresh sekitar 60 detik</span><div className="flex gap-2"><Button variant="outline" disabled={loading || !result || page <= 1} onClick={() => navigatePage(page - 1)}>Sebelumnya</Button><Button variant="outline" disabled={loading || !result?.hasMore} onClick={() => navigatePage(page + 1)}>Berikutnya</Button></div></div>
     </Section>
     <Link className="text-xs text-muted-foreground underline" to="/b2c/staging">Alat diagnostik staging</Link>
   </>;

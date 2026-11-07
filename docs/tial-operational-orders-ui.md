@@ -48,8 +48,10 @@ atau alur Preview DEMO untuk memaksakan kontrak tersebut.
   Pagination memakai page/hasMore server, tanpa jumlah halaman/total yang direka.
 - Refresh sekitar 60 detik setelah request selesai, tetap pada filter/halaman
   aktif, tidak menumpuk request. Cleanup saat unmount/pergantian token/filter.
-- Error mengosongkan hasil, memberi retry dan penjelasan tanpa fallback DEMO.
-  Data kosong berbeda dari error. Data lama tidak ditampilkan sebagai data baru.
+- Error awal/query baru tidak menggunakan fallback DEMO. Refresh query sama
+  mempertahankan data terakhir dengan peringatan bila 503/network; 401/403
+  menghapus hasil. Data lama tidak ditampilkan sebagai data baru. Lihat
+  frontend-refresh-optimization.md untuk detail pembaruan.
 - Seluruh kartu agregat dan hitungan tab memakai Belum tersedia: tidak memakai
   panjang halaman, 0 palsu atau menghitung global dari sampel.
 

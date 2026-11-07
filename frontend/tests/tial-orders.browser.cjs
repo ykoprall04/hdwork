@@ -47,7 +47,7 @@ const fs = require('node:fs');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     }
     failure = true; await page.clock.runFor(61_000); await page.getByRole('alert').filter({ hasText: 'Staging belum diaktifkan' }).waitFor();
-    assert.equal(await page.locator('tbody tr').count(), 0); assert.ok((await page.locator('main').innerText()).includes('Data tidak diganti DEMO'));
+    assert.equal(await page.locator('tbody tr').count(), 2); assert.ok((await page.locator('main').innerText()).includes('Data terakhir belum berhasil diperbarui'));
     failure = false; empty = true; await page.getByRole('button', { name: 'Coba lagi', exact: true }).click(); await page.clock.runFor(500); await page.getByText('Tidak ada order TIAL sesuai filter sumber.').waitFor();
     empty = false; stoAvailable = false; await page.getByRole('button', { name: 'Reset filter' }).click(); await page.clock.runFor(500);
     await page.getByText('stg_synthetic_1_1…').waitFor(); assert.equal(await page.getByLabel('STO', { exact: true }).isDisabled(), true);
