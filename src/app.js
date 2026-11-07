@@ -12,7 +12,6 @@ const agentRoutes = require("./routes/agent.routes");
 
 const networkRoutes = require("./routes/network.routes");
 
-const cactyRoutes = require("./routes/cacty.routes")
 
 const app = express();
 
@@ -39,7 +38,6 @@ app.use("/api/dashboard", dashboardRoutes);
 
 app.use("/api/network", networkRoutes);
 
-app.use("/api/cactys", cactyRoutes);
 
 app.use((error, req, res, next) => {
   if (error?.code === "LIMIT_FILE_SIZE") {
