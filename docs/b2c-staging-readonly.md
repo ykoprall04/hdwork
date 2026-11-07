@@ -1,6 +1,6 @@
 # B2C staging read-only — kontrak adapter dan pengujian
 
-> Pembaruan TIAL: schema fisik Orders dan format chat-only sudah dikonfirmasi.
+> Pembaruan TIAL: schema fisik Orders dan format `chat_id:message_id` sudah dikonfirmasi.
 > Lihat `tial-confirmed-schema-readonly.md` untuk kontrak TIAL terbaru.
 > Rancangan lama tentang separator TIAL dan kolom hipotetis tidak berlaku untuk TIAL.
 

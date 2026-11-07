@@ -27,14 +27,20 @@ berdasarkan SC/IN: dua kiriman dengan SC/IN sama tetap dua baris.
 
 ### Chat ID, Message ID dan thread
 
-Kontrak terbaru memastikan `Message ID` TIAL berisi **chat_id saja**. Cabang TIAL
-normalizer sekarang menolak format gabungan sekalipun konfigurasi separator lama
-tersedia. Chat negatif valid dipertahankan sebagai string, Message ID selalu
-null, thread selalu null, reference_verified selalu false. Tidak menganggap
-chat ID sebagai message ID, tidak mengarang reply target, tidak menganggap null
-sebagai General. Chat kosong, malformed, positif atau di luar batas grup ditolak
-sebagai kandidat. Pembacaan JSON numerik lewat SQL JSON_UNQUOTE menghasilkan
-string; tidak melakukan konversi lossy di JavaScript.
+Koreksi berdasarkan audit MySQL yang dilaporkan pengguna: 26.675 baris Orders,
+26.672 berformat `chat_id:message_id`, nol chat-only, tiga format lain. Cloud
+belum mengakses database untuk memverifikasi distribusi tersebut.
+
+Parser mensyaratkan satu titik dua dengan Chat ID negatif kanonik dalam batas
+Telegram 52-bit dan Message ID positif 1–2147483647. Validasi memakai BigInt,
+kedua hasil tetap string. Chat-only, nilai kosong, spasi, format alternatif dan
+overflow ditandai invalid; kedua komponen null tanpa menebak. Baris tersebut
+tetap disertakan, termasuk kiriman dengan SC/IN sama.
+
+`reference_syntax_valid` dan `reference_complete` true hanya ketika dua komponen
+valid. `reference_verified` tetap false; `telegram_thread_id` tetap null,
+bukan General. Memiliki pasangan ID yang valid bukan bukti pesan ada, bot bisa
+mengaksesnya, atau konteks thread benar. Tidak ada tindakan order diaktifkan.
 
 ### Identitas — keterbatasan penting
 
@@ -127,7 +133,7 @@ nilai beban sebelum menerapkan query filter pada tabel besar.
 
 - 50 tes backend terisolasi: SQL TIAL fixed schema/keys, BigInt string, status,
   tanggal impor, STO dummy/unsupported, SC-IN/INET search, pagination/lookahead,
-  SC/IN sama tidak merge, namespace ID, normalisasi chat-only, API gate dan
+  SC/IN sama tidak merge, namespace ID, normalisasi gabungan dan penolakan chat-only, API gate dan
   mock transaksi diagnostic (rollback/close saat berhasil maupun gagal).
 - Executor query merupakan test double yang mensimulasikan filter/pagination
   atas dataset sintetis; bukan eksekusi SQL MySQL. Tes query construction dan
@@ -141,3 +147,22 @@ order (jika ingin tanggal bisnis asli); format status; versi/collation MySQL dan
 hasil diagnostic summary. Uji di sandbox MySQL dengan data sintetis lebih dahulu
 bila memungkinkan. Jangan memakai chat-only sebagai target reply. PICK/CEK,
 DONE/GAGAL, integrasi sender dan verifikasi histori tetap belum diaktifkan.
+
+
+## Hitungan diagnostic dan koreksi kontrak
+
+`syntaxValid`, `completeReferences`, `verified`, dan `invalidReferences` hanya
+menghitung sampel yang dibaca (maksimal tiga), bukan seluruh tabel. Untuk data
+TIAL saat ini syntaxValid sama dengan completeReferences; verified tetap nol;
+syntaxValid + invalidReferences sama dengan sampled. Duplikat dihitung terpisah.
+
+Summary tidak mencetak ID, baris atau data pelanggan, dan tetap memberi
+identityScope=staging_row beserta peringatan bahwa identitas belum permanen.
+Jalankan script yang sama nanti setelah izin akses/configuration lokal:
+
+```powershell
+node .\scripts\check-tial-staging-readonly.js --read-only-check
+```
+
+Tidak perlu mengaktifkan API staging. Tidak ada koneksi MySQL atau verifikasi
+Telegram dilakukan selama pengembangan koreksi ini.

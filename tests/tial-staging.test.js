@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const { createTialReader } = require('../src/adapters/tial-staging');
 const { check } = require('../scripts/check-tial-staging-readonly');
 const data = [
-  { source_key: '9007199254740993', order_date: '2026-11-07', status: 'MENUNGGU', sto: 'DEMO-A', sc_in: 'SC-DEMO', inet: 'INET-ONE', chat_reference: '-1001234567890' },
-  { source_key: '12', order_date: '2026-11-07', status: 'DONE', sto: 'DEMO-B', sc_in: 'SC-DEMO', inet: 'INET-TWO', chat_reference: '-1001234567890' },
+  { source_key: '9007199254740993', order_date: '2026-11-07', status: 'MENUNGGU', sto: 'DEMO-A', sc_in: 'SC-DEMO', inet: 'INET-ONE', chat_reference: '-1001234567890:42' },
+  { source_key: '12', order_date: '2026-11-07', status: 'DONE', sto: 'DEMO-B', sc_in: 'SC-DEMO', inet: 'INET-TWO', chat_reference: '-1001234567890:42' },
   { source_key: '11', order_date: '2026-11-06', status: 'DONE', sto: 'DEMO-A', sc_in: 'OTHER', inet: 'INET-THREE', chat_reference: '' },
 ];
 function fixture(extra = {}) {
@@ -25,7 +25,7 @@ test('confirmed TIAL SQL uses JSON keys and schema, never row number or SELECT p
   for (const name of ['sumber_tab', 'data_json', 'created_at', 'SC/IN', 'NO INET/TELP', 'STATUS', 'Message ID']) assert.ok(sql.includes(name));
   assert.match(sql, /CAST\(`id` AS CHAR\)/); assert.ok(!sql.includes('nomor_baris')); assert.ok(!sql.includes(' AS payload'));
   assert.equal(result.identityScope, 'staging_row'); assert.equal(result.dateBasis, 'import_created_at_jakarta');
-  assert.equal(result.data[0].telegram_chat_id, '-1001234567890'); assert.equal(result.data[0].telegram_message_id, null);
+  assert.equal(result.data[0].telegram_chat_id, '-1001234567890'); assert.equal(result.data[0].telegram_message_id, '42');
   assert.equal(result.data[0].telegram_thread_id, null); assert.equal(result.data[0].reference_verified, false);
 });
 test('same SC/IN preserves distinct staging IDs; row changes do not create business identity', async () => {
@@ -58,10 +58,47 @@ test('standalone read-only check uses read-only transaction, sanitized summary a
   const events = [], output = [];
   await check({ env, connect: async () => ({ query: async sql => events.push(sql), execute: async sql => { assert.match(sql, /^SELECT /); return [[data[0]]]; }, rollback: async () => events.push('rollback'), end: async () => events.push('end') }), output: text => output.push(text) });
   assert.deepEqual(events, ['START TRANSACTION READ ONLY', 'rollback', 'end']);
-  assert.equal(JSON.parse(output[0]).sampled, 1); assert.ok(!output[0].includes('SC-DEMO')); assert.ok(!output[0].includes('-100'));
+  const summary = JSON.parse(output[0]);
+  assert.equal(summary.sampled, 1); assert.equal(summary.syntaxValid, 1);
+  assert.equal(summary.completeReferences, 1); assert.equal(summary.verified, 0);
+  assert.equal(summary.identityScope, 'staging_row'); assert.ok(summary.identityWarning); assert.ok(!output[0].includes('SC-DEMO')); assert.ok(!output[0].includes('-100'));
 });
 test('standalone check cleans up on SQL failure without printing rows or secrets', async () => {
   const events = [];
   await assert.rejects(check({ env, connect: async () => ({ query: async () => {}, execute: async () => { throw Error('mock'); }, rollback: async () => events.push('rollback'), end: async () => events.push('end') }), output: () => assert.fail('must not print') }));
   assert.deepEqual(events, ['rollback', 'end']);
+});
+
+
+test('diagnostic counts mixed valid/invalid duplicates separately without disclosing IDs', async () => {
+  const output = [];
+  await check({ env, connect: async () => ({ query: async () => {}, execute: async () => [[data[0], { ...data[0], source_key: '99' }, { ...data[0], source_key: '98', chat_reference: '' }]], rollback: async () => {}, end: async () => {} }), output: text => output.push(text) });
+  const summary = JSON.parse(output[0]);
+  assert.equal(summary.sampled, 3); assert.equal(summary.syntaxValid, 2);
+  assert.equal(summary.verified, 0); assert.equal(summary.completeReferences, 2); assert.equal(summary.invalidReferences, 1);
+  for (const sensitive of ['SC-DEMO', 'INET-ONE', '-1001234567890', '9007199254740993', 'stg_']) assert.ok(!output[0].includes(sensitive));
+});
+
+
+test('three malformed references are retained as distinct invalid orders, including same SC/IN', async () => {
+  const { read } = (() => {
+    const rows = ['-1001234567890', 'bad', '-1001234567890:0'].map((chat_reference, i) => ({ ...data[0], source_key: String(i + 1), chat_reference }));
+    return { read: createTialReader({ identityKey: 'dummy'.repeat(8), datasetId: 'sandbox', execute: async () => [rows] }) };
+  })();
+  const result = await read({});
+  assert.equal(result.data.length, 3); assert.equal(new Set(result.data.map(row => row.id)).size, 3);
+  for (const row of result.data) {
+    assert.equal(row.scIn, 'SC-DEMO'); assert.equal(row.reference_syntax_valid, false);
+    assert.equal(row.reference_complete, false); assert.equal(row.reference_verified, false);
+    assert.equal(row.telegram_chat_id, null); assert.equal(row.telegram_message_id, null);
+  }
+});
+
+test('diagnostic reports all three non-composite synthetic rows as invalid without dropping orders', async () => {
+  const output = [];
+  const rows = ['other', '-1001234567890', '-1:0'].map((chat_reference, index) => ({ ...data[0], source_key: String(index + 1), chat_reference }));
+  await check({ env, connect: async () => ({ query: async () => {}, execute: async () => [rows], rollback: async () => {}, end: async () => {} }), output: text => output.push(text) });
+  const summary = JSON.parse(output[0]);
+  assert.equal(summary.sampled, 3); assert.equal(summary.invalidReferences, 3);
+  assert.equal(summary.syntaxValid, 0); assert.equal(summary.completeReferences, 0); assert.equal(summary.verified, 0);
 });

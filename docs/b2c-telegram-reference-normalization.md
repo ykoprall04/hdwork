@@ -1,6 +1,6 @@
 # Normalisasi referensi Telegram B2C staging
 
-> Pembaruan TIAL: schema fisik Orders dan format chat-only sudah dikonfirmasi.
+> Pembaruan TIAL: schema fisik Orders dan format `chat_id:message_id` sudah dikonfirmasi.
 > Lihat `tial-confirmed-schema-readonly.md` untuk kontrak TIAL terbaru.
 > Rancangan lama tentang separator TIAL dan kolom hipotetis tidak berlaku untuk TIAL.
 
@@ -24,15 +24,16 @@ mengaktifkannya. Ketidaksesuaian konfigurasi memberi error, bukan fallback demo.
 
 ### TIAL
 
-Key pasti: `Message ID`. Audit menyebut format chat_id, belum memberikan contoh
-pemisah chat+message. Chat-only negatif yang valid diproyeksikan sebagai Chat ID;
-Message ID tetap null. Bila memang format gabungan, `separator` harus disetujui
-secara eksplisit pada konfigurasi (satu dari `:`, `_`, `/`, `.`). Hanya tepat dua
-bagian valid yang diterima; bukan ekstraksi bebas dari string/URL.
+Key pasti: `Message ID`, format tepat `chat_id:message_id`. Hasil audit MySQL
+pengguna: 26.675 baris, 26.672 berformat gabungan, nol chat-only, tiga format lain.
+Angka tersebut merupakan laporan pengguna, tidak dihitung ulang di cloud.
 
-Contoh **dummy** `-1001234567890:42` menggunakan separator `:` hanya untuk tes,
-bukan klaim format TIAL sebenarnya. Mohon konfirmasi contoh format sintetis
-sebelum mengatur separator. Tidak menebak Message ID dari nomor order/baris.
+Parser memerlukan satu titik dua, Chat ID negatif kanonik dalam batas Telegram
+52-bit dan Message ID positif 1–2147483647. Keduanya dipertahankan sebagai string;
+validasi batas memakai BigInt tanpa konversi Number. Chat-only, komponen kosong,
+spasi, pecahan, extra delimiter dan overflow invalid; kedua field menjadi null.
+Baris invalid tetap tampil, tidak ditebak atau dibuang. Tidak perlu konfigurasi
+separator TIAL. Format valid tidak membuktikan pesan ada/akses bot di Telegram.
 
 ### LOGIC PSB dan LOGIC MO
 
@@ -48,8 +49,8 @@ Chat ID grup: string desimal negatif kanonik dalam batas Telegram 52-bit.
 Message ID: integer positif kanonik 1–2147483647, string pada DTO. Tidak menerima
 spasi, pecahan, scientific notation string, nol, tanda plus atau leading zero.
 Nilai numerik JSON yang sudah diparse tidak membawa informasi ejaan JSON asli;
-validator hanya menilai nilainya. Chat numerik sengaja ditolak untuk menghindari
-konversi representasi ID; konfigurasi chat harus berupa string.
+validator hanya menilai nilainya. Chat numerik hanya diterima jika integer aman dan dalam batas Telegram 52-bit;
+DTO selalu string. Gunakan string pada konfigurasi agar representasi eksplisit.
 
 Field tambahan DTO:
 
@@ -94,7 +95,7 @@ adapter saat ini hanya key top-level.
 
 `B2C_STAGING_TELEGRAM_GROUPS` adalah object per modul:
 
-- TIAL: `source_bot` alias; opsional `separator` setelah format dikonfirmasi.
+- TIAL: `source_bot` alias; separator tetap `:` dan tidak dikonfigurasi.
 - LOGIC_PSB: `source_bot` alias dan `chat_id` string tunggal.
 - LOGIC_MO: `source_bot` alias dan `chat_id` string tunggal.
 
@@ -122,8 +123,8 @@ masih menghilangkan tampilan baris, bukan menyimpan audit historis.
 
 1. Konfirmasi nama/tipe kolom staging, key JSON masing-masing tab, format tanggal
    dan nilai status menggunakan contoh dummy/DDL yang disanitasi.
-2. Konfirmasi format TIAL: apakah chat-only atau gabungan; jika gabungan,
-   separator dan Message ID harus terbukti dari sumber.
+2. Format TIAL gabungan sudah dikonfirmasi; periksa tiga referensi invalid
+   melalui sumber yang berizin, tanpa merekonstruksi ID secara heuristik.
 3. Verifikasi provenance bot/grup/pesan untuk setiap record, termasuk perubahan
    grup/bot historis. Jangan memverifikasi semua histori hanya dari mapping kini.
 4. Peroleh thread ID dari data/event yang dipercaya, atau bukti eksplisit konteks

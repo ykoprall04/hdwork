@@ -1,6 +1,6 @@
 import { API_URL } from '@/config/api';
 export type StagingModule = 'TIAL' | 'LOGIC_PSB' | 'LOGIC_MO';
-export type StagingOrder = { source_bot: string | null; telegram_chat_id: string | null; telegram_message_id: string | null; telegram_thread_id: string | null; reference_verified: boolean; reference_issues: string[]; id: string; module: StagingModule; date: string; status: string; sto: string; scIn: string | null; inet: string | null };
+export type StagingOrder = { source_bot: string | null; telegram_chat_id: string | null; telegram_message_id: string | null; telegram_thread_id: string | null; reference_verified: boolean; reference_syntax_valid: boolean; reference_complete: boolean; reference_issues: string[]; id: string; module: StagingModule; date: string; status: string; sto: string; scIn: string | null; inet: string | null };
 export type StagingResult = { source: 'MYSQL_STAGING'; readOnly: true; data: StagingOrder[]; page: number; hasMore: boolean };
 export type StagingFilters = { module: StagingModule; date: string; status: string; sto: string; q: string; page: number };
 // No PreviewProvider, reducer, localStorage persistence or operational mutations.

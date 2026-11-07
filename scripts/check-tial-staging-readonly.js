@@ -14,7 +14,7 @@ async function check({ env = process.env, connect, output = console.log } = {}) 
     await connection.query('START TRANSACTION READ ONLY');
     const result = await read({ module: 'TIAL', date: env.B2C_TIAL_CHECK_DATE || '', status: env.B2C_TIAL_CHECK_STATUS || '', sto: env.B2C_TIAL_CHECK_STO || '', q: env.B2C_TIAL_CHECK_SEARCH || '', limit: 3 });
     // Never output rows, references, IDs, credentials or raw errors.
-    output(JSON.stringify({ ok: true, sampled: result.data.length, hasMore: result.hasMore, dateBasis: result.dateBasis, identityScope: result.identityScope, verified: result.data.filter(row => row.reference_verified).length }));
+    output(JSON.stringify({ ok: true, sampled: result.data.length, hasMore: result.hasMore, dateBasis: result.dateBasis, identityScope: result.identityScope, identityWarning: 'ID baris staging belum permanen', syntaxValid: result.data.filter(row => row.reference_syntax_valid).length, completeReferences: result.data.filter(row => row.reference_complete).length, invalidReferences: result.data.filter(row => !row.reference_syntax_valid).length, verified: result.data.filter(row => row.reference_verified).length }));
     return result.data.length;
   } finally {
     if (connection) { try { await connection.rollback(); } finally { await connection.end(); } }

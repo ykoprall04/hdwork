@@ -1,6 +1,7 @@
 // Telegram IDs remain strings: no lossy conversion or inferred General topic.
 function chatId(value) {
-  return typeof value === 'string' && /^-[1-9]\d{0,15}$/.test(value) && BigInt(value) >= -4503599627370495n ? value : null;
+  const text = typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : value;
+  return typeof text === 'string' && /^-[1-9]\d{0,15}$/.test(text) && BigInt(text) >= -4503599627370495n ? text : null;
 }
 function messageId(value) {
   const text = typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : value;
@@ -13,9 +14,12 @@ function normalizeTelegramReference(module, payload, mapping = {}) {
   const raw = payload[module === 'LOGIC_MO' ? 'MSG_ID' : 'Message ID'];
   const empty = raw === undefined || raw === null || raw === '';
   if (module === 'TIAL') {
-    // Confirmed Orders schema: this field contains chat_id only.
-    if (chatId(raw)) { chat = raw; reasons.push('message_id_missing'); }
-    else reasons.push(empty ? 'reference_missing' : 'reference_format_invalid');
+    // Confirmed Orders field is a strict chat_id:message_id string.
+    // Never parse either component through Number; keep canonical decimal text.
+    const parts = typeof raw === 'string' && raw.length <= 28 ? raw.split(':') : [];
+    if (parts.length === 2 && chatId(parts[0]) && messageId(parts[1])) {
+      chat = parts[0]; message = parts[1];
+    } else reasons.push(empty ? 'reference_missing' : 'reference_format_invalid');
   } else if (module === 'LOGIC_PSB' || module === 'LOGIC_MO') {
     chat = chatId(config.chat_id);
     if (!chat) reasons.push('group_mapping_missing_or_invalid');
@@ -29,6 +33,9 @@ function normalizeTelegramReference(module, payload, mapping = {}) {
   return {
     source_bot: bot, telegram_chat_id: chat, telegram_message_id: message,
     telegram_thread_id: null, reference_verified: false,
+    // A syntactically complete reference is still not verified with Telegram.
+    reference_syntax_valid: chat !== null && message !== null,
+    reference_complete: chat !== null && message !== null,
     reference_issues: [...new Set(reasons)],
   };
 }
