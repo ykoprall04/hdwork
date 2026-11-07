@@ -1,5 +1,10 @@
 # Tahap 1 — backend API mandiri pada Windows 11
 
+> Pembaruan untuk staging online: gunakan `api-only-server.js`, bukan entrypoint
+> legacy server.js. Lihat `api-only-tial-online-plan.md`; graph baru tidak memuat
+> service Telegram, Socket.IO atau worker. Panduan di bawah merekam tahap awal.
+
+
 Status: implementasi lokal pada `chore/remove-cacti-hdwork2`; belum dijalankan
 terhadap database, PM2, Telegram atau website online. Panduan ini untuk penggunaan
 nanti setelah konfigurasi/database disetujui, bukan perintah yang telah dieksekusi.

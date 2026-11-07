@@ -44,7 +44,7 @@ test('requires immutable source key, refuses duplicate identity and computes has
 test('controller denies unscoped roles and disabled staging without loading database', async () => {
   const fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
   const module = { exports: {} };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/controllers/b2c-staging.controller.js'), 'utf8'), { module, process: { env: {} }, require(name) { if (name === '../adapters/tial-staging') return {}; if (name === '../adapters/b2c-staging') return { validateQuery, createStagingReader }; throw new Error('DB must not load'); } });
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/controllers/b2c-staging.controller.js'), 'utf8'), { module, process: { env: {} }, require(name) { if (name === '../adapters/staging-browser-dto') return {}; if (name === '../adapters/tial-staging') return {}; if (name === '../adapters/b2c-staging') return { validateQuery, createStagingReader }; throw new Error('DB must not load'); } });
   for (const [role, expected] of [['HD', 403], ['ADMIN', 403], ['SUPER_ADMIN', 503]]) {
     const res = { set() {}, status(code) { assert.equal(code, expected); return this; }, json() {} };
     await module.exports.list({ user: { role }, query: {} }, res);
