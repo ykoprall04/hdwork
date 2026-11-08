@@ -10,10 +10,7 @@ async function saveCommand({e,parsed,settings,group,tx,audit}) {
     await c.execute('INSERT INTO hd2_tial_keys (dedupe_key) VALUES (?) ON DUPLICATE KEY UPDATE dedupe_key=dedupe_key',[key]);
     const [[reservation]]=await c.execute('SELECT order_id FROM hd2_tial_keys WHERE dedupe_key=? FOR UPDATE',[key]);
     duplicate=reservation.order_id;
-    if(!duplicate){
-      const [[historical]]=await c.execute("SELECT id FROM hd2_orders WHERE UPPER(sc_in)=? AND module='TIAL' AND duplicate_of IS NULL AND status<>'DUPLICATE' AND (command='order' OR command IS NULL) ORDER BY created_at,id LIMIT 1 FOR UPDATE",[parsed.sc_in.toUpperCase()]);
-      duplicate=historical?.id || null;
-    }
+
   }
   const id=randomUUID(),status=duplicate?'DUPLICATE':'WAITING';
   await c.execute('INSERT INTO hd2_orders (id,bot_id,module,business_day,chat_id,message_id,thread_id,sc_in,inet,status,duplicate_of,command,command_fields,raw_text,sender_id,telegram_timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[id,settings.botId,group.module,jakartaDay(e.timestamp),e.chat_id,e.message_id,e.telegram_thread_id,parsed.sc_in,parsed.fields['NO INET']||parsed.fields['NO INTERNET']||null,status,duplicate,parsed.command,JSON.stringify(parsed.fields),e.text,e.sender_id,e.timestamp]);

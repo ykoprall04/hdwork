@@ -42,8 +42,6 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           rows=state.tialKeys.filter(r=>r.dedupe_key===p[0]);
         } else if (sql.startsWith('UPDATE hd2_tial_keys')) {
           state.tialKeys.find(r=>r.dedupe_key===p[1]).order_id=p[0];
-        } else if (sql.startsWith('SELECT id FROM hd2_orders WHERE UPPER')) {
-          rows=state.orders.filter(r=>r.sc_in?.toUpperCase()===p[0] && r.module==='TIAL' && (!r.command || r.command==='order')).slice(0,1);
         } else if (sql.startsWith('INSERT INTO hd2_daily_keys')) {
           if (!state.keys.some(r=>r.bot_id===p[0] && r.module===p[1] && r.business_day===p[2] && r.dedupe_key===p[3])) state.keys.push({bot_id:p[0],module:p[1],business_day:p[2],dedupe_key:p[3],order_id:null});
         } else if (sql.startsWith('SELECT order_id FROM hd2_daily_keys')) {

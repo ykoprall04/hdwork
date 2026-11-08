@@ -60,7 +60,8 @@ async function run({env=process.env,argv=process.argv.slice(2),driverFactory=()=
     const c=await pool.getConnection();
     try {await verifyTarget(c,options.database);for(const sql of statements)await c.query(sql);} finally {c.release();}
     await exercise(pool);
-    return {ok:true,checks:['ddl004','ddl005','idempotency','daily-dedup','workflow-audit','web-read','lease-retry-dead-letter','rollback','skip-locked','lock-conflict']};
+    const commands=await require('./mysql-commands.cjs').exerciseCommands(pool);
+    return {ok:true,commands,checks:['ddl004','ddl005','ddl006','commands','idempotency','daily-dedup','workflow-audit','web-read','lease-retry-dead-letter','rollback','skip-locked','lock-conflict']};
   } finally {await pool.end();}
 }
 if(require.main===module){

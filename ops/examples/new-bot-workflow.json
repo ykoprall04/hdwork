@@ -1,0 +1,12 @@
+{
+  "enabled":false,
+  "botId":"<NEW_BOT_ALIAS>",
+  "identityKey":"<SUPPLY_PRIVATELY_NOT_IN_GIT>",
+  "dedupeBy":"both",
+  "groups":[
+    {"chatId":"<TIAL_1_CHAT_ID>","threadId":null,"threadMode":"non_topic","module":"TIAL","commandProfile":"TIAL1"},
+    {"chatId":"<TIAL_2_CHAT_ID>","threadId":null,"threadMode":"non_topic","module":"TIAL","commandProfile":"TIAL2"},
+    {"chatId":"<SOLVER_1_CHAT_ID>","threadId":null,"threadMode":"non_topic","module":"TIAL","commandProfile":"SOLVER1"}
+  ],
+  "actors":[{"id":"<APPROVED_NEW_BOT_HD_USER_ID>","name":"<APPROVED_HD_DISPLAY_NAME>"}]
+}

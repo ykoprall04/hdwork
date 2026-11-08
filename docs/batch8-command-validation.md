@@ -1,5 +1,7 @@
 # Batch 8 — validation commands and historical TIAL duplicates
 
+> Superseded scope: Batch 9 uses only new-bot history created in hdwork2, with no legacy import or NULL-command canonical lookup. The guarded disposable harness now rehearses 004–006. See batch9-mysql-readiness.md; historical-coverage/backfill instructions below are historical Batch 8 decisions and must not be followed for the new-bot rollout.
+
 Preparation only, no service/worker/migration/Telegram activation. SQL 004/005 (MySQL 8.0.13+, per-statement DDL commits) and Batch 7 isolation guards were reviewed; additive **006** is manual only. Old rows are never deleted or overwritten. No legacy hd_b2c, Preview or original bot changes.
 
 ## Architecture and compatibility

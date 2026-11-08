@@ -31,11 +31,11 @@ function validateGrants(rows, database, literalDatabaseNames = false) {
 }
 function migrationStatements() {
   const root = path.resolve(__dirname,'../../database/manual');
-  return ['004_hdwork2_courier.sql','005_hdwork2_b2c_audit.sql'].flatMap(name=>{
+  return ['004_hdwork2_courier.sql','005_hdwork2_b2c_audit.sql','006_hdwork2_commands.sql'].flatMap(name=>{
     const sql=fs.readFileSync(path.join(root,name),'utf8').replace(/^\s*--.*$/gm,'');
     const statements=sql.split(';').map(s=>s.trim()).filter(Boolean);
     if (statements.shift() !== 'USE hdwork2') throw denied();
-    if (!statements.length || statements.some(s=>!/^(CREATE TABLE hd2_[a-z_]+ \(|INSERT INTO hd2_order_statuses\(code,label\) VALUES|ALTER TABLE hd2_audit ADD COLUMN detail JSON NULL$)/.test(s) || /\b(USE|DROP|TRUNCATE|GRANT|TRIGGER|PROCEDURE|DATABASE)\b/i.test(s) || /`|hdwork2\.|hd_b2c\./i.test(s))) throw denied();
+    if (!statements.length || statements.some(s=>!/^(CREATE TABLE hd2_[a-z_]+ \(|INSERT INTO hd2_order_statuses\(code,label\) VALUES|ALTER TABLE hd2_audit ADD COLUMN detail JSON NULL$|ALTER TABLE hd2_orders\s+ADD COLUMN command VARCHAR\(16\))/.test(s) || /\b(USE|DROP|TRUNCATE|GRANT|TRIGGER|PROCEDURE|DATABASE)\b/i.test(s) || /`|hdwork2\.|hd_b2c\./i.test(s))) throw denied();
     // Never execute the source USE directive: the connection stays in disposable DB.
     return statements;
   });

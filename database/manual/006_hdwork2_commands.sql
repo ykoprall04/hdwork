@@ -13,5 +13,5 @@ CREATE TABLE hd2_tial_keys (
   FOREIGN KEY(order_id) REFERENCES hd2_orders(id)
 ) ENGINE=InnoDB;
 -- No SC/IN uniqueness on orders: every original message, including duplicates, survives.
--- Existing command=NULL rows remain unchanged. Review canonical historical backfill
--- before activation; full-history guarantees require complete historical coverage.
+-- Existing rows remain unchanged. New-bot history starts in hdwork2.
+-- Never import legacy orders or rebuild keys from legacy/staging rows.

@@ -33,9 +33,9 @@ test('target mismatch or grants failure closes pool and executes no migration',a
  }
 });
 test('manual migrations are transformed only by removing the exact source USE directive',()=>{
- const statements=migrationStatements();assert.equal(statements.length,8);
- assert.equal(statements.filter(s=>s.startsWith('CREATE TABLE hd2_')).length,6);
- assert.match(statements.at(-1),/^ALTER TABLE hd2_audit ADD COLUMN detail JSON NULL$/);
+ const statements=migrationStatements();assert.equal(statements.length,10);
+ assert.equal(statements.filter(s=>s.startsWith('CREATE TABLE hd2_')).length,7);
+ assert.ok(statements.includes('ALTER TABLE hd2_audit ADD COLUMN detail JSON NULL'));assert.ok(statements.some(s=>s.startsWith('ALTER TABLE hd2_orders')));
  for(const sql of statements)assert.doesNotMatch(sql,/\bUSE\b|\bDROP\b|\bTRUNCATE\b|hd_b2c\.|hdwork2\./i);
  const root=fs.readFileSync('tests/integration/mysql-disposable.cjs','utf8');assert.doesNotMatch(root,/createDatabase|DROP DATABASE|process\.env\.DB_PASSWORD|require\(['"]dotenv/);
 });
