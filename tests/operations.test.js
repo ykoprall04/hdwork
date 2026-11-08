@@ -50,7 +50,8 @@ test('all HTTP mutation routes require CSRF before reaching storage',async()=>{
  let checks=0;const module={exports:{}};
  vm.runInNewContext(fs.readFileSync('src/operations/routes.js','utf8'),{module,process:{env:{HDWORK2_OPERATIONS_ENABLED:'true',HDWORK2_AUTH_V2:'true',DB_NAME:'hdwork2'}},require:n=>n==='express'?{Router:()=>router}:n==='../access/http'?{auth(){},csrf(){checks++;throw Object.assign(Error(),{statusCode:403});}}:n==='./policy'?require('../src/operations/policy'):n==='../middlewares/api-rate-limit'?{createRateLimit:()=>()=>{}}:(()=>{throw Error('Storage must not be reached');})()});
  for(const entry of router.stack.filter(r=>r[0]==='post')){let status;await entry[2]({user:{role:'HD'},params:{id:'x'},body:{},sessionToken:'synthetic'},{headersSent:false,status(code){status=code;return this;},json(){}});assert.equal(status,403);}
- assert.equal(checks,3);
+ assert.deepEqual(router.stack.filter(r=>r[0]==='post').map(r=>r[1]),['/orders','/orders/:id/actions','/exports','/exports/:id/cancel']);
+ assert.equal(checks,4);
 });
 test('export ticket is single-session bound and unauthorized identities cannot inspect/cancel it',()=>{
  const {createExporter}=require('../src/operations/export');const exporter=createExporter({pool:{},authenticate(){}});const u={id:1,role:'HD',modules:['TIAL']};const job=exporter.ticket({},u,'session-one');

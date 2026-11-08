@@ -10,19 +10,24 @@ import {duration,labels,type WorkList as Data} from './model';
 import Actions from './Actions';
 import People from './People';
 import ExportButton from './ExportButton';
+import NewOrder from './NewOrder';
+import WorkspaceCounts from './WorkspaceCounts';
 const field='mt-1 block w-full rounded-lg border bg-background p-2 text-sm';
 export default function WorkList(){
- const {user}=useAuth();const location=useLocation();const area=location.pathname.includes('LOGIC')?'LOGIC':'TIAL';
+ const {user}=useAuth();const location=useLocation();const workspace=location.pathname.split('/')[2]||'B2C';const area=workspace==='B2C'?(location.pathname.includes('LOGIC')?'LOGIC':'TIAL'):workspace;
+ const allowed=(user?.modules||[]).filter(m=>area==='TIAL'?['TIAL','REQ'].includes(m):area==='LOGIC'?['LOGIC_PSB','LOGIC_MO'].includes(m):m===area);
  const [tab,setTab]=useState('incoming'),[command,setCommand]=useState(''),[mine,setMine]=useState(true),[from,setFrom]=useState(''),[to,setTo]=useState(''),[hd,setHd]=useState(''),[status,setStatus]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(1);
  const query={area,command,tab,mine:String(mine),from,to,hd,status,q:search.trim(),page:String(page)};const validDate=(!from&&!to)||(Boolean(from&&to)&&from<=to);
  const path='/orders?'+new URLSearchParams({...query,...(!validDate?{from:'',to:''}:{})});
  const {data,loading,error,arrival,refresh}=useWorkData<Data>(path,{area,page});const now=useServerClock(data?.serverNow);
  function change(fn:()=>void){setPage(1);fn();}
  return <>
- <header><p className="text-xs font-semibold tracking-[.18em] text-primary">WORKSPACE / B2C / {area}</p><h1 className="mt-2 text-3xl font-semibold">Daftar pekerjaan {area==='LOGIC'?'LOGIC / SOLVER':'TIAL'}</h1><p className="mt-2 text-sm text-muted-foreground">hdwork2 · workflow web pengembangan · Telegram melalui outbox, bot belum diaktifkan.</p></header>
+ <header><p className="text-xs font-semibold tracking-[.18em] text-primary">WORKSPACE / {workspace} / {area}</p><h1 className="mt-2 text-3xl font-semibold">Daftar pekerjaan {area==='LOGIC'?'LOGIC / SOLVER':area}</h1></header>
+ <WorkspaceCounts key={area} area={area}/>
+ <NewOrder key={area+allowed.join(',')} modules={allowed}/>
  <nav aria-label="Status pekerjaan" className="flex gap-2 overflow-x-auto">{[['incoming','ORDER MASUK'],['process','PROSES CEK'],['finished','SELESAI']].map(([v,label])=><Button key={v} variant={tab===v?'default':'outline'} onClick={()=>change(()=>{setTab(v);setHd('');setMine(true);setFrom(v==='finished'?jakartaToday():'');setTo(v==='finished'?jakartaToday():'');setStatus('');})}>{label}</Button>)}</nav>
  <section aria-label="Filter pekerjaan" className="grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 xl:grid-cols-4">
- <label className="text-xs">Jenis perintah<select aria-label="Jenis perintah" className={field} value={command} onChange={e=>change(()=>setCommand(e.target.value))}><option value="">SEMUA</option>{(area==='TIAL'?[['order','TIAL'],['req','REQ']]:[['config_psb','LOGIC_PSB'],['mo','LOGIC_MO']]).filter(([,m])=>user?.modules?.includes(m)).map(([c])=><option key={c} value={c}>/{c==='mo'?'MO':c}</option>)}</select></label>
+ {['TIAL','LOGIC'].includes(area)&&<label className="text-xs">Jenis perintah<select aria-label="Jenis perintah" className={field} value={command} onChange={e=>change(()=>setCommand(e.target.value))}><option value="">SEMUA</option>{(area==='TIAL'?[['order','TIAL'],['req','REQ']]:[['config_psb','LOGIC_PSB'],['mo','LOGIC_MO']]).filter(([,m])=>user?.modules?.includes(m)).map(([c])=><option key={c} value={c}>/{c==='mo'?'MO':c}</option>)}</select></label>}
  <label className="text-xs">Tanggal order mulai WIB<input aria-label="Tanggal mulai" type="date" className={field} value={from} onChange={e=>change(()=>setFrom(e.target.value))}/></label><label className="text-xs">Sampai WIB<input aria-label="Tanggal akhir" type="date" className={field} value={to} onChange={e=>change(()=>setTo(e.target.value))}/></label>
  <label className="text-xs">Cari SC/IN atau INET<input aria-label="Pencarian pekerjaan" maxLength={100} className={field} value={search} onChange={e=>change(()=>setSearch(e.target.value))}/></label>
  {tab==='process'&&<label className="text-xs">Cakupan<select className={field} aria-label="Cakupan proses" value={String(mine)} onChange={e=>change(()=>setMine(e.target.value==='true'))}><option value="true">ORDER SAYA</option><option value="false">SEMUA ORDER</option></select></label>}
