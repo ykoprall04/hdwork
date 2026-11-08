@@ -5,7 +5,9 @@ function validateConfig(input) {
     if (!['TIAL','LOGIC_PSB','LOGIC_MO'].includes(group.module) || !['thread','non_topic'].includes(group.threadMode)) throw fail();
     const chatId = id(group.chatId, true), threadId = messageId(group.threadId, true);
     if ((group.threadMode === 'thread') !== (threadId !== null)) throw fail();
-    return { module: group.module, chatId, threadId, threadMode: group.threadMode };
+    if (group.commandProfile !== undefined && !['TIAL1','TIAL2','SOLVER1'].includes(group.commandProfile)) throw fail();
+    if (['TIAL1','TIAL2'].includes(group.commandProfile) && group.module !== 'TIAL') throw fail();
+    return { module: group.module, chatId, threadId, threadMode: group.threadMode, commandProfile:group.commandProfile };
   });
   if (new Set(groups.map(g=>`${g.chatId}:${g.threadId}`)).size !== groups.length) throw fail();
   const actors = input.actors.map(actor => {

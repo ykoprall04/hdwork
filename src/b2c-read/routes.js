@@ -24,7 +24,7 @@ function endpoint(kind) {
       // Reject invalid input before acquiring an orders connection.
       if (kind === 'list') filters(req.query);
       else { uuid(req.params.id); if (kind === 'history') filters(req.query,true); else if (Object.keys(req.query).length) throw Object.assign(Error(),{statusCode:400}); }
-      const reader = createOrderReader(require('../config/database'));
+      const reader = createOrderReader(require('../config/database'), process.env.B2C_COMMAND_SCHEMA_READY === 'true');
       const result = kind === 'list' ? await reader.list(req.query) : kind === 'detail' ? await reader.detail(req.params.id) : await reader.history(req.params.id,req.query);
       return res.json({success:true,...result});
     } catch (error) {

@@ -16,6 +16,12 @@ function createB2CProcessor({ store, config }) {
     if (!group) return ignore('UNMAPPED_GROUP_OR_THREAD');
     // An edit cannot silently rewrite the original order or replay a status action.
     if (e.kind !== 'message') return ignore('EDIT_REQUIRES_REVIEW');
+    if (!group.commandProfile && e.text.trimStart().startsWith('/')) return ignore('COMMAND_CONFIG_REQUIRED');
+    if (group.commandProfile && (e.reply_to_message_id === null || e.text.trimStart().startsWith('/'))) {
+      const parsed=require('./commands').parseCommand(e.text,group.commandProfile);
+      if (!parsed.valid) return ignore('COMMAND_VALIDATION_REJECTED');
+      return require('./command-storage').saveCommand({e,parsed,settings,group,tx,audit});
+    }
     if (e.reply_to_message_id !== null) {
       const actor = settings.actors.find(a => a.id === e.sender_id);
       if (!actor) return ignore('UNAUTHORIZED_STATUS_SENDER');

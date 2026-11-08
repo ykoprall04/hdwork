@@ -13,7 +13,18 @@ def main():
     try:
         config = Config.from_env(os.environ)
         transport = JsonTransport()
-        courier = Courier(config.bot_id, TelegramClient(config.token, transport), InternalClient(config, transport))
+        gate = None
+        if os.environ.get('COURIER_COMMAND_GROUPS_JSON'):
+            import json
+            from pathlib import Path
+            from .gate import CommandGate
+            journal = os.environ.get('COURIER_REJECTION_DB', '')
+            if not Path(journal).is_absolute() or Path(__file__).resolve().parents[2] in Path(journal).resolve().parents:
+                raise ValueError('Private rejection journal path required')
+            gate = CommandGate(json.loads(os.environ['COURIER_COMMAND_GROUPS_JSON']), journal)
+        if gate is None:
+            raise ValueError('Command groups must be reviewed before starting new courier')
+        courier = Courier(config.bot_id, TelegramClient(config.token, transport), InternalClient(config, transport), gate=gate)
     except Exception:
         print('Courier configuration rejected', file=sys.stderr)
         return 1

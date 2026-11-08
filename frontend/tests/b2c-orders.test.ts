@@ -34,3 +34,11 @@ test('abort is forwarded and unchanged refresh rows retain identity with no merg
  const changed=structuredClone(previous);changed.data[1].status='DONE';const next=reconcileOrders(previous,changed);
  assert.equal(next.data[0],previous.data[0]);assert.notEqual(next.data[1],previous.data[1]);assert.equal(next.data.length,2);
 });
+test('command types remain distinct through refresh and duplicate detail preserves safe prior metadata',async()=>{
+ const previous={...body(),data:[{...row,command:'order'}]} as OrderResult;
+ const changed=structuredClone(previous);changed.data[0].command='req';
+ assert.notEqual(reconcileOrders(previous,changed).data[0],previous.data[0]);
+ const prior={id:row.id,status:'DONE',hd:'Belum tersedia'};
+ const api=createOrderApi('http://mock/api',(async()=>new Response(JSON.stringify({...body(),data:{...row,command:'mo'},previous:prior,duplicateDecisions:{continueCheck:false,rejectDuplicate:false}}))) as typeof fetch);
+ const detail=await api.detail('dummy',row.id);assert.equal(detail.data.command,'mo');assert.equal(detail.previous?.status,'DONE');assert.equal(detail.duplicateDecisions?.continueCheck,false);
+});

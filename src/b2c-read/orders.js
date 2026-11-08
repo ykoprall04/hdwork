@@ -22,10 +22,11 @@ const columns = "id,module,DATE_FORMAT(business_day,'%Y-%m-%d') AS date,status,s
 function orderDto(row) {
   const safeRef = value => typeof value === 'string' && /^[A-Z0-9][A-Z0-9/_-]{0,99}$/i.test(value) ? value : null;
   const inet = safeRef(row.inet);
-  return { id: row.id, module: row.module, date: row.date, status: row.status, scIn: safeRef(row.sc_in), inetMasked: inet ? (inet.length > 4 ? `••••${inet.slice(-4)}` : '••••') : null, sto: null, duplicateOf: row.duplicate_of || null, receivedAt: row.received_at || null, startedAt: row.started_at || null, finishedAt: row.finished_at || null };
+  return { id: row.id, module: row.module, date: row.date, status: row.status, scIn: safeRef(row.sc_in), inetMasked: inet ? (inet.length > 4 ? `••••${inet.slice(-4)}` : '••••') : null, sto: null, command: row.command || null, duplicateOf: row.duplicate_of || null, receivedAt: row.received_at || null, startedAt: row.started_at || null, finishedAt: row.finished_at || null };
 }
 const metadata = { source: 'HDWORK2', readOnly: true, dateBasis: 'telegram_business_day_jakarta', stoFilterAvailable: false, actions };
-function createOrderReader(pool) {
+function createOrderReader(pool, commandSchema = false) {
+  const projection = columns + (commandSchema ? ",command" : "");
   async function read(run) {
     const c = await pool.getConnection();
     try { await c.query('SET TRANSACTION READ ONLY'); await c.beginTransaction(); const value = await run(c); await c.commit(); return value; }
@@ -41,16 +42,18 @@ function createOrderReader(pool) {
       // Literal substring search: %, _ and = are escaped, never interpolated.
       if (f.q) { where.push("(sc_in LIKE ? ESCAPE '=' OR inet LIKE ? ESCAPE '=')"); const term = `%${f.q.replace(/[=%_]/g,'=$&')}%`; values.push(term,term); }
       return read(async c => {
-        const [rows] = await c.execute(`SELECT ${columns} FROM hd2_orders WHERE ${where.join(' AND ')} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`, [...values,f.limit+1,(f.page-1)*f.limit]);
+        const [rows] = await c.execute(`SELECT ${projection} FROM hd2_orders WHERE ${where.join(' AND ')} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`, [...values,f.limit+1,(f.page-1)*f.limit]);
         return { ...metadata, data: rows.slice(0,f.limit).map(orderDto), page: f.page, pageSize: f.limit, hasMore: rows.length > f.limit };
       });
     },
     async detail(id) {
       uuid(id);
       return read(async c => {
-        const [[row]] = await c.execute(`SELECT ${columns} FROM hd2_orders WHERE id=? LIMIT 1`,[id]);
+        const [[row]] = await c.execute(`SELECT ${projection} FROM hd2_orders WHERE id=? LIMIT 1`,[id]);
         if (!row) throw reject(404);
-        return { ...metadata, data: orderDto(row) };
+        let previous=null;
+        if(row.duplicate_of){const [[prior]]=await c.execute(`SELECT ${projection} FROM hd2_orders WHERE id=? LIMIT 1`,[row.duplicate_of]);if(prior)previous={id:prior.id,status:prior.status,hd:'Belum tersedia · pemetaan akun HD belum ada'};}
+        return { ...metadata, data: orderDto(row), previous, duplicateDecisions:{continueCheck:false,rejectDuplicate:false} };
       });
     },
     async history(id, query) {

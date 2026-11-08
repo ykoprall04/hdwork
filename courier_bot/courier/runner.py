@@ -3,9 +3,10 @@ from .parser import parse_update
 from .http import TransportError
 
 class Courier:
-    def __init__(self, bot_id, telegram, internal, clock=time.monotonic):
+    def __init__(self, bot_id, telegram, internal, clock=time.monotonic, gate=None):
         self.bot_id, self.telegram, self.internal, self.offset = bot_id, telegram, internal, None
 
+        self.gate = gate
         self.clock, self.cooldown_until = clock, 0
 
     def run_once(self):
@@ -19,7 +20,7 @@ class Courier:
             raise
         for update in updates:
             event = parse_update(update, self.bot_id)
-            if event is not None:
+            if event is not None and (self.gate is None or self.gate.allow(event, self.telegram)):
                 accepted = self.internal.event(event)
                 if not accepted.get('ok'):
                     raise TransportError()

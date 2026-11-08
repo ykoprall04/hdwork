@@ -36,6 +36,14 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           row = state.inbox.find(r => r.id === p.at(-2) && r.bot_id === p.at(-1));
           if (sql.includes('processed_at')) Object.assign(row,{state:p[0],attempts:row.attempts+1});
           else Object.assign(row,{attempts:p[0],state:p[1],due_ms:p[2],last_error_code:p[3]});
+        } else if (sql.startsWith('INSERT INTO hd2_tial_keys')) {
+          state.tialKeys ||= [];if(!state.tialKeys.some(r=>r.dedupe_key===p[0]))state.tialKeys.push({dedupe_key:p[0],order_id:null});
+        } else if (sql.startsWith('SELECT order_id FROM hd2_tial_keys')) {
+          rows=state.tialKeys.filter(r=>r.dedupe_key===p[0]);
+        } else if (sql.startsWith('UPDATE hd2_tial_keys')) {
+          state.tialKeys.find(r=>r.dedupe_key===p[1]).order_id=p[0];
+        } else if (sql.startsWith('SELECT id FROM hd2_orders WHERE UPPER')) {
+          rows=state.orders.filter(r=>r.sc_in?.toUpperCase()===p[0] && r.module==='TIAL' && (!r.command || r.command==='order')).slice(0,1);
         } else if (sql.startsWith('INSERT INTO hd2_daily_keys')) {
           if (!state.keys.some(r=>r.bot_id===p[0] && r.module===p[1] && r.business_day===p[2] && r.dedupe_key===p[3])) state.keys.push({bot_id:p[0],module:p[1],business_day:p[2],dedupe_key:p[3],order_id:null});
         } else if (sql.startsWith('SELECT order_id FROM hd2_daily_keys')) {
@@ -46,7 +54,7 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           rows=state.orders.filter(r=>r.bot_id===p[0] && r.chat_id===p[1] && r.message_id===p[2]);
         } else if (sql.startsWith('INSERT INTO hd2_orders')) {
           if (state.orders.some(r=>r.bot_id===p[1] && r.chat_id===p[4] && r.message_id===p[5])) throw Error('Unique original message');
-          const names=['id','bot_id','module','business_day','chat_id','message_id','thread_id','sc_in','inet','status','duplicate_of'];
+          const names=['id','bot_id','module','business_day','chat_id','message_id','thread_id','sc_in','inet','status','duplicate_of','command','command_fields','raw_text','sender_id','telegram_timestamp'];
           state.orders.push(Object.fromEntries(names.map((name,i)=>[name,p[i]])));
         } else if (sql.startsWith('UPDATE hd2_orders')) {
           row=state.orders.find(r=>r.id===p[4] && r.bot_id===p[5]);

@@ -1,0 +1,5 @@
+{
+  "order": {"identity":"SC/IN","required":["SC/IN","NO INET","SN ONT","STO","KETERANGAN","NIK"],"optional":["NO VOICE","STB ID","TIPE TRANSAKSI","VALINS ID","TIME","SUMMARY ODP","PANEL","IP OLT","SLOT","PORT"],"codes":["AO","PDA"]},
+  "config_psb": {"identity":"ORDER ID","required":["ORDER ID","STO"],"optional":["SERVICE","SN ONT BARU","SN ONT LAMA","TIPE ONT BARU","NO INTERNET","NO VOICE","NO USEE","DOMAIN","HOSTNAME GPON & IP GPON","RACK/SHELF/SLOT/PORT","NAMA PELAPOR","NIK PELAPOR","KETERANGAN"],"codes":["AO","PDA","MO","DO"]},
+  "mo": {"identity":"SC/IN","required":["SC/IN","STO"],"optional":["NO INET","NO VOICE","SN ONT LAMA","SN ONT BARU","TIPE ONT BARU","TRANSAKSI","KETERANGAN","NIK"],"codes":["AO","PDA","MO","DO"]}
+}
