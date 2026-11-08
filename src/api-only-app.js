@@ -10,8 +10,9 @@ function createApiOnlyApp(env = process.env) {
   app.get('/api/auth/me', createRateLimit({ limit: 120, windowMs: 60_000 }));
   app.use(express.json({ limit: '32kb' }));
   app.get('/health', (_req, res) => res.json({ ok: true, mode: 'api-only' }));
-  app.use('/api/auth', require('./routes/auth.routes'));
-  app.use('/api/b2c-staging/orders', createRateLimit({ limit: 120, windowMs: 60_000 }), require('./routes/b2c-staging.routes'));
+  app.use('/api/auth', (env.HDWORK2_AUTH_V2 === 'true' ? require('./access/routes') : require('./routes/auth.routes')));
+  if(env.HDWORK2_AUTH_V2 === 'true') app.use('/api/admin/users', createRateLimit({limit:60,windowMs:60000}),require('./access/admin-routes'));
+  app.use('/api/b2c-staging/orders', createRateLimit({ limit: 120, windowMs: 60_000 }), (env.HDWORK2_AUTH_V2 === 'true' ? (_req,res)=>res.status(503).json({success:false,message:'Staging tidak tersedia pada mode sesi baru'}) : require('./routes/b2c-staging.routes')));
   app.use('/api/b2c/orders', createRateLimit({ limit: 120, windowMs: 60_000 }), require('./b2c-read/routes'));
   app.use((_req, res) => res.status(404).json({ success: false, message: 'Endpoint tidak tersedia pada API-only' }));
   app.use((error, _req, res, _next) => {

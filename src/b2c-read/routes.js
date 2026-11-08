@@ -4,9 +4,13 @@ const { createRateLimit } = require('../middlewares/api-rate-limit');
 const { createOrderReader, filters, uuid } = require('./orders');
 const accountLimit = createRateLimit({limit:60,windowMs:60000,keyFor:req=>String(req.user.id)});
 const router = express.Router();
-router.use(auth);
+router.use((req,res,next)=>process.env.HDWORK2_AUTH_V2 === 'true' ? require('../access/http').auth(req,res,next) : auth(req,res,next));
 router.use(async (req,res,next) => {
   res.set('Cache-Control','no-store');
+  if(process.env.HDWORK2_AUTH_V2 === 'true') {
+    if(process.env.B2C_WORKFLOW_READ_ENABLED !== 'true' || process.env.B2C_COMMAND_SCHEMA_READY !== 'true')return res.status(503).json({success:false,message:'Pembacaan belum tersedia'});
+    return accountLimit(req,res,next);
+  }
   // No confirmed city/account ownership mapping exists in hd2_orders yet.
   if (req.user?.role !== 'SUPER_ADMIN') return res.status(403).json({success:false,message:'Akses order sementara terbatas untuk Super Admin'});
   const id = req.user?.id;
@@ -24,11 +28,11 @@ function endpoint(kind) {
       // Reject invalid input before acquiring an orders connection.
       if (kind === 'list') filters(req.query);
       else { uuid(req.params.id); if (kind === 'history') filters(req.query,true); else if (Object.keys(req.query).length) throw Object.assign(Error(),{statusCode:400}); }
-      const reader = createOrderReader(require('../config/database'), process.env.B2C_COMMAND_SCHEMA_READY === 'true');
+      const reader = createOrderReader(require('../config/database'), process.env.B2C_COMMAND_SCHEMA_READY === 'true', process.env.HDWORK2_AUTH_V2 === 'true' ? req.user.modules : null);
       const result = kind === 'list' ? await reader.list(req.query) : kind === 'detail' ? await reader.detail(req.params.id) : await reader.history(req.params.id,req.query);
       return res.json({success:true,...result});
     } catch (error) {
-      const status = [400,404].includes(error.statusCode) ? error.statusCode : 503;
+      const status = [400,403,404].includes(error.statusCode) ? error.statusCode : 503;
       return res.status(status).json({success:false,message: status===400 ? 'Filter atau identifier order tidak valid' : status===404 ? 'Order tidak ditemukan' : 'Layanan order sementara tidak tersedia'});
     }
   };

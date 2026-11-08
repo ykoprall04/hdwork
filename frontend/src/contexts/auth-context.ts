@@ -1,5 +1,6 @@
 import { createContext } from "react";
 export type User = {
+  modules?: string[]
   id: number
   name: string
   username: string

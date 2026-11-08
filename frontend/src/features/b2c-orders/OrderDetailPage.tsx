@@ -1,3 +1,4 @@
+import {cookieMode} from '../operational/cookie-http';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,7 +16,7 @@ function OrderDetailContent({id}: {id:string}) {
   const [detail,setDetail]=useState<OrderDetail|null>(null),[history,setHistory]=useState<StatusHistory|null>(null);
   const [page,setPage]=useState(1),[retry,setRetry]=useState(0),[error,setError]=useState(''),[loading,setLoading]=useState(true);
   useEffect(()=>{
-    if (!token || user?.role!=='SUPER_ADMIN') return;
+    if (!token || (!cookieMode && user?.role!=='SUPER_ADMIN')) return;
     const controller=new AbortController();
     async function load() {
       // Keep state updates in the asynchronous request lifecycle.
@@ -35,7 +36,7 @@ function OrderDetailContent({id}: {id:string}) {
   return <>
     <header><p className="text-xs font-semibold tracking-[.18em] text-primary">WORKSPACE / B2C / DETAIL</p><h1 className="mt-2 text-3xl font-semibold">Detail Order</h1><p className="mt-2 text-sm text-muted-foreground">Sumber hdwork2 · read-only · terpisah dari staging hd_b2c.</p></header>
     <Link className="text-sm text-primary underline" to="/work/B2C/TIAL">Kembali ke daftar TIAL</Link>
-    {user?.role!=='SUPER_ADMIN' ? <Empty text="Akses order sementara terbatas untuk Super Admin."/> : error ? <div role="alert" className="space-y-3 rounded-xl border bg-card p-4"><p>{error}</p><Button onClick={()=>setRetry(n=>n+1)}>Coba lagi</Button></div> : loading ? <p role="status">Memuat detail dan riwayat order…</p> : detail && <>
+    {(!cookieMode && user?.role!=='SUPER_ADMIN') ? <Empty text="Akses order sementara terbatas untuk Super Admin."/> : error ? <div role="alert" className="space-y-3 rounded-xl border bg-card p-4"><p>{error}</p><Button onClick={()=>setRetry(n=>n+1)}>Coba lagi</Button></div> : loading ? <p role="status">Memuat detail dan riwayat order…</p> : detail && <>
       <Section title={detail.data.scIn || 'Order B2C'} description={`Identifier order: ${detail.data.id}`}>
         <dl className="grid gap-4 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Modul / Status</dt><dd>{detail.data.module}{detail.data.command ? ` /${detail.data.command}` : ''} · {statusLabels[detail.data.status]}</dd></div><div><dt className="text-muted-foreground">INET tersamar</dt><dd>{detail.data.inetMasked || 'Belum tersedia'}</dd></div><div><dt className="text-muted-foreground">Tanggal order WIB</dt><dd>{detail.data.date}</dd></div><div><dt className="text-muted-foreground">Diterima sistem</dt><dd>{time(detail.data.receivedAt)}</dd></div><div><dt className="text-muted-foreground">Mulai pengecekan</dt><dd>{time(detail.data.startedAt)}</dd></div><div><dt className="text-muted-foreground">Selesai</dt><dd>{time(detail.data.finishedAt)}</dd></div></dl>
         <p className="mt-4 text-xs text-muted-foreground">Petugas, STO, isi pesan, dan lampiran belum tersedia dalam kontrak web aman ini. Tanggal order berasal dari hari bisnis Telegram; waktu diterima sistem bukan waktu pesan Telegram asli.</p>

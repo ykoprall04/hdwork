@@ -1,5 +1,5 @@
 const reject = (statusCode = 400) => Object.assign(new Error('Read request rejected'), { statusCode });
-const modules = ['TIAL', 'LOGIC_PSB', 'LOGIC_MO'];
+const modules = ['TIAL', 'LOGIC_PSB', 'LOGIC_MO','REQ'];
 const statuses = ['WAITING', 'IN_PROGRESS', 'DONE', 'FAILED', 'DUPLICATE', 'FINISHED'];
 const actions = Object.freeze({ PICK: false, CEK: false, RECEK: false, DONE: false, GAGAL: false });
 const uuid = value => { if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw reject(); return value; };
@@ -25,7 +25,10 @@ function orderDto(row) {
   return { id: row.id, module: row.module, date: row.date, status: row.status, scIn: safeRef(row.sc_in), inetMasked: inet ? (inet.length > 4 ? `••••${inet.slice(-4)}` : '••••') : null, sto: null, command: row.command || null, duplicateOf: row.duplicate_of || null, receivedAt: row.received_at || null, startedAt: row.started_at || null, finishedAt: row.finished_at || null };
 }
 const metadata = { source: 'HDWORK2', readOnly: true, dateBasis: 'telegram_business_day_jakarta', stoFilterAvailable: false, actions };
-function createOrderReader(pool, commandSchema = false) {
+function createOrderReader(pool, commandSchema = false, accessModules = null) {
+  const scope="(CASE command WHEN 'order' THEN 'TIAL' WHEN 'config_psb' THEN 'LOGIC_PSB' WHEN 'mo' THEN 'LOGIC_MO' WHEN 'req' THEN 'REQ' ELSE module END)";
+  const visible=accessModules ? ` AND ${scope} IN (${accessModules.map(()=>'?').join(',') || "''"})` : '';
+  const permitted=accessModules || [];
   const projection = columns + (commandSchema ? ",command" : "");
   async function read(run) {
     const c = await pool.getConnection();
@@ -35,7 +38,9 @@ function createOrderReader(pool, commandSchema = false) {
   }
   return {
     async list(query) {
-      const f = filters(query), where = ['module=?'], values = [f.module];
+      const f = filters(query);
+      if(accessModules && !accessModules.includes(f.module))throw reject(403);
+      const where = [accessModules ? `${scope}=?` : 'module=?'], values = [f.module];
       if (f.date) { where.push('business_day=?'); values.push(f.date); }
       if (f.status === 'FINISHED') where.push("status IN ('DONE','FAILED')");
       else if (f.status) { where.push('status=?'); values.push(f.status); }
@@ -49,17 +54,17 @@ function createOrderReader(pool, commandSchema = false) {
     async detail(id) {
       uuid(id);
       return read(async c => {
-        const [[row]] = await c.execute(`SELECT ${projection} FROM hd2_orders WHERE id=? LIMIT 1`,[id]);
+        const [[row]] = await c.execute(`SELECT ${projection} FROM hd2_orders WHERE id=?${visible} LIMIT 1`,[id,...permitted]);
         if (!row) throw reject(404);
         let previous=null;
-        if(row.duplicate_of){const [[prior]]=await c.execute(`SELECT ${projection} FROM hd2_orders WHERE id=? LIMIT 1`,[row.duplicate_of]);if(prior)previous={id:prior.id,status:prior.status,hd:'Belum tersedia · pemetaan akun HD belum ada'};}
+        if(row.duplicate_of){const [[prior]]=await c.execute(`SELECT ${projection} FROM hd2_orders WHERE id=?${visible} LIMIT 1`,[row.duplicate_of,...permitted]);if(prior)previous={id:prior.id,status:prior.status,hd:'Belum tersedia · pemetaan akun HD belum ada'};}
         return { ...metadata, data: orderDto(row), previous, duplicateDecisions:{continueCheck:false,rejectDuplicate:false} };
       });
     },
     async history(id, query) {
       uuid(id); const f = filters(query,true);
       return read(async c => {
-        const [[order]] = await c.execute('SELECT id FROM hd2_orders WHERE id=? LIMIT 1',[id]);
+        const [[order]] = await c.execute(`SELECT id FROM hd2_orders WHERE id=?${visible} LIMIT 1`,[id,...permitted]);
         if (!order) throw reject(404);
         const [rows] = await c.execute("SELECT id,action,from_status,to_status,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%sZ') AS at FROM hd2_audit WHERE order_id=? AND action IN ('ORDER_RECEIVED','DUPLICATE_ORDER_RECORDED','STATUS_CHANGED') ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",[id,f.limit+1,(f.page-1)*f.limit]);
         return { ...metadata, data: rows.slice(0,f.limit).map(row=>({id:row.id,action:row.action,fromStatus:row.from_status || null,toStatus:row.to_status || null,at:row.at})), page:f.page,pageSize:f.limit,hasMore:rows.length>f.limit };
