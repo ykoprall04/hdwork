@@ -31,6 +31,10 @@ function validateApiOnlyConfig(env = process.env) {
   if(env.HDWORK2_AUTH_V2 !== undefined && !['true','false'].includes(env.HDWORK2_AUTH_V2))throw invalid('HDWORK2_AUTH_V2');
   if(env.HDWORK2_AUTH_V2 === 'true' && Buffer.byteLength(env.JWT_SECRET)<32)throw invalid('JWT_SECRET minimum 32 bytes');
   if (env.B2C_STAGING_ENABLED !== undefined && !['true', 'false'].includes(env.B2C_STAGING_ENABLED)) throw invalid('B2C_STAGING_ENABLED');
+  if(env.HDWORK2_OPERATIONS_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_OPERATIONS_ENABLED))throw invalid('HDWORK2_OPERATIONS_ENABLED');
+  if(env.HDWORK2_OPERATIONS_ENABLED==='true'&&(env.HDWORK2_AUTH_V2!=='true'||env.B2C_COMMAND_SCHEMA_READY!=='true'))throw invalid('Workflow membutuhkan cookie auth dan schema command');
+  if(env.HDWORK2_OPERATIONS_ENABLED==='true'&&(Number(env.WEB_CONCURRENCY||1)!==1||Number(env.NODE_APP_INSTANCE||0)!==0))throw invalid('Workflow memerlukan satu proses API');
+  if(env.HDWORK2_OPERATIONS_ENABLED==='true'&&require('node:cluster').isWorker)throw invalid('Workflow hanya mendukung mode fork tunggal');
   const staging = env.B2C_STAGING_ENABLED === 'true' ? stagingOptions(env) : null;
   return { port: listenPort, database: 'hdwork2', staging };
 }

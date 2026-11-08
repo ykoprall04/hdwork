@@ -22,6 +22,7 @@ function createB2CProcessor({ store, config }) {
       if (!parsed.valid) return ignore('COMMAND_VALIDATION_REJECTED');
       return require('./command-storage').saveCommand({e,parsed,settings,group,tx,audit});
     }
+    if (e.reply_to_message_id !== null && process.env.HDWORK2_OPERATIONS_ENABLED==='true') return ignore('TELEGRAM_STATUS_DEFERRED_BATCH12');
     if (e.reply_to_message_id !== null) {
       const actor = settings.actors.find(a => a.id === e.sender_id);
       if (!actor) return ignore('UNAUTHORIZED_STATUS_SENDER');

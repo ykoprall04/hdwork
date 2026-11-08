@@ -13,6 +13,7 @@ function createApiOnlyApp(env = process.env) {
   app.use('/api/auth', (env.HDWORK2_AUTH_V2 === 'true' ? require('./access/routes') : require('./routes/auth.routes')));
   if(env.HDWORK2_AUTH_V2 === 'true') app.use('/api/admin/users', createRateLimit({limit:60,windowMs:60000}),require('./access/admin-routes'));
   app.use('/api/b2c-staging/orders', createRateLimit({ limit: 120, windowMs: 60_000 }), (env.HDWORK2_AUTH_V2 === 'true' ? (_req,res)=>res.status(503).json({success:false,message:'Staging tidak tersedia pada mode sesi baru'}) : require('./routes/b2c-staging.routes')));
+  if(env.HDWORK2_OPERATIONS_ENABLED==='true')app.use('/api/operations',createRateLimit({limit:240,windowMs:60000}),require('./operations/routes'));
   app.use('/api/b2c/orders', createRateLimit({ limit: 120, windowMs: 60_000 }), require('./b2c-read/routes'));
   app.use((_req, res) => res.status(404).json({ success: false, message: 'Endpoint tidak tersedia pada API-only' }));
   app.use((error, _req, res, _next) => {

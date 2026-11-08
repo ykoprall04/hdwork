@@ -1,3 +1,4 @@
+import {clearDrafts} from '../workflow/drafts';
 import {useCallback,useEffect,useMemo,useState,type ReactNode} from 'react';
 import {AuthContext,type User} from '@/contexts/auth-context';
 import {SessionState} from './session-state';
@@ -5,7 +6,7 @@ import {cookieFetch,setCsrf} from './cookie-http';
 import {API_URL} from '@/config/api';
 export default function CookieSessionProvider({children}:{children:ReactNode}){
  const [user,setUser]=useState<User|null>(null),[status,setStatus]=useState('loading'),[error,setError]=useState(''),[revision,setRevision]=useState(0);
- const clear=useCallback(()=>{setCsrf('');setUser(null);setStatus('anonymous');},[]);
+ const clear=useCallback(()=>{clearDrafts();setCsrf('');setUser(null);setStatus('anonymous');},[]);
  useEffect(()=>{
   try{localStorage.removeItem('hdwork:operational:auth:v1');}catch{/* remove obsolete bearer token only */}
   const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;

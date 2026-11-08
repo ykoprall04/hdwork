@@ -1,3 +1,5 @@
+import WorkDetail from '../workflow/WorkDetail';
+import {operationsEnabled} from '../workflow/api';
 import {cookieMode} from '../operational/cookie-http';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -9,7 +11,7 @@ import { statusLabels, type OrderDetail, type StatusHistory } from './model';
 const time = (value: string | null) => value ? new Date(value).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})+' WIB' : 'Belum tersedia';
 export default function OrderDetailPage() {
   const { id='' }=useParams();
-  return <OrderDetailContent key={id} id={id} />;
+  return operationsEnabled?<WorkDetail/>:<OrderDetailContent key={id} id={id} />;
 }
 function OrderDetailContent({id}: {id:string}) {
   const {token,user}=useAuth();
