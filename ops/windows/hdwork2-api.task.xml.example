@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- REVIEW ONLY: replace account/paths, review credentials in Windows UI; never import automatically. -->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>HD Work 2.0 API-only; separate from all legacy bots</Description></RegistrationInfo>
+  <Triggers><BootTrigger><Enabled>true</Enabled><Delay>PT2M</Delay></BootTrigger></Triggers>
+  <Principals><Principal id="Owner"><UserId>REPLACE_WITH_DEDICATED_LOCAL_ACCOUNT</UserId><LogonType>S4U</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable><Enabled>false</Enabled><ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>5</Count></RestartOnFailure>
+  </Settings>
+  <Actions Context="Owner"><Exec><Command>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe</Command><Arguments>-NoProfile -NonInteractive -File "C:\Apps\hdwork2\ops\windows\start-api-task.ps1" -ApprovedStart -LogDirectory "C:\HDWork2Private\logs"</Arguments><WorkingDirectory>C:\Apps\hdwork2</WorkingDirectory></Exec></Actions>
+</Task>
