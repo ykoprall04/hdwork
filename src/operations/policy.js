@@ -1,5 +1,5 @@
 const {createHash}=require('node:crypto');
-const modules=['TIAL','REQ','LOGIC_PSB','LOGIC_MO'];
+const {modules,areas}=require('./modules');
 const fail=(statusCode=400,message='Permintaan pekerjaan tidak valid')=>Object.assign(Error(message),{statusCode});
 const uuid=value=>{if(typeof value!=='string'||! /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value))throw fail();return value;};
 const moduleOf=o=>({order:'TIAL',req:'REQ',config_psb:'LOGIC_PSB',mo:'LOGIC_MO'})[o.command]||o.module;
@@ -28,9 +28,9 @@ function filters(query,user,{recap=false}={}){
  if(!query||typeof query!=='object'||Array.isArray(query))throw fail();
  if(recap&&Object.keys(query).some(k=>!['area','from','to','hd'].includes(k)))throw fail();
  if(Object.keys(query).some(k=>!['area','command','tab','mine','from','to','hd','status','q','page'].includes(k)||typeof query[k]!=='string'))throw fail();
- const area=query.area||'ALL';if(!['ALL','TIAL','LOGIC'].includes(area))throw fail();
- const allowed=user.modules.filter(m=>modules.includes(m)&&(area==='ALL'||(area==='TIAL'?['TIAL','REQ']:['LOGIC_PSB','LOGIC_MO']).includes(m)));
- const command=query.command||'';if(command&&!['order','req','config_psb','mo'].includes(command))throw fail();
+ const area=query.area||'ALL';if(!Object.hasOwn(areas,area))throw fail();
+ const allowed=user.modules.filter(m=>modules.includes(m)&&areas[area].includes(m));
+ const command=query.command||'';if(command&&!['order','req','config_psb','mo','assuren','b2b','replacement'].includes(command))throw fail();
  const tab=query.tab||'incoming';if(!['incoming','process','finished'].includes(tab))throw fail();
  const from=query.from?date(query.from):'',to=query.to?date(query.to):'';if((from&&!to)||(!from&&to)||(from&&from>to))throw fail();
  if(query.mine&&!['true','false'].includes(query.mine))throw fail();
@@ -41,7 +41,7 @@ function filters(query,user,{recap=false}={}){
  return {allowed,command,area,tab,from,to,hd,status,q,page,mine:!recap&&tab==='process'?(query.mine||'true')==='true':false};
 }
 function where(f,user,{recap=false}={}){
- const clauses=[`o.access_module IN (${f.allowed.map(()=>'?').join(',')||"''"})`,`o.command IN ('order','req','config_psb','mo')`,'o.telegram_timestamp IS NOT NULL'],values=[...f.allowed];
+ const clauses=[`o.access_module IN (${f.allowed.map(()=>'?').join(',')||"''"})`,`(o.command IN ('order','req','config_psb','mo','assuren','b2b','replacement') OR (o.command IS NULL AND o.bot_id='web-local' AND o.chat_id='web'))`,'o.telegram_timestamp IS NOT NULL'],values=[...f.allowed];
  if(f.from){clauses.push('o.business_day BETWEEN ? AND ?');values.push(f.from,f.to);}
  if(!recap){clauses.push(f.tab==='incoming'?"(o.status='WAITING' OR (o.status='DUPLICATE' AND o.duplicate_decision IS NULL))":f.tab==='process'?"o.status='IN_PROGRESS'":"(o.status IN ('DONE','FAILED') OR (o.status='DUPLICATE' AND o.duplicate_decision='REJECT_DUPLICATE'))");if(f.mine){clauses.push('o.owner_user_id=?');values.push(user.id);}if(f.hd){clauses.push(f.tab==='process'?'o.owner_user_id=?':'o.final_user_id=?');values.push(f.hd);}if(f.status){clauses.push('o.status=?');values.push(f.status);}}
  if(f.command){clauses.push('o.command=?');values.push(f.command);}

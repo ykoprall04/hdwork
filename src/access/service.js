@@ -1,6 +1,6 @@
 const {randomBytes,createHash,createHmac}=require('node:crypto');
 const bcrypt=require('bcrypt'),jwt=require('jsonwebtoken');
-const roles=['SUPER_ADMIN','ADMIN','HD','SHOW_ONLY'],modules=['TIAL','LOGIC_PSB','LOGIC_MO','REQ'];
+const roles=['SUPER_ADMIN','ADMIN','HD','SHOW_ONLY'],{modules}=require('../operations/modules');
 const reject=(statusCode=403)=>Object.assign(Error('Permintaan akun tidak diizinkan'),{statusCode});
 const digest=value=>createHash('sha256').update(value).digest('hex');
 function password(value){if(typeof value!=='string'||value.length<12||Buffer.byteLength(value)>72)throw reject(400);return value;}

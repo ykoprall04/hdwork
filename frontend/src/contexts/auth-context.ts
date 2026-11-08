@@ -12,7 +12,7 @@ type AuthContextType = {
   user: User | null
   token: string | null
   login: (token: string, user: User) => void
-  logout: () => void
+  logout: () => void | Promise<boolean>
 }
 
 export const AuthContext =

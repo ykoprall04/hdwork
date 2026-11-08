@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { BriefcaseBusiness, ArrowRight } from "lucide-react";
 import { workspaces as categories } from "../operational/workspaces";
-export default function JobSelection({ base = "/preview", description, categoryText }: { base?: string; description?: string; categoryText?: (category: string) => string }) {
+export default function JobSelection({ base = "/preview", description, categoryText, allowedCategories }: { base?: string; description?: string; categoryText?: (category: string) => string; allowedCategories?: readonly string[] }) {
   return (
     <>
       <div className="py-5">
@@ -15,8 +15,9 @@ export default function JobSelection({ base = "/preview", description, categoryT
           {description ?? "Seluruh petugas HD dapat mengakses empat kategori. Pilih ruang kerja untuk mulai."}
         </p>
       </div>
+      {allowedCategories?.length === 0 && <p role="status" className="rounded-lg border bg-card p-4 text-sm">Belum ada modul yang ditugaskan. Hubungi Super Admin untuk akses workspace.</p>}
       <div className="grid gap-5 sm:grid-cols-2">
-        {categories.map((category, index) => (
+        {categories.filter(category => !allowedCategories || allowedCategories.includes(category)).map((category, index) => (
           <Link
             key={category}
             to={`${base}/work/${category}`}

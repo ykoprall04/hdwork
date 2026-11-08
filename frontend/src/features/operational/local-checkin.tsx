@@ -16,5 +16,5 @@ export function CheckInGate() {
 }
 export function OperationalCheckIn() {
   const local = useLocalCheckIn(), navigate = useNavigate(); const [status, setStatus] = useState<Status>(local.checked ? local.status : 'ONLINE');
-  return <CheckInView status={status} onChange={setStatus} onContinue={() => { local.select(status); navigate('/jobs'); }} description="Status ini hanya preferensi lokal pada tab browser, belum tersinkronisasi ke backend. Tidak mengaktifkan PICK atau tindakan order." footer="ONLINE/SIBUK/OFFLINE belum merupakan status kehadiran server. Tidak mengirim data ke bot atau MySQL; logout hanya menghapus pilihan lokal." choiceText={value => `${value} · pilihan lokal belum tersinkronisasi. Semua tindakan order tetap nonaktif.`} />;
+  return <CheckInView status={status} onChange={setStatus} onContinue={() => { local.select(status); navigate('/jobs'); }} description="Status ini hanya preferensi pada tab browser dan tidak mengubah izin atau kepemilikan pekerjaan." footer="ONLINE/SIBUK/OFFLINE belum merupakan absensi server. Logout mengakhiri sesi akun." choiceText={value => `${value} · preferensi status pada tab ini.`} />;
 }

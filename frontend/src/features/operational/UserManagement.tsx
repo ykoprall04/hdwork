@@ -5,7 +5,7 @@ import {Button} from '@/components/ui/button';
 import {Section} from '../operations/components';
 import {cookieMode,cookieFetch} from './cookie-http';
 type Account={id:number;name:string;username:string;role:string;is_active:boolean|number;modules:string[]};
-const modules=['TIAL','LOGIC_PSB','LOGIC_MO','REQ'];
+const modules=['TIAL','LOGIC_PSB','LOGIC_MO','REQ','ASSUREN','B2B','REPLACEMENT'];
 export default function UserManagement(){
  const {user}=useAuth();const [rows,setRows]=useState<Account[]>([]),[page,setPage]=useState(1),[more,setMore]=useState(false),[revision,setRevision]=useState(0),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [selected,setSelected]=useState<Account|null>(null),[name,setName]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[role,setRole]=useState('HD'),[active,setActive]=useState(true),[grants,setGrants]=useState<string[]>([]);

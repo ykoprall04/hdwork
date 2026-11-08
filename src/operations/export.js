@@ -17,9 +17,9 @@ function createExporter({pool,authenticate,maxRows=1048576}){
  c=await pool.getConnection();await c.query('SET TRANSACTION READ ONLY');await c.beginTransaction();
  const current=await authenticate(token);if(current.role==='SHOW_ONLY')throw fail(403);
  const f=filters(job.query,current);const sheets=new Map();
- const specs=require('../../contracts/b2c-commands.json');const fieldNames=[...new Set(Object.values(specs).flatMap(s=>[...s.required,...s.optional]))];
+ const specs={...require('../../contracts/b2c-commands.json'),...require('../../contracts/workspace-commands.json')};const fieldNames=[...new Set([...Object.values(specs).flatMap(s=>[...s.required,...s.optional]),'description'])];
  const headings=['SC/IN hasil ekstraksi','ID','Command','Status asli','HD penyelesaian','Order masuk WIB','Selesai WIB','Catatan / alasan',...fieldNames];
- function add(row){const module=row.access_module;let item=sheets.get(module);if(!item||item.count>=maxRows){if(item)item.sheet.commit();const part=(item?.part||0)+1;const label=({TIAL:'TIAL',REQ:'REQ',LOGIC_PSB:'LOGIC PSB',LOGIC_MO:'LOGIC MO'})[module];const sheet=writer.addWorksheet(label+(part>1?' '+part:''));sheet.addRow(headings).commit();item={sheet,count:1,part};sheets.set(module,item);}
+ function add(row){const module=row.access_module;let item=sheets.get(module);if(!item||item.count>=maxRows){if(item)item.sheet.commit();const part=(item?.part||0)+1;const label=({TIAL:'TIAL',REQ:'REQ',LOGIC_PSB:'LOGIC PSB',LOGIC_MO:'LOGIC MO'})[module]||module;const sheet=writer.addWorksheet(label+(part>1?' '+part:''));sheet.addRow(headings).commit();item={sheet,count:1,part};sheets.set(module,item);}
  const fields=typeof row.command_fields==='string'?JSON.parse(row.command_fields):row.command_fields;
  const date=value=>value?new Date(value).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'}):'';
  item.sheet.addRow([row.sc_in,row.id,row.command,row.status,row.final_name,date(Number(row.telegram_timestamp)*1000),date(row.finished),row.completion_note,...fieldNames.map(name=>fields?.[name]??null)].map(text)).commit();item.count++;job.rows++;}
@@ -27,7 +27,7 @@ function createExporter({pool,authenticate,maxRows=1048576}){
  while(true){if(signal.aborted)throw fail(499);const fresh=await authenticate(token);if(fresh.role==='SHOW_ONLY'||f.allowed.some(m=>!fresh.modules.includes(m)))throw fail(403);
  const [rows]=await c.execute(`SELECT o.id,o.sc_in,o.access_module,o.command,o.status,o.command_fields,o.telegram_timestamp,o.completion_note,DATE_FORMAT(o.business_day,'%Y-%m-%d') AS cursor_day,DATE_FORMAT(o.finished_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS finished,u.name AS final_name FROM hd2_orders o LEFT JOIN users u ON u.id=o.final_user_id WHERE ${w.sql} AND (o.business_day>? OR (o.business_day=? AND o.id>?)) ORDER BY o.business_day,o.id LIMIT 500`,[...w.values,cursorDay,cursorDay,cursor]);
  for(const row of rows)add(row);if(rows.length<500)break;cursor=rows.at(-1).id;cursorDay=rows.at(-1).cursor_day;await new Promise(r=>setImmediate(r));}}
- for(const module of f.allowed.filter(m=>!sheets.has(m))){const label=({TIAL:'TIAL',REQ:'REQ',LOGIC_PSB:'LOGIC PSB',LOGIC_MO:'LOGIC MO'})[module];const sheet=writer.addWorksheet(label);sheet.addRow(headings).commit();}
+ for(const module of f.allowed.filter(m=>!sheets.has(m))){const label=({TIAL:'TIAL',REQ:'REQ',LOGIC_PSB:'LOGIC PSB',LOGIC_MO:'LOGIC MO'})[module]||module;const sheet=writer.addWorksheet(label);sheet.addRow(headings).commit();}
  for(const item of sheets.values())item.sheet.commit();await writer.commit();await c.commit();c.release();c=null;
  if(signal.aborted)throw fail(499);const fresh=await authenticate(token);if(fresh.role==='SHOW_ONLY'||f.allowed.some(m=>!fresh.modules.includes(m)))throw fail(403);
  res.set('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.set('Content-Disposition','attachment; filename="hdwork-orders.xlsx"');res.set('Content-Length',String((await fsp.stat(filename)).size));readStream=fs.createReadStream(filename);await pipeline(readStream,res,{signal});job.state='done';

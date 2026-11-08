@@ -1,0 +1,5 @@
+{
+  "assuren": {"module":"ASSUREN","required":["SC/IN","NO INET/TELP","STO","TRANSAKSI"],"optional":["KETERANGAN"]},
+  "b2b": {"module":"B2B","required":["SC/IN","NO INET/TELP","STO","TRANSAKSI"],"optional":["KETERANGAN"]},
+  "replacement": {"module":"REPLACEMENT","required":["SC/IN","NO INET/TELP","STO","TRANSAKSI"],"optional":["KETERANGAN"]}
+}
