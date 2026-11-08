@@ -5,6 +5,9 @@ local_agent/node_modules/
 
 # Secrets and local configuration
 .env
+.local/
+.env.local
+frontend/.env.local
 local_agent/.env
 
 # Generated files and macOS metadata

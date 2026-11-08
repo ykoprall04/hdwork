@@ -1,0 +1,21 @@
+# REVIEW ONLY. Private JSON plan is preferred; do not configure conflicting values.
+# No plaintext passwords. .local/database-pools.plan.json defaults disabled.
+DB_USER=hdwork_auth
+DB_NAME=hdwork2
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_PASSWORD_DPAPI_FILE=.local/hdwork-auth.password.dpapi
+HDWORK2_LOCAL_READ_ONLY=true
+OP_READ_ENABLED=false
+OP_READ_DB_USER=hdwork_ops_read
+OP_READ_DB_NAME=hdwork2
+OP_READ_DB_HOST=127.0.0.1
+OP_READ_DB_PORT=3306
+OP_READ_DB_PASSWORD_DPAPI_FILE=.local/database-secrets/ops-read-password.dpapi
+OP_WRITE_ENABLED=false
+OP_WRITE_DB_USER=hdwork_ops_write
+OP_WRITE_DB_NAME=hdwork2
+OP_WRITE_DB_HOST=127.0.0.1
+OP_WRITE_DB_PORT=3306
+OP_WRITE_DB_PASSWORD_DPAPI_FILE=.local/database-secrets/ops-write-password.dpapi
+HDWORK2_OPERATIONAL_WRITE_APPROVED=false

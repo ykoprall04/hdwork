@@ -1,0 +1,15 @@
+-- RECOMMENDATION ONLY; all CREATE/UNLOCK examples are deliberately commented.
+-- Use a secure LOCAL administrator tool with hidden password input, after consent.
+-- Never replace placeholders with real passwords in this file or shell arguments.
+-- Existing users must be inspected first; never ALTER/reset an existing password.
+-- SQL syntax template (<HIDDEN_ADMIN_INPUT> is not an executable SQL value):
+-- CREATE USER 'hdwork_ops_read'@'localhost' IDENTIFIED WITH caching_sha2_password BY <HIDDEN_ADMIN_INPUT> ACCOUNT LOCK;
+-- CREATE USER 'hdwork_courier'@'localhost' IDENTIFIED WITH caching_sha2_password BY <HIDDEN_ADMIN_INPUT> ACCOUNT LOCK;
+-- OPTIONAL ONLY, for separately approved web operational writes:
+-- CREATE USER 'hdwork_ops_write'@'localhost' IDENTIFIED WITH caching_sha2_password BY <HIDDEN_ADMIN_INPUT> ACCOUNT LOCK;
+-- Apply ONLY the approved identity's grants from hdwork2-operational-grants.review.sql.
+-- Check SHOW GRANTS and target schema first. No FLUSH PRIVILEGES is necessary.
+-- Unlock each identity only after its corresponding activation approval:
+-- ALTER USER 'hdwork_ops_read'@'localhost' ACCOUNT UNLOCK;
+-- ALTER USER 'hdwork_courier'@'localhost' ACCOUNT UNLOCK;
+-- ALTER USER 'hdwork_ops_write'@'localhost' ACCOUNT UNLOCK;
