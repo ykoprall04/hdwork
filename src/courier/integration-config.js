@@ -5,7 +5,7 @@ function configuration(env) {
   for (const flag of ['COURIER_RECEIVE_ENABLED', 'COURIER_OUTBOX_ENABLED', 'COURIER_WORKER_ENABLED']) {
     if (env[flag] !== undefined && !['true', 'false'].includes(env[flag])) reject();
   }
-  if (env.COURIER_ENABLED !== 'true' || env.COURIER_INTEGRATION_ENABLED !== 'true' ||
+  if (env.HDWORK2_LOCAL_READ_ONLY !== 'false' || env.COURIER_ENABLED !== 'true' || env.COURIER_INTEGRATION_ENABLED !== 'true' ||
       env.COURIER_STORE !== 'mysql' || env.COURIER_SCHEMA_READY !== 'true' ||
       env.HDWORK2_OPERATIONS_ENABLED !== 'true' || env.HDWORK2_AUTH_V2 !== 'true' ||
       env.B2C_COMMAND_SCHEMA_READY !== 'true' || env.COURIER_DB_NAME !== 'hdwork2' ||
@@ -29,8 +29,8 @@ function configuration(env) {
       multipleStatements: false, timezone: 'Z', supportBigNumbers: true, bigNumberStrings: true },
     workflow: { enabled: true, webOnly: true, botId: env.COURIER_BOT_ID,
       botUsername: env.COURIER_BOT_USERNAME, identityKey: env.COURIER_IDENTITY_KEY, dedupeBy: 'sc_in', actors: [],
-      groups: groups.map(g => ({ module: g.profile === 'SOLVER1' ? 'LOGIC_PSB' : 'TIAL',
-        chatId: g.chatId, threadId: null, threadMode: 'non_topic', commandProfile: g.profile, allowedCommands: g.commands })) },
+      groups: groups.map(g => ({ module: ['ASSUREN','B2B','REPLACEMENT'].includes(g.profile)?g.profile:g.profile === 'SOLVER1' ? 'LOGIC_PSB' : 'TIAL',
+        chatId: g.chatId, threadId: g.threadId, threadMode: g.threadMode, commandProfile: g.profile, allowedCommands: g.commands })) },
     groups
   };
 }

@@ -1,0 +1,15 @@
+{
+  "botId":"synthetic-four", "botUsername":"SyntheticFourBot",
+  "groups":[
+    {"chatId":"-1007001","threadId":null,"threadMode":"non_topic","profile":"TIAL1","commands":["order"]},
+    {"chatId":"-1007002","threadId":"10","threadMode":"thread","profile":"ASSUREN","commands":["assuren"]},
+    {"chatId":"-1007002","threadId":"11","threadMode":"thread","profile":"B2B","commands":["b2b"]},
+    {"chatId":"-1007002","threadId":"12","threadMode":"thread","profile":"REPLACEMENT","commands":["replacement"]}
+  ],
+  "events":[
+    {"version":1,"bot_id":"synthetic-four","update_id":"1","event":{"kind":"message","chat_id":"-1007001","message_id":"101","telegram_thread_id":null,"sender_id":"9","reply_to_message_id":null,"timestamp":1700000000,"attachments":[],"text":"/order\nSC/IN:X-AO100\nNO INET/TELP:00012345\nSN ONT:SYNTHETIC\nSTO:ABC\nKETERANGAN:fixture\nNIK:SYNTHETIC"}},
+    {"version":1,"bot_id":"synthetic-four","update_id":"2","event":{"kind":"message","chat_id":"-1007002","message_id":"102","telegram_thread_id":"10","sender_id":"9","reply_to_message_id":null,"timestamp":1700000000,"attachments":[],"text":"/assuren\nSC/IN:ORDER-100\nNO INET/TELP:00012345\nSTO:ABC\nTRANSAKSI:PERBAIKAN"}},
+    {"version":1,"bot_id":"synthetic-four","update_id":"3","event":{"kind":"message","chat_id":"-1007002","message_id":"103","telegram_thread_id":"11","sender_id":"9","reply_to_message_id":null,"timestamp":1700000000,"attachments":[],"text":"/b2b\nSC/IN:ORDER-100\nNO INET/TELP:00012345\nSTO:ABC\nTRANSAKSI:PERBAIKAN"}},
+    {"version":1,"bot_id":"synthetic-four","update_id":"4","event":{"kind":"message","chat_id":"-1007002","message_id":"104","telegram_thread_id":"12","sender_id":"9","reply_to_message_id":null,"timestamp":1700000000,"attachments":[],"text":"/replacement\nSC/IN:ORDER-100\nNO INET/TELP:00012345\nSTO:ABC\nTRANSAKSI:PERBAIKAN"}}
+  ]
+}

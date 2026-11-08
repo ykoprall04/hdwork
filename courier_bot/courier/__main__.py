@@ -49,6 +49,12 @@ def main():
         telegram = TelegramClient(config.base.token, JsonTransport(build_opener(NoRedirect()).open))
         lease = WorkerLease(internal)
         stop = threading.Event()
+        if os.environ.get('COURIER_PRIVATE_CONTROL_STDIN') == 'true':
+            # Parent EOF or STOP closes only this new courier, not legacy workers.
+            def watch_parent():
+                if sys.stdin.readline().strip() in ('STOP', ''):
+                    stop.set()
+            threading.Thread(target=watch_parent, daemon=True).start()
         courier = DurableCourier(telegram, internal, journal,
                                  IngressPolicy(config.base.bot_id, config.username, config.groups), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,

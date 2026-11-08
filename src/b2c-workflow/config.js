@@ -4,13 +4,15 @@ function validateConfig(input) {
   if(input.botUsername!==undefined&&!/^[A-Za-z0-9_]{5,32}$/.test(input.botUsername))throw fail();
   if(input.webOnly===true&&(!input.botUsername||input.actors.length))throw fail();
   const groups = input.groups.map(group => {
-    if (!['TIAL','LOGIC_PSB','LOGIC_MO'].includes(group.module) || !['thread','non_topic'].includes(group.threadMode)) throw fail();
+    if (!['TIAL','LOGIC_PSB','LOGIC_MO','ASSUREN','B2B','REPLACEMENT'].includes(group.module) || !['thread','non_topic'].includes(group.threadMode)) throw fail();
     const chatId = id(group.chatId, true), threadId = messageId(group.threadId, true);
     if ((group.threadMode === 'thread') !== (threadId !== null)) throw fail();
-    if (group.commandProfile !== undefined && !['TIAL1','TIAL2','SOLVER1'].includes(group.commandProfile)) throw fail();
+    if (group.commandProfile !== undefined && !['TIAL1','TIAL2','SOLVER1','ASSUREN','B2B','REPLACEMENT'].includes(group.commandProfile)) throw fail();
+    const workspace=['ASSUREN','B2B','REPLACEMENT'].includes(group.commandProfile);
+    if(workspace&&group.module!==group.commandProfile)throw fail();
     if (['TIAL1','TIAL2'].includes(group.commandProfile) && group.module !== 'TIAL') throw fail();
-    if(group.allowedCommands!==undefined&&(!Array.isArray(group.allowedCommands)||!group.allowedCommands.length||group.allowedCommands.some(c=>!['order','req','config_psb','mo'].includes(c))))throw fail();
-    if(input.webOnly===true&&(!group.commandProfile||!group.allowedCommands||group.threadMode!=='non_topic'||!chatId.startsWith('-')))throw fail();
+    if(group.allowedCommands!==undefined&&(!Array.isArray(group.allowedCommands)||!group.allowedCommands.length||group.allowedCommands.some(c=>!(workspace?[group.module.toLowerCase()]:['order','req','config_psb','mo']).includes(c))))throw fail();
+    if(input.webOnly===true&&(!group.commandProfile||!group.allowedCommands||!chatId.startsWith('-')))throw fail();
     return { module: group.module, chatId, threadId, threadMode: group.threadMode, commandProfile:group.commandProfile,allowedCommands:group.allowedCommands };
   });
   if (new Set(groups.map(g=>`${g.chatId}:${g.threadId}`)).size !== groups.length) throw fail();

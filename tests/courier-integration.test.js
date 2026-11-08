@@ -18,27 +18,27 @@ const event = (content = text, chat = '-1001') => ({ version: 1, bot_id: botId, 
   kind: 'message', chat_id: chat, message_id: '42', telegram_thread_id: null,
   sender_id: '9', reply_to_message_id: null, timestamp: 1700000000, text: content, attachments: []
 } });
-const policy = () => createGroupPolicy({ botId, botUsername: 'HDWorkOpsBot', groups });
-const env = () => ({ COURIER_ENABLED: 'true', COURIER_INTEGRATION_ENABLED: 'true', COURIER_STORE: 'mysql',
+const policy = () => createGroupPolicy({ botId, botUsername: 'ExampleCourierBot', groups });
+const env = () => ({ HDWORK2_LOCAL_READ_ONLY:'false', COURIER_ENABLED: 'true', COURIER_INTEGRATION_ENABLED: 'true', COURIER_STORE: 'mysql',
   COURIER_SCHEMA_READY: 'true', HDWORK2_OPERATIONS_ENABLED: 'true', HDWORK2_AUTH_V2: 'true', B2C_COMMAND_SCHEMA_READY: 'true',
   COURIER_DB_NAME: 'hdwork2', COURIER_DB_HOST: '127.0.0.1', COURIER_DB_USER: 'courier_only',
   COURIER_DB_PASSWORD: 'synthetic-database-only', COURIER_BOT_ID: botId, COURIER_SERVICE_KEY: key,
-  COURIER_IDENTITY_KEY: 'synthetic-identity-only-'.repeat(2), COURIER_BOT_USERNAME: 'HDWorkOpsBot', COURIER_COMMAND_GROUPS_JSON: JSON.stringify(groups) });
+  COURIER_IDENTITY_KEY: 'synthetic-identity-only-'.repeat(2), COURIER_BOT_USERNAME: 'ExampleCourierBot', COURIER_COMMAND_GROUPS_JSON: JSON.stringify(groups) });
 
 test('new ingress reuses four parsers, mentions, explicit allowlist and numeric non-topic groups', () => {
   const p = policy();
-  for (const [body, chat, command] of [[text, '-1001', 'order'], [' /ReQ@hdworkopsbot original\n text', '-1001', 'req'],
-    ['/CONFIG_PSB@HDWorkOpsBot\nOrder ID:X-AOi1\nSTO:ABC', '-1002', 'config_psb'], ['/MO\nSC/IN:X-MOk1\nSTO:ABC', '-1002', 'mo']]) {
+  for (const [body, chat, command] of [[text, '-1001', 'order'], [' /ReQ@ExampleCourierBot original\n text', '-1001', 'req'],
+    ['/CONFIG_PSB@ExampleCourierBot\nOrder ID:X-AOi1\nSTO:ABC', '-1002', 'config_psb'], ['/MO\nSC/IN:X-MOk1\nSTO:ABC', '-1002', 'mo']]) {
     const e = p.ingress(event(body, chat));
-    assert.equal(parseCommand(e.event.text, 'TIAL1', 'HDWorkOpsBot').command, command);
+    assert.equal(parseCommand(e.event.text, 'TIAL1', 'ExampleCourierBot').command, command);
     assert.equal(e.event.chat_id, chat); assert.equal(e.event.message_id, '42'); assert.equal(e.event.telegram_thread_id, null);
   }
   for (const e of [event(text, '-1003'), event('/req@AnotherBot hello'), event('/config_psb\nOrder ID:X-AOi1\nSTO:X'),
     event('DONE'), { ...event(), event: { ...event().event, telegram_thread_id: '1' } },
     { ...event(), event: { ...event().event, kind: 'edited_message' } }]) assert.throws(() => p.ingress(e));
-  assert.equal(parseCommand('/req@HDWorkOpsBot hello', 'TIAL1').valid, false);
+  assert.equal(parseCommand('/req@ExampleCourierBot hello', 'TIAL1').valid, false);
   for (const g of [[], [{ ...groups[0], chatId: '<PENDING>' }], [{ ...groups[0], commands: [] }], [groups[0], groups[0]],
-    [{ ...groups[1], commands: ['order'] }]]) assert.throws(() => createGroupPolicy({ botId, botUsername: 'HDWorkOpsBot', groups: g }));
+    [{ ...groups[1], commands: ['order'] }]]) assert.throws(() => createGroupPolicy({ botId, botUsername: 'ExampleCourierBot', groups: g }));
 });
 
 test('outbox authorization requires allowed chat, original anchor and allowed command, never a forum topic', async () => {
@@ -64,10 +64,11 @@ test('integration config is disabled by default, isolated hdwork2 and does not p
 test('explicit courier startup uses mock hdwork2 readiness, loopback listener and separately gated inbox worker with clean shutdown', async () => {
   const filename=path.resolve('courier-b2c-server.js'), source=fs.readFileSync(filename,'utf8');
   for(const enabled of [false,true]) {
-    const calls=[],module={exports:{}},mockPool={async execute(sql){calls.push(sql);return [[]];},async end(){calls.push('pool-end');}};
+    const calls=[],module={exports:{}},mockPool={async query(sql){calls.push(sql);if(sql.startsWith('SELECT'))return [[{db:'hdwork2',account:'courier_only@localhost'}]];return [Object.entries(require('../src/config/operational-grants').policies.courier).map(([t,ps])=>({grant:`GRANT ${ps.join(', ')} ON hdwork2.${t} TO synthetic`}))];},async execute(sql){calls.push(sql);return [[]];},async end(){calls.push('pool-end');}};
     const server={once(){},listen(port,host,cb){assert.equal(port,3091);assert.equal(host,'127.0.0.1');calls.push('listen');cb();},close(cb){calls.push('server-close');cb?.();}};
     const dependencies={
       './src/courier/integration-config':{configuration},'node:cluster':{isWorker:false},
+      './src/config/operational-grants':require('../src/config/operational-grants'),
       'mysql2/promise':{createPool(config){assert.equal(config.database,'hdwork2');return mockPool;}},
       './src/courier/mysql-store':{MysqlStore:class{constructor(){}}},
       './src/courier/runtime-store':{RuntimeStore:class{constructor(){}}},

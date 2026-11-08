@@ -54,12 +54,20 @@ class Journal:
     def append(self, updates, prepare):
         if not isinstance(updates, list) or len(updates) > 100:
             raise ValueError('updates_invalid')
+        source_allowed = getattr(getattr(prepare, '__self__', None), 'allows_source', None)
+        if not callable(source_allowed):
+            raise ValueError('source_allowlist_required')
         checkpoint = self.offset
         with self.db:
             for update in updates:
                 uid = update.get('update_id') if isinstance(update, dict) else None
                 if type(uid) is not int or not 0 <= uid <= 9007199254740991:
                     raise ValueError('update_id_invalid')
+                if not source_allowed(update):
+                    # Discard before serialization/hash/projection/payload storage.
+                    # Keep only the global offset needed to avoid repeated polling.
+                    checkpoint = max(checkpoint or 0, uid + 1)
+                    continue
                 raw = encoded(update)
                 fingerprint = hashlib.sha256(raw.encode()).hexdigest()
                 existing = self.db.execute('SELECT hash FROM updates WHERE update_id=?', (str(uid),)).fetchone()
@@ -77,7 +85,7 @@ class Journal:
                             payload, state, reason = None, 'QUARANTINED', 'envelope_too_large'
                     except (ValueError, TypeError, KeyError, IndexError):
                         pass
-                    stored = encoded(payload) if payload is not None else raw
+                    stored = encoded(payload) if payload is not None and state == 'PENDING' else None
                 else:
                     stored, reason = None, 'update_too_large'
                 if state not in ('PENDING', 'IGNORED', 'QUARANTINED'):

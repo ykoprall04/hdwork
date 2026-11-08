@@ -5,6 +5,9 @@ from pathlib import Path
 SPEC = json.loads((Path(__file__).resolve().parents[2] / 'contracts' / 'b2c-commands.json').read_text())
 
 def parse_command(text, profile, bot_username=None):
+    if profile in ('ASSUREN', 'B2B', 'REPLACEMENT'):
+        from .workspace_command import parse_workspace_command
+        return parse_workspace_command(text, profile, bot_username)
     def reject(fields): return {'valid': False, 'errors': fields}
     if not isinstance(text, str) or len(text) > 16384: return reject(['format'])
     head = re.match(r'^\s*/(order|config_psb|mo|req)(?:@([A-Za-z0-9_]{5,32}))?(?=\s|$)', text, re.I)
@@ -21,6 +24,7 @@ def parse_command(text, profile, bot_username=None):
         label, value = line.split(':', 1)
         label = re.sub(r'\s*/\s*', '/', re.sub(r'\s+', ' ', label.strip()).upper())
         if label == 'ORDER ID DSC': label = 'ORDER ID'
+        if label == 'NO INET/TELP': label = 'NO INET' if 'NO INET' in rule['required'] + rule['optional'] else 'NO INTERNET'
         if label not in rule['required'] + rule['optional']: continue
         if label in fields: errors.append(label + ' berulang')
         value = value.strip()

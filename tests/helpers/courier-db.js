@@ -24,7 +24,7 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           else if (sql.includes('WHERE id=?')) rows = table.filter(r => r.id === p[0] && r.bot_id === p[1]);
           else if (sql.includes("state='SENDING'")) rows = table.filter(r => r.bot_id === p[0] && r.state === 'SENDING' && r.lease_until_ms <= p[1]).slice(0, 100);
           else if (sql.includes("state='QUEUED'")) rows = table.filter(r => r.bot_id === p[0] && r.state === 'QUEUED' && r.due_ms <= p[1] && r.attempts < p[2]).sort((a,b) => a.due_ms-b.due_ms || a.id.localeCompare(b.id)).slice(0,p[3]);
-          else if (sql.includes("state='PENDING'")) rows = table.filter(r => r.bot_id === p[0] && r.state === 'PENDING' && r.due_ms <= p[1]).sort((a,b) => a.due_ms-b.due_ms || a.id.localeCompare(b.id)).slice(0,1);
+          else if (sql.includes("state='PENDING'")) rows = table.filter(r => r.bot_id === p[0] && r.state === 'PENDING' && (sql.includes('received_seq') || r.due_ms <= p[1])).sort(sql.includes('received_seq')?((a,b)=>table.indexOf(a)-table.indexOf(b)):((a,b) => a.due_ms-b.due_ms || a.id.localeCompare(b.id))).slice(0,1);
           else throw Error('Unrecognized SELECT');
         } else if (sql.startsWith('UPDATE hd2_courier_outbox')) {
           row = state.outbox.find(r => r.id === p.at(-2) && r.bot_id === p.at(-1));
@@ -58,6 +58,8 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           row=state.orders.find(r=>r.id===p[4] && r.bot_id===p[5]);
           Object.assign(row,{status:p[0],last_actor_id:p[1]});
           if (p[0]==='IN_PROGRESS') row.started_at='mock-processing-time'; else row.finished_at='mock-processing-time';
+        } else if (sql.startsWith('INSERT INTO hd2_live_events')) {
+          state.liveEvents ||= [];state.liveEvents.push({module:p[0],kind:'arrival'});
         } else if (sql.startsWith('INSERT INTO hd2_audit')) {
           const names=['id','inbox_id','order_id','action','actor_id','from_status','to_status','detail'];
           state.audit.push(Object.fromEntries(names.map((name,i)=>[name,p[i]])));

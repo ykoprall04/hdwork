@@ -1,5 +1,6 @@
 const spec=require('../../contracts/b2c-commands.json');
 function parseCommand(text,profile,botUsername) {
+  if(['ASSUREN','B2B','REPLACEMENT'].includes(profile))return require('../courier/workspace-command').parseWorkspaceCommand(text,profile,botUsername);
   const reject=fields=>({valid:false,errors:fields});
   if(typeof text!=='string'||text.length>16384)return reject(['format']);
   const head=/^\s*\/(order|config_psb|mo|req)(?:@([A-Za-z0-9_]{5,32}))?(?=\s|$)/i.exec(text);
@@ -13,6 +14,7 @@ function parseCommand(text,profile,botUsername) {
     const colon=line.indexOf(':');if(colon<0)continue;
     let label=line.slice(0,colon).trim().replace(/\s+/g,' ').toUpperCase().replace(/\s*\/\s*/g,'/');
     if(label==='ORDER ID DSC')label='ORDER ID';
+    if(label==='NO INET/TELP')label=[...rule.required,...rule.optional].includes('NO INET')?'NO INET':'NO INTERNET';
     if(![...rule.required,...rule.optional].includes(label))continue;
     if(Object.hasOwn(fields,label))errors.push(label+' berulang');
     const value=line.slice(colon+1).trim();fields[label]=value&&value!=='-'?value:null;

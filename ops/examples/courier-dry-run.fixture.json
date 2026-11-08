@@ -1,0 +1,11 @@
+{
+  "botId":"synthetic-dry-run",
+  "botUsername":"SyntheticOpsBot",
+  "groups":[{"chatId":"-1009001","threadId":null,"threadMode":"non_topic","profile":"TIAL1","commands":["order","req"]},{"chatId":"-1009002","threadId":null,"threadMode":"non_topic","profile":"SOLVER1","commands":["config_psb","mo"]}],
+  "events":[
+    {"version":1,"bot_id":"synthetic-dry-run","update_id":"1","event":{"kind":"message","chat_id":"-1009001","message_id":"10","telegram_thread_id":null,"sender_id":"9","reply_to_message_id":null,"timestamp":1700000000,"text":"/order\nSC/IN:QA-AOi123\nNO INET:000123\nSN ONT:SYNTHETIC\nSTO:QA\nKETERANGAN:fixture only\nNIK:SYNTHETIC","attachments":[]}},
+    {"version":1,"bot_id":"synthetic-dry-run","update_id":"2","event":{"kind":"message","chat_id":"-1009001","message_id":"11","telegram_thread_id":null,"sender_id":"9","reply_to_message_id":null,"timestamp":1700000001,"text":"/req synthetic fixture only","attachments":[]}},
+    {"version":1,"bot_id":"synthetic-dry-run","update_id":"3","event":{"kind":"message","chat_id":"-1009002","message_id":"12","telegram_thread_id":null,"sender_id":"9","reply_to_message_id":null,"timestamp":1700000002,"text":"/config_psb\nOrder ID:QA-AOi2\nSTO:QA","attachments":[]}},
+    {"version":1,"bot_id":"synthetic-dry-run","update_id":"4","event":{"kind":"message","chat_id":"-1009002","message_id":"13","telegram_thread_id":null,"sender_id":"9","reply_to_message_id":null,"timestamp":1700000003,"text":"/MO\nSC/IN:QA-MOk3\nSTO:QA\nTRANSAKSI:synthetic","attachments":[]}}
+  ]
+}
