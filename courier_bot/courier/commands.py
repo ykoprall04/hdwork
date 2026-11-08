@@ -4,11 +4,12 @@ import re
 from pathlib import Path
 SPEC = json.loads((Path(__file__).resolve().parents[2] / 'contracts' / 'b2c-commands.json').read_text())
 
-def parse_command(text, profile):
+def parse_command(text, profile, bot_username=None):
     def reject(fields): return {'valid': False, 'errors': fields}
     if not isinstance(text, str) or len(text) > 16384: return reject(['format'])
-    head = re.match(r'^\s*/(order|config_psb|mo|req)(?=\s|$)', text, re.I)
+    head = re.match(r'^\s*/(order|config_psb|mo|req)(?:@([A-Za-z0-9_]{5,32}))?(?=\s|$)', text, re.I)
     if not head: return reject(['perintah'])
+    if head[2] and (not bot_username or head[2].lower() != bot_username.lower()): return reject(['perintah'])
     command, body = head[1].lower(), text[head.end():]
     if profile not in ('TIAL1', 'TIAL2', 'SOLVER1') or (profile == 'SOLVER1' and command == 'order'):
         return reject(['perintah tidak diizinkan di grup ini'])

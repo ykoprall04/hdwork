@@ -18,10 +18,12 @@ function createB2CProcessor({ store, config }) {
     if (e.kind !== 'message') return ignore('EDIT_REQUIRES_REVIEW');
     if (!group.commandProfile && e.text.trimStart().startsWith('/')) return ignore('COMMAND_CONFIG_REQUIRED');
     if (group.commandProfile && (e.reply_to_message_id === null || e.text.trimStart().startsWith('/'))) {
-      const parsed=require('./commands').parseCommand(e.text,group.commandProfile);
+      const parsed=require('./commands').parseCommand(e.text,group.commandProfile,settings.botUsername);
       if (!parsed.valid) return ignore('COMMAND_VALIDATION_REJECTED');
+      if(group.allowedCommands&&!group.allowedCommands.includes(parsed.command))return ignore('COMMAND_NOT_ALLOWED_IN_GROUP');
       return require('./command-storage').saveCommand({e,parsed,settings,group,tx,audit});
     }
+    if(settings.webOnly)return ignore('TELEGRAM_STATUS_NOT_AUTHORIZED');
     if (e.reply_to_message_id !== null && process.env.HDWORK2_OPERATIONS_ENABLED==='true') return ignore('TELEGRAM_STATUS_DEFERRED_BATCH12');
     if (e.reply_to_message_id !== null) {
       const actor = settings.actors.find(a => a.id === e.sender_id);

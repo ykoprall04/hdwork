@@ -1,9 +1,10 @@
 const spec=require('../../contracts/b2c-commands.json');
-function parseCommand(text,profile) {
+function parseCommand(text,profile,botUsername) {
   const reject=fields=>({valid:false,errors:fields});
   if(typeof text!=='string'||text.length>16384)return reject(['format']);
-  const head=/^\s*\/(order|config_psb|mo|req)(?=\s|$)/i.exec(text);
+  const head=/^\s*\/(order|config_psb|mo|req)(?:@([A-Za-z0-9_]{5,32}))?(?=\s|$)/i.exec(text);
   if(!head)return reject(['perintah']);
+  if(head[2]&&(!botUsername||head[2].toLowerCase()!==botUsername.toLowerCase()))return reject(['perintah']);
   const command=head[1].toLowerCase(),body=text.slice(head[0].length);
   if(!['TIAL1','TIAL2','SOLVER1'].includes(profile)||(profile==='SOLVER1'&&command==='order'))return reject(['perintah tidak diizinkan di grup ini']);
   if(command==='req')return body.trim()?{valid:true,command,sc_in:null,fields:{},request:body,original:text}:reject(['teks permintaan']);

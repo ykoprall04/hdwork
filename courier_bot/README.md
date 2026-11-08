@@ -1,5 +1,13 @@
 # HD Work 2.0 — Telegram courier foundation
 
+**Batch12:** CLI `python -m courier --run` sekarang menggunakan journal durabel,
+allowlist command eksplisit, OS lock dan lease backend. Gunakan listener
+`courier-b2c-server.js --run` / `npm run start:courier`, bukan listener memory
+foundation untuk integrasi. Semua flag tetap nonaktif secara default. Konfigurasi
+Batch3/8 saja tidak cukup untuk menjalankan CLI terbaru. Panduan lengkap:
+[Batch12](../docs/batch12-telegram-integration.md). Bagian berikut adalah riwayat
+fondasi; bukan instruksi aktivasi layanan sekarang.
+
 Python 3.11+; hanya standard library, tanpa Telethon, session user, pip dependency,
 atau konfigurasi bot lama. Import modul tidak memulai network. Token hanya dari
 bot BotFather **baru milik pengguna**, bukan TELEGRAM_BOT_TOKEN lama.

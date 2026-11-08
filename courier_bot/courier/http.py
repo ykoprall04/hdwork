@@ -9,11 +9,14 @@ class TransportError(Exception):
         self.retry_after = retry_after
 
 class JsonTransport:
+    def __init__(self, opener=None):
+        self.opener = opener
+
     def post(self, url, payload, headers=None):
         body = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode()
         request = Request(url, data=body, headers={'Content-Type': 'application/json', **(headers or {})}, method='POST')
         try:
-            with urlopen(request, timeout=10) as response:
+            with (self.opener or urlopen)(request, timeout=10) as response:
                 raw = response.read(1_048_577)
                 if len(raw) > 1_048_576:
                     raise TransportError()

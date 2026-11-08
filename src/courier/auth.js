@@ -14,6 +14,7 @@ function createServiceAuth({ botId, key, now = Date.now }) {
     for (const [n, expires] of used) if (expires < now()) used.delete(n);
     if (used.has(nonce) || used.size >= 10000) throw fail(401);
     used.set(nonce, now() + 120000);
+    return { nonce, expiresMs: now() + 120000 };
   };
 }
 module.exports = { createServiceAuth };

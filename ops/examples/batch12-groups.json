@@ -1,0 +1,5 @@
+[
+  {"chatId":"<TIAL_1_NUMERIC_CHAT_ID>","threadId":null,"threadMode":"non_topic","profile":"TIAL1","commands":["order","req"]},
+  {"chatId":"<TIAL_2_NUMERIC_CHAT_ID>","threadId":null,"threadMode":"non_topic","profile":"TIAL2","commands":["order","req"]},
+  {"chatId":"<SOLVER_1_NUMERIC_CHAT_ID>","threadId":null,"threadMode":"non_topic","profile":"SOLVER1","commands":["config_psb","mo"]}
+]

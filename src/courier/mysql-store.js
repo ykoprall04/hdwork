@@ -3,8 +3,9 @@ const { eventEnvelope, outbound, digest, fail, messageId } = require('./contract
 const json = value => typeof value === 'string' ? JSON.parse(value) : value;
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
 class MysqlStore {
-  constructor({ pool, botId, now = Date.now, maxAttempts = 5 }) {
+  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false }) {
     this.pool = pool; this.botId = botId; this.now = now; this.maxAttempts = maxAttempts;
+    this.orderedInbox = orderedInbox;
   }
   async transaction(run) {
     const connection = await this.pool.getConnection();
@@ -30,15 +31,20 @@ class MysqlStore {
     return row.id;
   }
   enqueue(key, body) { return this.transaction(c => this.enqueueOn(c, key, body)); }
-  async claim(limit = 1) {
+  async claim(limit = 1, options = {}) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw fail();
     return this.transaction(async c => {
+      if (options.before) await options.before(c);
       const now = this.now();
       const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=? ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now]);
       for (const row of expired) await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', [row.attempts >= this.maxAttempts ? 'DEAD' : 'QUEUED', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);
       const [rows] = await c.execute("SELECT id,payload,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<? ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, limit]);
       const messages = [];
       for (const row of rows) {
+        if (options.authorize && !await options.authorize(json(row.payload), c)) {
+          await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now, 'BAD_REQUEST', row.id, this.botId]);
+          continue;
+        }
         const lease = randomUUID();
         await c.execute("UPDATE hd2_courier_outbox SET state='SENDING',attempts=attempts+1,lease_token=?,lease_until_ms=? WHERE id=? AND bot_id=?", [lease, now + 60000, row.id, this.botId]);
         messages.push({ delivery_id: row.id, lease_token: lease, attempt: row.attempts + 1, payload: json(row.payload) });
@@ -65,8 +71,11 @@ class MysqlStore {
     let selected;
     try {
       return await this.transaction(async c => {
-        const [[row]] = await c.execute("SELECT id,payload,attempts FROM hd2_courier_inbox WHERE bot_id=? AND state='PENDING' AND due_ms<=? ORDER BY due_ms,id LIMIT 1 FOR UPDATE SKIP LOCKED", [this.botId, this.now()]);
+        const [[row]] = this.orderedInbox
+          ? await c.execute("SELECT id,payload,attempts,due_ms FROM hd2_courier_inbox WHERE bot_id=? AND state='PENDING' ORDER BY received_seq LIMIT 1 FOR UPDATE", [this.botId])
+          : await c.execute("SELECT id,payload,attempts FROM hd2_courier_inbox WHERE bot_id=? AND state='PENDING' AND due_ms<=? ORDER BY due_ms,id LIMIT 1 FOR UPDATE SKIP LOCKED", [this.botId, this.now()]);
         if (!row) return false;
+        if (this.orderedInbox && Number(row.due_ms) > this.now()) return false;
         selected = row.id;
         const result = await handler(json(row.payload), { connection: c, inboxId: row.id, enqueue: (key, payload) => this.enqueueOn(c, key, payload) });
         const state = result?.disposition === 'IGNORED' ? 'IGNORED' : 'PROCESSED';

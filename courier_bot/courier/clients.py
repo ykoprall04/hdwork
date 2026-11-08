@@ -9,6 +9,7 @@ from .http import TransportError
 class InternalClient:
     def __init__(self, config, transport, clock=time.time, nonce=lambda: uuid.uuid4().hex):
         self.config, self.transport, self.clock, self.nonce = config, transport, clock, nonce
+        self.worker = None
 
     def post(self, path, body):
         raw = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()
@@ -18,13 +19,16 @@ class InternalClient:
         return self.transport.post(self.config.server + path, raw, {'X-Courier-Id': self.config.bot_id, 'X-Courier-Time': stamp, 'X-Courier-Nonce': nonce, 'X-Courier-Signature': signature})
 
     def event(self, event):
-        return self.post('/internal/courier/v1/events', event)
+        return self.post('/internal/courier/v1/events', {**event, **({'worker': self.worker} if self.worker else {})})
 
     def claim(self):
-        return self.post('/internal/courier/v1/outbox/claim', {'limit': 1})['messages']
+        return self.post('/internal/courier/v1/outbox/claim', {'limit': 1, **({'worker': self.worker} if self.worker else {})})['messages']
 
     def settle(self, delivery, result):
-        return self.post('/internal/courier/v1/outbox/' + delivery['delivery_id'] + '/result', {'lease_token': delivery['lease_token'], **result})
+        return self.post('/internal/courier/v1/outbox/' + delivery['delivery_id'] + '/result', {'lease_token': delivery['lease_token'], **result, **({'worker': self.worker} if self.worker else {})})
+
+    def lease(self, action, worker_id, token=None):
+        return self.post('/internal/courier/v1/worker/' + action, {'worker_id': worker_id, **({'lease_token': token} if token else {})})
 
 class TelegramClient:
     def __init__(self, token, transport):
