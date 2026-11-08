@@ -1,0 +1,19 @@
+# REVIEW ONLY. Not loaded automatically; contains no credentials.
+# Replace placeholder with confirmed owned domain after public security approval.
+HDWORK2_PUBLIC_ORIGIN=https://hdwork.example.invalid
+HDWORK2_PUBLIC_ORIGIN_APPROVED=false
+FRONTEND_ORIGINS=https://hdwork.example.invalid
+# Frontend build variable; rebuild separately after review.
+VITE_API_BASE_URL=https://hdwork.example.invalid
+HDWORK2_AUTH_V2=true
+HDWORK2_LOCAL_READ_ONLY=true
+DB_NAME=hdwork2
+DB_USER=hdwork_auth
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_PASSWORD_DPAPI_FILE=.local/hdwork-auth.password.dpapi
+B2C_STAGING_ENABLED=false
+COURIER_ENABLED=false
+COURIER_ALLOW_NETWORK=false
+# JWT/other runtime secrets must be loaded privately, never added here.
+# This observation configuration intentionally cannot provide normal public login.

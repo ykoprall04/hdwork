@@ -1,0 +1,22 @@
+# REVIEW ONLY — NOT DEPLOYED OR VALIDATED WITH CADDY.
+# Replace the invalid placeholder only after domain/hosting approval.
+# Never use the local QA certificate or its private key for public hosting.
+hdwork.example.invalid {
+    header X-Content-Type-Options nosniff
+    header Referrer-Policy same-origin
+    route {
+        @private path /ready /internal/*
+        respond @private 404
+        @api path /api/* /health
+        handle @api {
+            reverse_proxy 127.0.0.1:3090 {
+                flush_interval -1
+            }
+        }
+        handle {
+            root * D:/HDWork2-New/frontend/dist
+            try_files {path} /index.html
+            file_server
+        }
+    }
+}

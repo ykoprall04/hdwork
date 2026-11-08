@@ -1,0 +1,16 @@
+# OFFLINE REVIEW ONLY. No credentials or real tunnel ID. Do not run a tunnel.
+tunnel: 00000000-0000-4000-8000-000000000000
+ingress:
+  - hostname: api.hdwork.yoloo.space
+    path: "^/api/"
+    service: https://127.0.0.1:8443
+    originRequest:
+      originServerName: localhost
+      caPool: D:/HDWork2-New/.local/tls/ca.crt
+      noTLSVerify: false
+      access:
+        required: true
+        teamName: replace-with-owned-team
+        audTag:
+          - '0000000000000000000000000000000000000000000000000000000000000000'
+  - service: http_status:404

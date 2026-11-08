@@ -1,0 +1,58 @@
+{
+  "reviewOnly": true,
+  "deploymentApproved": false,
+  "dnsChangeApproved": false,
+  "productionCutoverApproved": false,
+  "productionFrontend": "https://hdwork.yoloo.space",
+  "proposedBackendHostname": "api.hdwork.yoloo.space",
+  "backendHostnameConfirmed": false,
+  "frontend": {
+    "provider": "Cloudflare Pages",
+    "rootDirectory": "frontend",
+    "buildCommand": "npm ci && npm run build",
+    "outputDirectory": "dist",
+    "candidateEnvironmentOnly": {
+      "VITE_API_BASE_URL": "https://api.hdwork.yoloo.space",
+      "VITE_HDWORK2_AUTH_COOKIE": "true",
+      "VITE_HDWORK2_OPERATIONS": "true"
+    },
+    "productionEnvironmentUnchanged": true
+  },
+  "backend": {
+    "host": "Windows PC",
+    "ingressService": "https://127.0.0.1:8443",
+    "originServerName": "localhost",
+    "caPool": ".local/tls/ca.crt",
+    "noTLSVerify": false,
+    "apiListen": "127.0.0.1:3090",
+    "frontendOriginsAtCutover": ["https://hdwork.yoloo.space"],
+    "separateApiHostAllowlistImplemented": true,
+    "splitHostValidatedOffline": true,
+    "globalOperationalReadOnly": true,
+    "persistentAuthPolicyApproved": false,
+    "trustedProxy": false,
+    "proxyRateLimitReviewRequired": true
+  },
+  "access": {
+    "defaultDeny": true,
+    "allowedIdentities": [],
+    "mfaRequired": true,
+    "teamName": null,
+    "audience": null,
+    "crossOriginPreflightReviewRequired": true,
+    "browserAccessAuthenticationReviewRequired": true
+  },
+  "network": {
+    "publicMysql": false,
+    "publicDevTools": false,
+    "publicCourier": false,
+    "firewallExceptionsVerified": false,
+    "routerForwardingVerified": false
+  },
+  "cutover": {
+    "productionPreserved": true,
+    "candidateUploadApproved": false,
+    "validationBeforeDnsChange": true,
+    "rollback": "Restore previous Pages deployment/domain target and stop only this project's tunnel after separate approval. Preserve database and legacy PM2."
+  }
+}

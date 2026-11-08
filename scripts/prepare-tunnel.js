@@ -1,0 +1,10 @@
+const fs=require('node:fs'),path=require('node:path');
+const {renderIngress,checks}=require('../src/config/tunnel-plan');
+const folder=path.resolve(__dirname,'../.local/cloudflare');fs.mkdirSync(folder,{recursive:true,mode:0o700});
+const planFile=path.join(folder,'plan.json');
+if(!fs.existsSync(planFile))fs.writeFileSync(planFile,JSON.stringify({hostname:null,tunnelId:null,origin:'https://127.0.0.1:8443',originServerName:'localhost',noTLSVerify:false,access:{required:true,teamName:'',audTag:[]},checks:Object.fromEntries(checks.map(k=>[k,false])),publicStartApproved:false,approvalUntil:null,tokenDpapiFile:'',maxRestarts:2},null,2)+'\n',{flag:'wx',mode:0o600});
+const plan=JSON.parse(fs.readFileSync(planFile,'utf8')),preview=path.join(folder,'ingress.preview.yml');
+if(!fs.existsSync(preview))fs.writeFileSync(preview,renderIngress(plan),{flag:'wx',mode:0o600});
+const remote=path.join(folder,'remote-run.yml');
+if(!fs.existsSync(remote))fs.writeFileSync(remote,'# Dedicated remote-managed runtime; no token or ingress stored here.\nloglevel: error\nmetrics: 127.0.0.1:0\n',{flag:'wx',mode:0o600});
+console.log('Rencana tunnel privat dan ingress preview dipertahankan/dibuat; tidak ada tunnel, token atau DNS dibuat.');

@@ -1,0 +1,25 @@
+# REVIEW ONLY. Placeholder domain, no real secret. Does not activate writes.
+NODE_ENV=production
+PORT=3090
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=hdwork2
+DB_USER=hdwork_auth
+DB_PASSWORD=
+DB_PASSWORD_DPAPI_FILE=.local/hdwork-auth.password.dpapi
+# Supply a fresh production secret privately to the process; do not copy dev JWT.
+JWT_SECRET=
+FRONTEND_ORIGINS=https://hdwork.example.invalid
+HDWORK2_AUTH_V2=true
+HDWORK2_LOCAL_READ_ONLY=true
+HDWORK2_AUTH_ONLY=false
+HDWORK2_AUTH_WRITE_ENABLED=false
+HDWORK2_OPERATIONS_ENABLED=false
+B2C_WORKFLOW_READ_ENABLED=false
+B2C_STAGING_ENABLED=false
+COURIER_ENABLED=false
+COURIER_ALLOW_NETWORK=false
+# Frontend BUILD values are public; rebuild separately after approval.
+VITE_API_BASE_URL=https://hdwork.example.invalid
+VITE_HDWORK2_AUTH_COOKIE=true
+VITE_HDWORK2_OPERATIONS=false
