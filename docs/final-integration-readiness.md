@@ -1,5 +1,8 @@
 # HD Work 2.0 — final integration readiness
 
+Current role/menu activation audit: [all-features-activation-audit.md](all-features-activation-audit.md).
+The historical isolated integration results below predate that mock-only audit.
+
 Scope: ykoprall04/hdwork, chore/remove-cacti-hdwork2, initial baseline 4974cdc.
 B2C LOGIN in the original request was corrected to existing B2C LOGIC/SOLVER.
 No LOGIN order category, parser or workflow was created.
