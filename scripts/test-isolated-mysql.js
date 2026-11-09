@@ -45,7 +45,7 @@ async function main() {
       return env;
     }
     // Existing rehearsals populate only new, guarded hdwork2_test_* schemas.
-    for (const [file,flag] of [['mysql-auth.cjs','--run-auth-disposable'],['mysql-operations.cjs','--run-operations-disposable'],['mysql-courier-integration.cjs','--run-courier-disposable'],['mysql-system.cjs','--run-system-disposable'],['mysql-chat.cjs','--run-chat-disposable']]) {
+    for (const [file,flag] of [['mysql-auth.cjs','--run-auth-disposable'],['mysql-operations.cjs','--run-operations-disposable'],['mysql-courier-integration.cjs','--run-courier-disposable'],['mysql-system.cjs','--run-system-disposable'],['mysql-chat.cjs','--run-chat-disposable'],['mysql-b2c.cjs','--run-b2c-disposable']]) {
       // Fresh process prevents environment flags, cached pools and auth sessions crossing suites.
       const suite=spawn(process.execPath,[path.join(root,'tests/integration',file),flag],{cwd:root,env:childEnvironment(process.env,await target()),windowsHide:true,stdio:['ignore','pipe','ignore']});
       let output='';suite.stdout.on('data',b=>output+=b);

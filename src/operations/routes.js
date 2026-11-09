@@ -10,6 +10,7 @@ const wrap=fn=>async(req,res)=>{try{await fn(req,res);}catch(e){if(res.headersSe
 const exporter=()=>exportService||=(require('./export').createExporter({pool:pool(),authenticate:token=>h.service().me(token)}));
 let chatRoutes;router.use('/chat',(req,res,next)=>{chatRoutes||=require('../chat/routes').createRoutes({http:h});return chatRoutes(req,res,next);});
 let systemRoutes;router.use('/system',(req,res,next)=>{systemRoutes||=require('../system/routes').createRoutes({http:h});return systemRoutes(req,res,next);});
+router.get('/b2c/readiness',wrap(async(req,res)=>{if(!['SUPER_ADMIN','ADMIN'].includes(req.user.role))throw fail(403);if(process.env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true')return res.json({success:true,configured:false,readyForControlledTest:false,liveVerified:false,reason:'MONITORING_NOT_ENABLED'});res.json({success:true,...await require('./b2c-readiness').snapshot({pool:pool(),writerAvailable:require('../config/operational-pools').status().write})});}));
 router.get('/orders',wrap(async(req,res)=>res.json({success:true,...await read().list(req.query,req.user)})));
 router.post('/orders',wrap(async(req,res)=>{h.csrf(req,req.sessionToken);throw fail(403,'Order baru hanya melalui Telegram');}));
 router.get('/orders/:id',wrap(async(req,res)=>res.json({success:true,...await read().detail(req.params.id,req.user,Number(req.query.page||1))})));

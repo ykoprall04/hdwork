@@ -10,7 +10,7 @@ function createSystem({readPool,writePool,now=Date.now}){
   const [[r]]=await c.execute('SELECT payload_hash,result FROM hd2_system_requests WHERE actor_id=? AND request_id=? FOR UPDATE',[user.id,input.requestId]);if(r.payload_hash!==digest)throw p.fail(409);if(r.result)return typeof r.result==='string'?JSON.parse(r.result):r.result;
   const result=await body(c);await c.execute('UPDATE hd2_system_requests SET result=? WHERE actor_id=? AND request_id=?',[JSON.stringify(result),user.id,input.requestId]);return result;
  });}
- async function routing(botId,c=readPool){p.bot(botId);const [rows]=await c.execute('SELECT id,category,profile,chat_id,thread_id,version FROM hd2_system_mappings WHERE bot_id=? AND enabled=TRUE AND verified=TRUE ORDER BY id',[botId]);return rows.map(r=>({chatId:r.chat_id,threadId:r.thread_id,threadMode:r.thread_id===null?'non_topic':'thread',profile:r.profile,commands:p.categories[r.category].commands}));}
+ async function routing(botId,c=readPool){p.bot(botId);const [rows]=await c.execute(`SELECT id,category,profile,chat_id,thread_id,version FROM hd2_system_mappings WHERE bot_id=? AND enabled=TRUE AND verified=TRUE ORDER BY id${c===readPool?'':' FOR SHARE'}`,[botId]);return rows.map(r=>({chatId:r.chat_id,threadId:r.thread_id,threadMode:r.thread_id===null?'non_topic':'thread',profile:r.profile,commands:p.categories[r.category].commands}));}
  return {
  routing,
  async mappings(user){p.admin(user);const [data]=await readPool.execute('SELECT id,bot_id AS botId,category,profile,chat_id AS chatId,thread_id AS threadId,enabled,verified,version FROM hd2_system_mappings ORDER BY id LIMIT 100');return {data};},
@@ -41,7 +41,7 @@ function createSystem({readPool,writePool,now=Date.now}){
   const id=await new MysqlStore({pool:writePool,botId,now}).enqueueOn(c,'system:'+code+':'+now(),{method:'sendMessage',chat_id:t.chat_id,telegram_thread_id:t.thread_id,thread_mode:t.thread_id===null?'non_topic':'thread',reply_to_message_id:t.anchor_id,text:'HD Work 2.0 system alert: '+code});
   await c.execute('UPDATE hd2_system_alerts SET outbox_id=?,window_id=? WHERE bot_id=? AND alert_key=?',[id,now(),botId,code]);return {queued:true,id};
  });},
- async targets(botId){p.bot(botId);const [rows]=await readPool.execute('SELECT chat_id AS chatId,thread_id AS threadId,anchor_id AS anchorId FROM hd2_system_targets WHERE bot_id=? AND enabled=TRUE AND verified=TRUE',[botId]);return rows;},
+ async targets(botId,c=readPool){p.bot(botId);const [rows]=await c.execute(`SELECT chat_id AS chatId,thread_id AS threadId,anchor_id AS anchorId FROM hd2_system_targets WHERE bot_id=? AND enabled=TRUE AND verified=TRUE${c===readPool?'':' FOR SHARE'}`,[botId]);return rows;},
  async jobs(user){p.admin(user);const [data]=await readPool.execute('SELECT kind,window_id,state,bytes,sha256,code,created_at,finished_at FROM hd2_system_jobs ORDER BY created_at DESC LIMIT 30');return {data};}
  };
 }
