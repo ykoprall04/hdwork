@@ -76,7 +76,11 @@ try{
   # Fresh state directory; keep the copied old evidence for review.
   $priorState=Join-Path $new 'service/state'
   if([IO.Path]::GetFullPath($priorState) -ne ($new+'\service\state')){throw 'STATE_PATH_REJECTED'}
-  Move-Item -LiteralPath $priorState -Destination (Join-Path $new 'service/previous-state')
+    $previousState = Join-Path $new 'service/previous-state'
+  if (Test-Path -LiteralPath $previousState) {
+    $previousState = Join-Path $new ('service/previous-state-deploy-' + [Guid]::NewGuid().ToString('N'))
+  }
+  Move-Item -LiteralPath $priorState -Destination $previousState
   Move-Item -LiteralPath $state -Destination $priorState
   $acl=Get-Acl $priorState
   $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-19'),'Modify','ContainerInherit,ObjectInherit','None','Allow'))
