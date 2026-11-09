@@ -24,6 +24,7 @@ async function saveCommand({e,parsed,settings,group,tx,audit}) {
   await c.execute('INSERT INTO hd2_orders (id,bot_id,module,business_day,chat_id,message_id,thread_id,sc_in,inet,status,duplicate_of,command,command_fields,raw_text,sender_id,telegram_timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[id,settings.botId,group.module,jakartaDay(e.timestamp),e.chat_id,e.message_id,e.telegram_thread_id,parsed.sc_in,parsed.fields['NO INET']||parsed.fields['NO INTERNET']||parsed.fields['NO INET/TELP']||null,status,duplicate,parsed.command,JSON.stringify(parsed.fields),e.text,e.sender_id,e.timestamp]);
   if(dailyScope&&!duplicate)await c.execute('UPDATE hd2_daily_keys SET order_id=? WHERE bot_id=? AND module=? AND business_day=? AND dedupe_key=?',[id,...dailyScope]);
   else if(key&&!dailyScope)await c.execute('UPDATE hd2_tial_keys SET order_id=? WHERE dedupe_key=?',[duplicate||id,key]);
+  if(settings.chatEnabled)await require('../chat/service').recordOriginal({c,event:e,botId:settings.botId,orderId:id});
   await audit(duplicate?'DUPLICATE_ORDER_RECORDED':'ORDER_RECEIVED',{id,status:null},status);
   if(settings.webOnly||process.env.HDWORK2_OPERATIONS_ENABLED==='true')await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,?)",[require('../operations/policy').moduleOf({command:parsed.command,module:group.module}),duplicate?'change':'arrival']);
   return {disposition:'PROCESSED'};

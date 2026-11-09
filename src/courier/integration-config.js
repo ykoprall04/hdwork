@@ -2,7 +2,7 @@
 const { validateGroups } = require('./groups');
 function configuration(env) {
   const reject = () => { throw Error('Courier integration configuration rejected'); };
-  for (const flag of ['COURIER_RECEIVE_ENABLED', 'COURIER_OUTBOX_ENABLED', 'COURIER_WORKER_ENABLED','COURIER_DATABASE_ROUTING_ENABLED','HDWORK2_SYSTEM_ALERTS_APPROVED']) {
+  for (const flag of ['COURIER_RECEIVE_ENABLED', 'COURIER_OUTBOX_ENABLED', 'COURIER_WORKER_ENABLED','COURIER_DATABASE_ROUTING_ENABLED','HDWORK2_SYSTEM_ALERTS_APPROVED','COURIER_CHAT_ENABLED']) {
     if (env[flag] !== undefined && !['true', 'false'].includes(env[flag])) reject();
   }
   if (env.HDWORK2_LOCAL_READ_ONLY !== 'false' || env.COURIER_ENABLED !== 'true' || env.COURIER_INTEGRATION_ENABLED !== 'true' ||
@@ -18,6 +18,7 @@ function configuration(env) {
       env.COURIER_IDENTITY_KEY === env.COURIER_SERVICE_KEY ||
       !/^[A-Za-z0-9_]{5,32}$/.test(env.COURIER_BOT_USERNAME || '') ||
       Number(env.WEB_CONCURRENCY || 1) !== 1 || Number(env.NODE_APP_INSTANCE || 0) !== 0) reject();
+  if(env.COURIER_CHAT_ENABLED==='true'&&env.COURIER_DATABASE_ROUTING_ENABLED!=='true')reject();
   const port = env.COURIER_PORT || '3091', dbPort = env.COURIER_DB_PORT || '3306';
   if (![port, dbPort].every(p => /^[1-9]\d{0,4}$/.test(p) && Number(p) <= 65535) || Number(port) === Number(env.PORT || 3090) || Number(port) === Number(dbPort)) reject();
   let groups;
@@ -27,7 +28,7 @@ function configuration(env) {
     database: { host: '127.0.0.1', port: Number(dbPort), user: env.COURIER_DB_USER,
       password: env.COURIER_DB_PASSWORD, database: 'hdwork2', connectionLimit: 2, connectTimeout: 5000,
       multipleStatements: false, timezone: 'Z', supportBigNumbers: true, bigNumberStrings: true },
-    workflow: { enabled: true, webOnly: true, botId: env.COURIER_BOT_ID,
+    workflow: { enabled: true, webOnly: true, chatEnabled:env.COURIER_CHAT_ENABLED==='true', botId: env.COURIER_BOT_ID,
       botUsername: env.COURIER_BOT_USERNAME, identityKey: env.COURIER_IDENTITY_KEY, dedupeBy: 'sc_in', actors: [],
       groups: groups.map(g => ({ module: ['ASSUREN','B2B','REPLACEMENT'].includes(g.profile)?g.profile:g.profile === 'SOLVER1' ? 'LOGIC_PSB' : 'TIAL',
         chatId: g.chatId, threadId: g.threadId, threadMode: g.threadMode, commandProfile: g.profile, allowedCommands: g.commands })) },

@@ -34,9 +34,12 @@ def validate_groups(groups):
 
 
 class IngressPolicy:
-    def __init__(self, bot_id, bot_username, groups, test_window=None):
+    def __init__(self, bot_id, bot_username, groups, test_window=None, chat_enabled=False):
         self.bot_id, self.bot_username = bot_id, bot_username
         self.groups = validate_groups(groups)
+        if test_window and chat_enabled:
+            raise ValueError('chat_not_allowed_in_single_order_window')
+        self.chat_enabled = chat_enabled
         self.test_window, self.selected_message = test_window, None
 
     def refresh(self, configuration):
@@ -85,6 +88,8 @@ class IngressPolicy:
             return None, 'IGNORED', 'forum_not_allowed'
         if event['kind'] != 'message':
             return None, 'IGNORED', 'edit_requires_review'
+        if self.chat_enabled and event['reply_to_message_id'] is not None:
+            return envelope, 'PENDING', None
         parsed = parse_command(event['text'], group['profile'], self.bot_username)
         if not parsed['valid'] or parsed['command'] not in group['commands']:
             return None, 'IGNORED', 'command_not_allowed_or_invalid'

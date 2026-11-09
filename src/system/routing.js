@@ -1,6 +1,6 @@
 const {createGroupPolicy}=require('../courier/groups');
-function databasePolicy({system,botId,botUsername,alertsApproved=false}){
- const base=async()=>{const groups=await system.routing(botId);if(!groups.length)throw Object.assign(Error('No verified routes'),{statusCode:503});return createGroupPolicy({botId,botUsername,groups});};
+function databasePolicy({system,botId,botUsername,alertsApproved=false,chatEnabled=false}){
+ const base=async()=>{const groups=await system.routing(botId);if(!groups.length)throw Object.assign(Error('No verified routes'),{statusCode:503});return createGroupPolicy({botId,botUsername,groups,allowReplies:chatEnabled});};
  return {
   async ingress(body){return (await base()).ingress(body);},
   async outgoing(payload,c){

@@ -8,6 +8,7 @@ const writePool=()=>require('../config/operational-pools').getWritePool();
 const read=()=>require('./read').reader(pool());
 const wrap=fn=>async(req,res)=>{try{await fn(req,res);}catch(e){if(res.headersSent)return res.destroy();const code=[400,401,403,404,409,429].includes(e.statusCode)?e.statusCode:503;res.status(code).json({success:false,message:e.publicMessage|| (code===429?'Dua export/koneksi sedang berjalan. Coba lagi nanti.':code===409?'Order sudah berubah atau tindakan tidak sesuai. Muat ulang.':({400:'Identifier atau parameter pekerjaan tidak valid',401:'Sesi telah berakhir',403:'Anda tidak berwenang mengakses pekerjaan ini',404:'Order tidak ditemukan dalam modul yang diizinkan',503:'Layanan pekerjaan belum tersedia. Coba kembali.'}[code]))});}};
 const exporter=()=>exportService||=(require('./export').createExporter({pool:pool(),authenticate:token=>h.service().me(token)}));
+let chatRoutes;router.use('/chat',(req,res,next)=>{chatRoutes||=require('../chat/routes').createRoutes({http:h});return chatRoutes(req,res,next);});
 let systemRoutes;router.use('/system',(req,res,next)=>{systemRoutes||=require('../system/routes').createRoutes({http:h});return systemRoutes(req,res,next);});
 router.get('/orders',wrap(async(req,res)=>res.json({success:true,...await read().list(req.query,req.user)})));
 router.post('/orders',wrap(async(req,res)=>{h.csrf(req,req.sessionToken);throw fail(403,'Order baru hanya melalui Telegram');}));

@@ -69,7 +69,7 @@ def main():
             else:
                 print(code, file=sys.stderr)
         courier = DurableCourier(telegram, internal, journal,
-                                 IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window), lease,
+                                 IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window, chat_enabled=config.chat_enabled), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,
                                  report=report, database_routing=config.database_routing)
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):

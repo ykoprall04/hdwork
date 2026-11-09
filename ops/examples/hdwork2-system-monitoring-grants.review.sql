@@ -1,5 +1,4 @@
--- MANUAL REVIEW ONLY. Full opt-in profiles, no account creation or secrets.
--- Existing runtime remains unchanged until approved migration/grant/profile rollout.
+-- MANUAL REVIEW ONLY. Full opt-in profiles; no execution, accounts or secrets.
 GRANT SELECT ON hdwork2.hd2_orders TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_audit TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_live_events TO 'hdwork_ops_read'@'localhost';
@@ -7,6 +6,7 @@ GRANT SELECT ON hdwork2.hd2_user_modules TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT (order_id, request_id, user_id) ON hdwork2.hd2_web_requests TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT (attempts, bot_id, created_at, delivered_at, due_ms, id, idem_key, last_error_code, lease_until_ms, state, telegram_message_id) ON hdwork2.hd2_courier_outbox TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT (id, is_active, name, role) ON hdwork2.users TO 'hdwork_ops_read'@'localhost';
+GRANT SELECT (attempts, created_at, state) ON hdwork2.hd2_courier_inbox TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_system_mappings TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_system_state TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_system_incidents TO 'hdwork_ops_read'@'localhost';

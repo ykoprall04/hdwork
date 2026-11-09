@@ -19,14 +19,17 @@ class RuntimeConfig:
     poll: bool
     send: bool
     database_routing: bool = False
+    chat_enabled: bool = False
 
     @classmethod
     def from_env(cls, env):
         if env.get('COURIER_INTEGRATION_ENABLED') != 'true':
             raise ValueError('integration_disabled')
-        for flag in ('COURIER_POLL_ENABLED', 'COURIER_SEND_ENABLED', 'COURIER_DATABASE_ROUTING_ENABLED'):
+        for flag in ('COURIER_POLL_ENABLED', 'COURIER_SEND_ENABLED', 'COURIER_DATABASE_ROUTING_ENABLED', 'COURIER_CHAT_ENABLED'):
             if env.get(flag, 'false') not in ('true', 'false'):
                 raise ValueError('integration_flag_invalid')
+        if env.get('COURIER_CHAT_ENABLED') == 'true' and env.get('COURIER_DATABASE_ROUTING_ENABLED') != 'true':
+            raise ValueError('chat_requires_database_routing')
         base = Config.from_env(env)
         server = urlsplit(base.server)
         port = server.port
@@ -48,7 +51,7 @@ class RuntimeConfig:
                 raise ValueError('journal_outside_repository_required')
             paths.append(p)
         return cls(base, username, groups, *paths, hashlib.sha256(base.token.encode()).hexdigest(),
-                   env.get('COURIER_POLL_ENABLED') == 'true', env.get('COURIER_SEND_ENABLED') == 'true', env.get('COURIER_DATABASE_ROUTING_ENABLED') == 'true')
+                   env.get('COURIER_POLL_ENABLED') == 'true', env.get('COURIER_SEND_ENABLED') == 'true', env.get('COURIER_DATABASE_ROUTING_ENABLED') == 'true', env.get('COURIER_CHAT_ENABLED') == 'true')
 
 
 def private_directory(path):

@@ -23,4 +23,5 @@ async function run({env=process.env,argv=process.argv.slice(2),driverFactory=()=
   return {ok:true,checks:['real-mapping-transaction','mapping-conflict','idempotent-replay','TIAL-LOGIC-routing','evidence-freshness','incident-history','verified-alert-target','concurrent-cooldown','durable-Courier-alert','confirmed-delivery-time','single-backup-job','revoked-session'],telegram:'FAKE_ONLY',backup:'MOCK_DUMP_REAL_JOB'};
  }finally{await pool.end();}
 }
+if(require.main===module)run().then(r=>console.log(JSON.stringify(r))).catch(()=>{console.error('Disposable rehearsal rejected or failed; operational credentials are never logged.');process.exitCode=1;});
 module.exports={run};

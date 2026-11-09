@@ -1,6 +1,7 @@
 const { id, messageId, fail } = require('../courier/contract');
 function validateConfig(input) {
   if (!input || input.enabled !== true || typeof input.botId !== 'string' || !/^[a-z][a-z0-9_-]{1,63}$/.test(input.botId) || typeof input.identityKey !== 'string' || Buffer.byteLength(input.identityKey) < 32 || !['sc_in','inet','both'].includes(input.dedupeBy) || !Array.isArray(input.groups) || !input.groups.length || !Array.isArray(input.actors) || (!input.actors.length && input.webOnly!==true)) throw fail();
+  if(input.chatEnabled!==undefined&&typeof input.chatEnabled!=='boolean'||input.chatEnabled===true&&input.webOnly!==true)throw fail();
   if(input.botUsername!==undefined&&!/^[A-Za-z0-9_]{5,32}$/.test(input.botUsername))throw fail();
   if(input.webOnly===true&&(!input.botUsername||input.actors.length))throw fail();
   const groups = input.groups.map(group => {
@@ -21,6 +22,6 @@ function validateConfig(input) {
     return { id: id(actor.id), name: actor.name };
   });
   if (new Set(actors.map(a=>a.id)).size !== actors.length) throw fail();
-  return { botId: input.botId, identityKey: input.identityKey, dedupeBy: input.dedupeBy, groups, actors,webOnly:input.webOnly===true,botUsername:input.botUsername };
+  return { botId: input.botId, identityKey: input.identityKey, dedupeBy: input.dedupeBy, groups, actors,webOnly:input.webOnly===true,botUsername:input.botUsername,chatEnabled:input.chatEnabled===true };
 }
 module.exports = { validateConfig };

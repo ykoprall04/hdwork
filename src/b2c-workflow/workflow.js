@@ -16,6 +16,7 @@ function createB2CProcessor({ store, config }) {
     if (!group) return ignore('UNMAPPED_GROUP_OR_THREAD');
     // An edit cannot silently rewrite the original order or replay a status action.
     if (e.kind !== 'message') return ignore('EDIT_REQUIRES_REVIEW');
+    if(settings.chatEnabled&&e.reply_to_message_id!==null){const captured=await require('../chat/service').captureIncoming({c,event:e,botId:settings.botId});if(!captured)throw fail(503);return {disposition:'PROCESSED'};}
     if (!group.commandProfile && e.text.trimStart().startsWith('/')) return ignore('COMMAND_CONFIG_REQUIRED');
     if (group.commandProfile && (e.reply_to_message_id === null || e.text.trimStart().startsWith('/'))) {
       const parsed=require('./commands').parseCommand(e.text,group.commandProfile,settings.botUsername);

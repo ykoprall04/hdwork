@@ -38,6 +38,7 @@ export default function Shell() {
   const isJobs = location.pathname === '/jobs', isCheckIn = location.pathname === '/check-in';
   const category = isJobs || isCheckIn ? null : current || remembered;
   const links = [
+    ...(cookieMode&&import.meta.env.VITE_HDWORK2_LIVE_CHAT==='true'?[{to:'/chat',label:'Telegram Live Chat',icon:MessagesSquare}]:[]),
     ...(cookieMode&&['ADMIN','SUPER_ADMIN'].includes(user?.role||'')?[{to:'/admin/system',label:'Monitoring Sistem',icon:ShieldCheck}]:[]),
     ...(cookieMode?[{to:'/change-password',label:'Ganti Password',icon:ShieldCheck}]:[]),
     ...(category ? [{ to: `/work/${category}`, label: `Dashboard ${category}`, icon: LayoutDashboard }] : []),

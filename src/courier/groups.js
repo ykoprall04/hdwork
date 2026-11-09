@@ -19,7 +19,7 @@ function validateGroups(groups) {
   });
 }
 
-function createGroupPolicy({ botId, botUsername, groups }) {
+function createGroupPolicy({ botId, botUsername, groups, allowReplies=false }) {
   const allowed = validateGroups(groups);
   if (!/^[A-Za-z0-9_]{5,32}$/.test(botUsername || '')) throw fail();
   function groupFor(chatId,threadId) { return allowed.find(g => g.chatId === chatId&&g.threadId===threadId); }
@@ -29,6 +29,7 @@ function createGroupPolicy({ botId, botUsername, groups }) {
       const value = eventEnvelope(body, botId), e = value.event, group = groupFor(e.chat_id,e.telegram_thread_id);
       if (!group) throw fail(403);
       if (e.kind !== 'message') throw fail(400);
+      if(allowReplies&&e.reply_to_message_id!==null)return value;
       const parsed = parseCommand(e.text, group.profile, botUsername);
       if (!parsed.valid || !group.commands.includes(parsed.command)) throw fail(400);
       return value;
