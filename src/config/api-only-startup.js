@@ -28,7 +28,7 @@ function validateApiOnlyConfig(env = process.env) {
   const listenPort = port(env.PORT, 'PORT', 3090);
   port(env.DB_PORT, 'DB_PORT', 3306);
   corsOptions(env);
-  if(env.HDWORK2_AUTH_WRITE_ENABLED!==undefined||env.HDWORK2_AUTH_ONLY!==undefined)require('./auth-write-policy').validateAuthWriteScope(env);
+  if(env.HDWORK2_SERVICE_AUTH_POLICY!==undefined||env.HDWORK2_AUTH_WRITE_ENABLED!==undefined||env.HDWORK2_AUTH_ONLY!==undefined)require('./auth-write-policy').validateAuthWriteScope(env);
   if(env.HDWORK2_AUTH_V2 !== undefined && !['true','false'].includes(env.HDWORK2_AUTH_V2))throw invalid('HDWORK2_AUTH_V2');
   if(env.HDWORK2_AUTH_V2 === 'true' && Buffer.byteLength(env.JWT_SECRET)<32)throw invalid('JWT_SECRET minimum 32 bytes');
   if (env.B2C_STAGING_ENABLED !== undefined && !['true', 'false'].includes(env.B2C_STAGING_ENABLED)) throw invalid('B2C_STAGING_ENABLED');

@@ -10,9 +10,10 @@ function apiError(error,_req,res,_next){
 function createApiOnlyApp(env = process.env) {
   const app = express();
   app.disable('x-powered-by');
+  if(env.HDWORK2_EDGE_AUTH_MODE==='application-session')app.use(require('./middlewares/application-session-boundary').applicationSessionBoundary);
   app.use(cors(corsOptions(env)));
   // The local launcher defaults to observation until production writes are approved.
-  if (env.HDWORK2_LOCAL_READ_ONLY === 'true' || env.HDWORK2_AUTH_ONLY === 'true' || env.HDWORK2_AUTH_WRITE_ENABLED !== undefined) app.use(require('./config/auth-write-policy').authWritePolicy(env));
+  if (env.HDWORK2_SERVICE_AUTH_POLICY !== undefined || env.HDWORK2_LOCAL_READ_ONLY === 'true' || env.HDWORK2_AUTH_ONLY === 'true' || env.HDWORK2_AUTH_WRITE_ENABLED !== undefined) app.use(require('./config/auth-write-policy').authWritePolicy(env));
   app.post('/api/auth/login', createRateLimit({ limit: 10, windowMs: 15 * 60_000 }));
   app.get('/api/auth/me', createRateLimit({ limit: 120, windowMs: 60_000 }));
   app.use(express.json({ limit: '32kb' }));

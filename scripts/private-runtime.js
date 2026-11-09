@@ -1,14 +1,17 @@
 const path=require('node:path');
 async function run(){
   const mode=process.argv[2];if(!['audit','api','local','startup-check','auth-validation'].includes(mode)||process.argv.length!==3)throw Error('Invalid mode');
-  require('dotenv').config({path:path.resolve(__dirname,'../.env'),quiet:true});
+  if(process.env.HDWORK2_SERVICE_AUTH_POLICY===undefined)require('dotenv').config({path:path.resolve(__dirname,'../.env'),quiet:true});
   if(mode==='auth-validation'){
     // Requires separately supplied explicit approval and expiry; never enables itself.
     Object.assign(process.env,{HDWORK2_AUTH_ONLY:'true',HDWORK2_LOCAL_READ_ONLY:'true',HDWORK2_OPERATIONS_ENABLED:'false',B2C_WORKFLOW_READ_ENABLED:'false',B2C_STAGING_ENABLED:'false',COURIER_ENABLED:'false',COURIER_ALLOW_NETWORK:'false'});
     if(process.env.HDWORK2_AUTH_WRITE_ENABLED!=='true')throw Error('Explicit auth write approval required');
     require('../src/config/auth-write-policy').validateAuthWriteScope();
   }else if(process.env.HDWORK2_AUTH_WRITE_ENABLED==='true')throw Error('Use reviewed auth-validation mode');
-  await require('../src/config/private-database-env').loadPrivatePassword();
+  if(process.env.HDWORK2_SERVICE_AUTH_POLICY!==undefined){
+    if(mode!=='local'||process.env.HDWORK2_ONLINE_RUNTIME_APPROVED!=='true')throw Error('Explicit online local runtime approval required');
+    await require('../src/config/private-web-env').loadPrivateWebSecrets();
+  }else await require('../src/config/private-database-env').loadPrivatePassword();
   let pool,started=false;
   try{
     require('../src/config/api-only-startup').validateApiOnlyConfig();
@@ -17,6 +20,8 @@ async function run(){
       // Capture the runtime credential before removing it from process.env. Routes
       // otherwise load this pool lazily, after the password has been removed.
       pool=require('../src/config/database');
+      // Capture the signing secret before removing it from process.env below.
+      if(process.env.HDWORK2_SERVICE_AUTH_POLICY!==undefined)require('../src/access/http').service();
       if(process.env.HDWORK2_OPERATIONS_ENABLED==='true'){
         require('../src/config/private-pool-plan').applyPrivatePoolPlan();
         await require('../src/config/operational-pools').initialize();
@@ -37,7 +42,7 @@ async function run(){
       let closing=false;const close=async()=>{if(closing)return;closing=true;try{if(mode==='local'||mode==='auth-validation')await app.close();else{app.closeAllConnections();await new Promise(r=>app.close(r));await pool.end();}}finally{await require('../src/config/operational-pools').close();}};
       process.once('SIGINT',()=>void close());process.once('SIGTERM',()=>void close());
     }
-  }finally{delete process.env.DB_PASSWORD;if(!started){await require('../src/config/operational-pools').close();if(pool)await pool.end();}}
+  }finally{delete process.env.DB_PASSWORD;if(process.env.HDWORK2_SERVICE_AUTH_POLICY!==undefined)delete process.env.JWT_SECRET;if(!started){await require('../src/config/operational-pools').close();if(pool)await pool.end();}}
 }
 async function checkStartup(api){
  const base='http://127.0.0.1:'+api.address().port;

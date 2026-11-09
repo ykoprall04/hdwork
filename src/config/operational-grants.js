@@ -3,7 +3,8 @@ const read={hd2_orders:['SELECT'],hd2_audit:['SELECT'],hd2_live_events:['SELECT'
 const write={users:read.users,hd2_user_modules:['SELECT'],hd2_sessions:['SELECT'],hd2_orders:['SELECT','INSERT','UPDATE (completion_note, duplicate_decision, final_user_id, finished_at, owner_user_id, started_at, status, version)'],hd2_audit:['INSERT'],hd2_web_requests:['SELECT','INSERT','UPDATE'],hd2_live_events:['INSERT'],hd2_courier_outbox:['SELECT','INSERT','UPDATE (id)']};
 const courier={hd2_orders:['SELECT','INSERT'],hd2_courier_inbox:['SELECT','INSERT','UPDATE'],hd2_daily_keys:['SELECT','INSERT','UPDATE'],hd2_tial_keys:['SELECT','INSERT','UPDATE'],hd2_audit:['INSERT'],hd2_live_events:['INSERT'],hd2_courier_workers:['SELECT','INSERT','UPDATE'],hd2_courier_nonces:['SELECT','INSERT','DELETE']};
 const courierSend={...courier,hd2_courier_outbox:['SELECT','INSERT','UPDATE']};
-const policies={read,write,courier,courierSend};
+const trialWrite={...write,users:['SELECT (id, is_active, name, role, username)'],hd2_orders:['SELECT','UPDATE (completion_note, duplicate_decision, final_user_id, finished_at, owner_user_id, started_at, status, version)'],hd2_audit:['SELECT','INSERT'],hd2_courier_outbox:['SELECT','INSERT','UPDATE']};
+const policies={read,write,courier,courierSend,trialWrite};
 function privileges(text){
  const parts=text.match(/[A-Z_ ]+(?:\s*\([^)]*\))?(?=,|$)/gi)||[];
  return parts.map(p=>{const m=/^\s*([A-Z_ ]+?)(?:\s*\(([^)]*)\))?\s*$/i.exec(p);if(!m)throw Error('Grant rejected');return m[1].trim().toUpperCase()+(m[2]?' ('+m[2].replace(/`/g,'').split(',').map(v=>v.trim()).sort().join(', ')+')':'');});

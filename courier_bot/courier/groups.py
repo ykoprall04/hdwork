@@ -34,9 +34,10 @@ def validate_groups(groups):
 
 
 class IngressPolicy:
-    def __init__(self, bot_id, bot_username, groups):
+    def __init__(self, bot_id, bot_username, groups, test_window=None):
         self.bot_id, self.bot_username = bot_id, bot_username
         self.groups = validate_groups(groups)
+        self.test_window, self.selected_message = test_window, None
 
     def allows_source(self, update):
         # Inspect source identifiers only; do not project text/attachments first.
@@ -48,6 +49,8 @@ class IngressPolicy:
         chat, thread = message['chat'].get('id'), message.get('message_thread_id')
         if type(chat) is not int or (thread is not None and type(thread) is not int):
             return False
+        if self.test_window and chat < 0 and str(chat) != '-5436357946':
+            raise ValueError('non_testing_group_encountered')
         group = next((g for g in self.groups if g['chatId'] == str(chat) and g['threadId'] == (str(thread) if thread is not None else None)), None)
         if group is None:
             return False
@@ -71,6 +74,13 @@ class IngressPolicy:
         parsed = parse_command(event['text'], group['profile'], self.bot_username)
         if not parsed['valid'] or parsed['command'] not in group['commands']:
             return None, 'IGNORED', 'command_not_allowed_or_invalid'
+        if self.test_window:
+            if event['timestamp'] < self.test_window['not_before'] or parsed.get('sc_in') != self.test_window['reference']:
+                return None, 'IGNORED', 'outside_single_order_window'
+            identity = (envelope['update_id'], event['message_id'])
+            if self.selected_message and identity != self.selected_message:
+                return None, 'IGNORED', 'single_order_limit_reached'
+            self.selected_message = identity
         return envelope, 'PENDING', None
 
     def outgoing(self, payload):

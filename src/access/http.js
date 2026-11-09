@@ -8,5 +8,5 @@ function allowedOrigin(req){return (process.env.FRONTEND_ORIGINS||'').split(',')
 function csrf(req,token){const value=req.headers['x-csrf-token'],expected=service().csrf(token);if(!allowedOrigin(req)||typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value)||value.length!==expected.length||!timingSafeEqual(Buffer.from(value),Buffer.from(expected)))throw reject();}
 function error(res,e){if(e.code==='ER_DUP_ENTRY')e.statusCode=409;return res.status([400,401,403,404,409].includes(e.statusCode)?e.statusCode:503).json({success:false,message:'Permintaan akun tidak dapat diproses'});}
 async function auth(req,res,next){res.set('Cache-Control','no-store');try{req.sessionToken=cookie(req);req.user=await service().me(req.sessionToken);next();}catch(e){error(res,e);}}
-function setCookie(res,token,clear=false){res.set('Set-Cookie',`${cookieName}=${token}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${clear?0:28800}`);}
+function setCookie(res,token,clear=false){const sameSite=process.env.HDWORK2_SERVICE_AUTH_POLICY==='session-audit-only'?'Lax':'None';res.set('Set-Cookie',`${cookieName}=${token}; Path=/; HttpOnly; Secure; SameSite=${sameSite}; Max-Age=${clear?0:28800}`);}
 module.exports={service,cookie,csrf,allowedOrigin,error,auth,setCookie};

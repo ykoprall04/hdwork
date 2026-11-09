@@ -43,4 +43,4 @@ function createManager({env=process.env,readSecret=file=>require('./private-data
 }
 let manager;
 function runtime(){return manager||=(createManager());}
-module.exports={createManager,options,getReadPool:()=>runtime().get('read'),getWritePool:()=>runtime().get('write'),initialize:()=>runtime().initialize(),close:async()=>{if(manager){await manager.close();manager=undefined;}},status:()=>manager?.status()||{read:false,write:false}};
+module.exports={createManager,options,getReadPool:()=>runtime().get('read'),getWritePool:()=>runtime().get('write'),initialize:()=>runtime().initialize(),initializeWithSecrets:async readSecret=>{if(manager||typeof readSecret!=='function')throw rejected();manager=createManager({readSecret});await manager.initialize();},close:async()=>{if(manager){await manager.close();manager=undefined;}},status:()=>manager?.status()||{read:false,write:false}};

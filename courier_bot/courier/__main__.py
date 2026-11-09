@@ -2,6 +2,7 @@ import os
 import sys
 import signal
 import threading
+import json
 from urllib.request import build_opener, HTTPRedirectHandler, ProxyHandler
 from .runtime_config import RuntimeConfig, private_directory
 from .http import JsonTransport, TransportError
@@ -55,14 +56,29 @@ def main():
                 if sys.stdin.readline().strip() in ('STOP', ''):
                     stop.set()
             threading.Thread(target=watch_parent, daemon=True).start()
+        test_reference = os.environ.get('COURIER_SINGLE_TEST_REFERENCE')
+        window = None
+        if test_reference:
+            if config.send or len(config.groups) != 1 or config.groups[0]['chatId'] != '-5436357946' or config.groups[0]['threadId'] is not None:
+                raise ValueError('single_test_scope_rejected')
+            window = {'reference': test_reference, 'not_before': int(os.environ['COURIER_SINGLE_TEST_NOT_BEFORE'])}
+        def report(code):
+            if window:
+                print(json.dumps({'event': 'FAILED', 'code': 'COURIER_RUNTIME_FAILED'}), flush=True)
+                stop.set()
+            else:
+                print(code, file=sys.stderr)
         courier = DurableCourier(telegram, internal, journal,
-                                 IngressPolicy(config.base.bot_id, config.username, config.groups), lease,
+                                 IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,
-                                 report=lambda code: print(code, file=sys.stderr))
+                                 report=report)
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), lambda *_args: stop.set())
-        serve(courier, stop)
+        if window:
+            lease.ensure()
+            print(json.dumps({'event': 'READY', 'send': False}), flush=True)
+        serve(courier, stop, report=report)
         return 0
     except KeyboardInterrupt:
         return 0

@@ -9,11 +9,13 @@ async function startLocalWeb(env = process.env) {
   const origin=require('./src/config/web-origin').webOrigin(env,port);
   if (env.B2C_STAGING_ENABLED === 'true' || env.COURIER_ENABLED === 'true') throw Error('Integrasi eksternal harus nonaktif');
   if (!['true','false'].includes(env.HDWORK2_LOCAL_READ_ONLY)) throw Error('Tentukan mode read-only lokal secara eksplisit');
-  if (!fs.existsSync(path.join(root, 'frontend/dist/index.html'))) throw Error('Build frontend terlebih dahulu');
+  const dist=require('./src/config/web-build').webBuild(root,env);
+  if (!fs.existsSync(path.join(dist, 'index.html'))) throw Error('Build frontend terlebih dahulu');
+  if(env.LOCAL_WEB_DIST&&fs.realpathSync(dist).toLowerCase()!==dist.toLowerCase())throw Error('Candidate build symlink rejected');
   const server = require('./src/local-web').createLocalWeb({
     cert: fs.readFileSync(path.resolve(root, env.LOCAL_TLS_CERT || '.local/tls/localhost.crt')),
     key: fs.readFileSync(path.resolve(root, env.LOCAL_TLS_KEY || '.local/tls/localhost.key')),
-    dist: path.join(root, 'frontend/dist'), apiPort: config.port,allowedHosts:origin.allowedHosts,
+    dist, apiPort: config.port,allowedHosts:origin.allowedHosts,applicationSessionOnly:env.HDWORK2_EDGE_AUTH_MODE==='application-session',
   });
   const pool = require('./src/config/database');
   try { await require('./src/config/local-database-check').checkRuntimeDatabases({authPool:pool}); }

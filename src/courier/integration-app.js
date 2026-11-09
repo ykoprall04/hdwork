@@ -3,7 +3,7 @@ const { createServiceAuth } = require('./auth');
 const { createRateLimit } = require('../middlewares/api-rate-limit');
 const { fail } = require('./contract');
 
-function createIntegrationApp({ store, runtime, policy, botId, key, receive = false, send = false, now }) {
+function createIntegrationApp({ store, runtime, policy, botId, key, receive = false, send = false, now,testingRead,onFailure }) {
   const app = express(), verify = createServiceAuth({ botId, key, now });
   app.disable('x-powered-by');
   app.use(createRateLimit({ limit: 300, windowMs: 60000 }));
@@ -21,6 +21,7 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
   for (const action of ['acquire', 'renew', 'release']) app.post('/internal/courier/v1/worker/' + action, async (req, res) => {
     res.json({ ok: true, ...await runtime.lease(action, req.body) });
   });
+  if(testingRead)app.post('/internal/courier/v1/testing/order',async(req,res)=>res.json({ok:true,...await testingRead(req.body)}));
   app.post('/internal/courier/v1/events', async (req, res) => {
     if (!receive) throw fail(503);
     await runtime.assertWorker(req.body.worker);
@@ -44,6 +45,7 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
   });
   app.use((_req, res) => res.status(404).json({ ok: false, code: 'NOT_FOUND' }));
   app.use((error, _req, res, _next) => {
+    onFailure?.('LIVE_TEST_API_REJECTED');
     const status = error.type === 'entity.too.large' ? 413 : [400, 401, 403, 409, 429].includes(error.statusCode) ? error.statusCode : 503;
     res.status(status).json({ ok: false, code: 'COURIER_REQUEST_REJECTED' });
   });

@@ -1,5 +1,5 @@
 // Opt-in composition root. Never imported by api-only-server.js or server.js.
-async function startIntegration({ env = process.env,report=code=>console.error(code) } = {}) {
+async function startIntegration({ env = process.env,testWindow,testingRead,report=code=>console.error(code) } = {}) {
   const config = require('./src/courier/integration-config').configuration(env);
   if (require('node:cluster').isWorker) throw Error('Courier integration requires one fork');
   const pool = require('mysql2/promise').createPool(config.database);
@@ -18,10 +18,10 @@ async function startIntegration({ env = process.env,report=code=>console.error(c
     const store = new MysqlStore({ pool, botId: config.botId, orderedInbox: true });
     const { RuntimeStore } = require('./src/courier/runtime-store');
     const basePolicy = require('./src/courier/groups').createGroupPolicy({ botId: config.botId, botUsername: env.COURIER_BOT_USERNAME, groups: config.groups });
-    const policy=basePolicy;
+    const policy=testWindow?require('./src/courier/single-order-window').singleOrderWindow(basePolicy,testWindow):basePolicy;
     const app = require('./src/courier/integration-app').createIntegrationApp({ store,
       runtime: new RuntimeStore(store), policy, botId: config.botId, key: config.key,
-      receive: env.COURIER_RECEIVE_ENABLED === 'true', send: env.COURIER_OUTBOX_ENABLED === 'true' });
+      receive: env.COURIER_RECEIVE_ENABLED === 'true', send: env.COURIER_OUTBOX_ENABLED === 'true',testingRead:testWindow?testingRead:undefined,onFailure:testWindow?report:undefined });
     server = require('node:http').createServer(app);
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, '127.0.0.1', resolve); });
     if (env.COURIER_WORKER_ENABLED === 'true') worker = require('./src/courier/inbox-worker').startInboxWorker(
