@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 async function run({env=process.env,argv=process.argv.slice(2),driverFactory=()=>require('mysql2/promise')}={}){
- if(argv.length!==1||argv[0]!=='--run-b2c-disposable')throw Error('B2C rehearsal disabled');const guard=require('../../ops/mysql/disposable-guard'),pool=driverFactory().createPool(guard.config(env,['--run-disposable']));
+ if(argv.length!==1||argv[0]!=='--run-b2c-disposable')throw Error('B2C rehearsal disabled');const guard=require('../../ops/mysql/disposable-guard'),options=guard.config(env,['--run-disposable']),pool=driverFactory().createPool(options);
  try{
   const e2e=require('../helpers/e2e-contracts.cjs'),c=await pool.getConnection();try{await guard.verifyTarget(c,env.HDWORK2_MYSQL_TEST_DATABASE);for(const sql of [...guard.migrationStatements(),...e2e.schemaStatements(),...e2e.schemaStatements(['012_hdwork2_system_monitoring.sql','013_hdwork2_live_chat.sql'])])await c.query(sql);}finally{c.release();}
   const auth=require('../../src/access/service').createService(require('../../src/access/store').createStore(pool),'synthetic-b2c-secret-only-000000000');const password='synthetic-b2c-password';await auth.bootstrap({name:'B2C Admin',username:'test.admin',password});const login=await auth.login('test.admin',password),admin={...login.user,sessionToken:login.token},people=[];for(let i=0;i<2;i++)people.push(await e2e.approvedAccount(auth,1,{name:'B2C HD '+i,username:'b2c.user'+i,password,role:'HD',is_active:true,modules:['TIAL','REQ','LOGIC_PSB','LOGIC_MO']}));

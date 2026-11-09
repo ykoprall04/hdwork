@@ -56,8 +56,8 @@ def main():
         setattr(internal, target, call)
     try:
         runner = DurableCourier(FakeTelegram(), internal, journal,
-                                IngressPolicy(config.bot_id, 'HDWorkOpsBot', data['groups']), lease,
-                                poll=data.get('poll', False), send=data.get('send', False))
+                                IngressPolicy(config.bot_id, 'HDWorkOpsBot', data['groups'], chat_enabled=data.get('chat_enabled', False)), lease,
+                                poll=data.get('poll', False), send=data.get('send', False), database_routing=data.get('database_routing', False))
         for _ in range(data.get('rounds', 1)):
             runner.run_once()
             now[0] += 10

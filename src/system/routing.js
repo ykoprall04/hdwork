@@ -4,7 +4,7 @@ function databasePolicy({system,botId,botUsername,alertsApproved=false,chatEnabl
  return {
   async ingress(body){return (await base()).ingress(body);},
   async outgoing(payload,c){
-   if(alertsApproved&&/^HD Work 2\.0 system alert: [A-Z][A-Z0-9_]{1,63}$/.test(payload.text||''))return (await system.targets(botId,c)).some(t=>t.chatId===payload.chat_id&&t.threadId===payload.telegram_thread_id&&t.anchorId===payload.reply_to_message_id&&payload.method==='sendMessage'&&payload.thread_mode===(t.threadId===null?'non_topic':'thread'));
+   if(alertsApproved&&/^HD Work 2\.0 system alert: [A-Z][A-Z0-9_]{1,63}$/.test(payload.text||'')){if((await system.targets(botId,c)).some(t=>t.chatId===payload.chat_id&&t.threadId===payload.telegram_thread_id&&t.anchorId===payload.reply_to_message_id&&payload.method==='sendMessage'&&payload.thread_mode===(t.threadId===null?'non_topic':'thread')))return true;}
    return (await base(c)).outgoing(payload,c);
   },
   async configuration(){return {groups:await system.routing(botId),alertTargets:alertsApproved?await system.targets(botId):[]};},

@@ -8,7 +8,7 @@ type B2C={configured:boolean;readyForControlledTest:boolean;liveVerified:boolean
 type State={checkedAt:string;components:Record<string,string>;queue:Record<string,number|string|null>|null;workers?:{botId:string;lastHeartbeatAt:string|null}[];incidents:{component:string;to_status:string;code:string;created_at:string}[]};
 const blank=():Mapping=>({id:crypto.randomUUID(),botId:'',category:'TIAL',profile:'TIAL1',chatId:'',threadId:null,enabled:false,verified:false,version:0});
 export default function SystemMonitoring(){
- const {user}=useAuth(),allowed=['SUPER_ADMIN','ADMIN'].includes(user?.role||''),canEdit=user?.role==='SUPER_ADMIN';
+ const {user}=useAuth(),allowed=['SUPER_ADMIN','ADMIN'].includes(user?.role||''),canEdit=['SUPER_ADMIN','ADMIN'].includes(user?.role||'');
  const [b2c,setB2c]=useState<B2C|null>(null);
  const [state,setState]=useState<State|null>(null),[rows,setRows]=useState<Mapping[]>([]),[mapping,setMapping]=useState(blank),[error,setError]=useState(''),[busy,setBusy]=useState(false),[history,setHistory]=useState<{id:string;action:string;at:string}[]>([]),[jobs,setJobs]=useState<{kind:string;state:string;code:string}[]>([]);
  const refresh=useCallback(async()=>{if(!allowed)return;try{const [status,mappings,audit,backups,workflow]=await Promise.all([request<State>('/system/status'),request<{data:Mapping[]}>('/system/mappings'),request<{data:{id:string;action:string;at:string}[]}>('/system/history'),request<{data:{kind:string;state:string;code:string}[]}>('/system/backups'),request<B2C>('/b2c/readiness')]);setB2c(workflow);setState(status);setRows(mappings.data);setHistory(audit.data);setJobs(backups.data);setError('');}catch(e){setError(e instanceof Error?e.message:'Monitoring belum tersedia');}},[allowed]);

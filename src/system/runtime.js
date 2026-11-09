@@ -1,9 +1,7 @@
 const {startWorker,backupJob}=require('./resilience');
 function startSystemRuntime({env=process.env,system,pool,backup,fetchImpl=fetch,report=code=>console.error(code)}={}){
  if(env.HDWORK2_SYSTEM_WORKER_APPROVED!=='true'||env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true'||!system||!pool)throw Error('SYSTEM_WORKER_NOT_APPROVED');
- function probeURL(value){if(!value)return undefined;const u=new URL(value);if(u.protocol!=='http:'||u.hostname!=='127.0.0.1'||u.pathname!=='/health'||u.search||u.hash||u.username||u.password)throw Error('LOCAL_PROBE_REJECTED');return async()=>{const response=await fetchImpl(u,{signal:AbortSignal.timeout(5000),redirect:'error'});if(response.status!==200)throw Error('PROBE_FAILED');const body=await response.json();if(body.ok!==true||body.mode!=='api-only')throw Error('PROBE_IDENTITY_REJECTED');};}
- const probe={api:probeURL(env.HDWORK2_SYSTEM_API_PROBE),mysql:async()=>{await pool.execute('SELECT 1');}};
- // A loopback API probe does not prove Cloudflare Tunnel availability.
+ const probe=require('./probes').createProbes({env,pool,fetchImpl});
  const journal=require('./journal').createJournal(env.HDWORK2_SYSTEM_JOURNAL_DIRECTORY||'');
  const withLease=async task=>{let c,owned=false;try{c=await pool.getConnection();const [[lease]]=await c.execute("SELECT GET_LOCK('hdwork2.system-monitor',0) AS acquired");if(Number(lease.acquired)!==1)return;owned=true;await journal.flush(system,env.COURIER_BOT_ID,env.HDWORK2_SYSTEM_ALERTS_APPROVED==='true');return await task();}catch{await journal.append();throw Error('MONITOR_PERSISTENCE_UNAVAILABLE');}finally{if(owned)await c.execute("SELECT RELEASE_LOCK('hdwork2.system-monitor')");c?.release();}};
  const worker=startWorker({system,probe,withLease,botId:env.COURIER_BOT_ID,alertsApproved:env.HDWORK2_SYSTEM_ALERTS_APPROVED==='true',report});

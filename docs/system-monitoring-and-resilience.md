@@ -6,7 +6,7 @@ LOGIN is introduced. Preview and legacy code/data remain separate and unchanged.
 ## Runtime and approval boundaries
 
 The admin page `/admin/system` calls `/api/operations/system/*`. ADMIN and
-SUPER_ADMIN can read; only SUPER_ADMIN changes verified mappings and alert
+SUPER_ADMIN can read and manage mappings; only SUPER_ADMIN changes alert
 recipients. Account/session is rechecked inside configuration transactions, with
 CSRF, request hashing/idempotency, versions, uniqueness and append-only audit.
 Routes are disabled unless `HDWORK2_SYSTEM_MONITORING_ENABLED=true`.
@@ -29,8 +29,11 @@ were applied. Activation needs the operator's separately approved rollout.
 - Queue pending/delivered/failed/retry/age are SQL aggregates. Last successful
   delivery uses `delivered_at`, recorded only on a successful Courier settlement
   with a Telegram message ID. Historical rows without this evidence remain unknown.
-- Tunnel is UNKNOWN: a successful loopback API probe cannot prove public tunnel
-  availability. No production/public URL is automatically contacted.
+- Tunnel stays UNKNOWN unless an operator supplies the approved loopback
+  HDWORK2_SYSTEM_TUNNEL_PROBE metrics URL. Only an observed positive
+  cloudflared_tunnel_ha_connections gauge yields ONLINE; zero yields OFFLINE.
+  Unreachable/missing metrics remain UNKNOWN, not fabricated health. This is
+  edge-connection evidence, not public end-to-end verification. No public URL is contacted.
 - State changes persist incidents with timestamps. Worker retry is bounded
   exponential backoff; advisory locks and in-flight guards exclude duplicate jobs.
   It never restarts Windows services, the PC, MySQL, Cloudflare or legacy processes.
@@ -68,13 +71,16 @@ one verified business route. Existing flags remain unchanged and disabled here.
 
 ## Backup
 
-The separate worker schedules at most one daily backup job. A MySQL advisory lock
-also excludes overlapping jobs across day boundaries. `HDWORK2_BACKUP_APPROVED`
+The separate worker schedules at most one backup job per WIB calendar day. A MySQL advisory lock
+also excludes overlapping jobs across day boundaries. An existing RUNNING record
+from a lost connection blocks new jobs until manual review, even on a later day. `HDWORK2_BACKUP_APPROVED`
 defaults to disabled. Approved configuration supplies an absolute private backup
 directory, mysqldump executable, dedicated hdwork_backup user and DPAPI credential.
 mysqldump uses single-transaction/quick/no-lock-tables, no shell, bounded execution,
 private output files and an isolated child environment. Password is never argv.
-A completed dump trailer, nonzero size and SHA-256 are required before VERIFIED.
+The dedicated backup identity must have full read-only hdwork2 grants and every
+base table must be InnoDB before dumping. A completed dump trailer, nonzero size
+and SHA-256 are required before VERIFIED.
 Only owned filenames linked to VERIFIED metadata are eligible for retention;
 uncertain/failed/unknown files stay for review. Restore is deliberately manual.
 No database backup or restore was performed; dump execution is MOCK PASS only.

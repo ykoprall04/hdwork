@@ -8,19 +8,20 @@ function startWorker({system,probe,botId,alertsApproved=false,interval=30000,rep
  if(interval<1000)throw Error('Interval rejected');let closed=false,inFlight=null,timer;
  async function tick(){if(closed||inFlight)return;inFlight=withLease(async()=>{
   for(const component of ['api','mysql','tunnel']){
-   if(closed)break;let status='UNKNOWN';
-   if(probe[component])try{await retry(probe[component],{report});status='ONLINE';}catch{status='OFFLINE';}
-   try{await system.report(component,status,status==='UNKNOWN'?'NO_PROBE_CONFIGURED':status==='ONLINE'?'PROBE_SUCCEEDED':'PROBE_EXHAUSTED');if(status==='OFFLINE'&&alertsApproved)await system.alert(botId,component.toUpperCase()+'_OFFLINE',{approved:true});}catch{report('MONITOR_PERSISTENCE_UNAVAILABLE');}
+   if(closed)break;let status='UNKNOWN',code='NO_PROBE_CONFIGURED';
+   if(probe[component])try{const evidence=await retry(probe[component],{report});status=evidence?.status||'ONLINE';code=evidence?.code||'PROBE_SUCCEEDED';}catch{status='OFFLINE';code='PROBE_EXHAUSTED';}
+   try{await system.report(component,status,code);if(status==='OFFLINE'&&alertsApproved)await system.alert(botId,component.toUpperCase()+'_OFFLINE',{approved:true});}catch{report('MONITOR_PERSISTENCE_UNAVAILABLE');}
   }
   try{const state=await system.status({role:'SUPER_ADMIN'});for(const [component,status] of Object.entries(state.components)){if(['courier','queue'].includes(component)&&['OFFLINE','DEGRADED'].includes(status)&&alertsApproved)await system.alert(botId,component.toUpperCase()+'_'+status,{approved:true});}}catch{report('MONITOR_READ_UNAVAILABLE');}
  }).catch(()=>report('MONITOR_LEASE_UNAVAILABLE')).finally(()=>{inFlight=null;if(!closed){timer=setTimeout(tick,interval);timer.unref?.();}});await inFlight;}
  timer=setTimeout(tick,0);timer.unref?.();return {tick,async close(){closed=true;clearTimeout(timer);await inFlight;}};
 }
 async function backupJob({pool,dump,verify,retain,now=Date.now,approved=false}){
- if(!approved)throw Error('BACKUP_APPROVAL_REQUIRED');const window=Math.floor(now()/86400000),filename='hdwork2-'+randomUUID()+'.sql';
+ if(!approved)throw Error('BACKUP_APPROVAL_REQUIRED');const window=Math.floor((now()+7*3600000)/86400000),filename='hdwork2-'+randomUUID()+'.sql';
  const c=await pool.getConnection();let owned=false,locked=false;
  try{
   const [[lease]]=await c.execute("SELECT GET_LOCK('hdwork2.backup',0) AS acquired");if(Number(lease.acquired)!==1)return {started:false};locked=true;
+  const [running]=await c.execute("SELECT window_id FROM hd2_system_jobs WHERE kind='BACKUP' AND state='RUNNING' LIMIT 1");if(running.length)return {started:false,reason:'BACKUP_RUNNING_REQUIRES_REVIEW'};
   const [r]=await c.execute("INSERT IGNORE INTO hd2_system_jobs(kind,window_id,state,filename) VALUES ('BACKUP',?,'RUNNING',?)",[window,filename]);if(r.affectedRows!==1)return {started:false};owned=true;
   const result=await dump(filename),checked=await verify(filename,result);if(!checked||!Number.isSafeInteger(checked.bytes)||checked.bytes<=0||! /^[a-f0-9]{64}$/.test(checked.sha256))throw Error('BACKUP_VERIFICATION_FAILED');
   await c.execute("UPDATE hd2_system_jobs SET state='VERIFIED',bytes=?,sha256=?,code='BACKUP_VERIFIED',finished_at=UTC_TIMESTAMP(3) WHERE kind='BACKUP' AND window_id=?",[checked.bytes,checked.sha256,window]);
