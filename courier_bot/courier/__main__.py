@@ -71,7 +71,7 @@ def main():
         courier = DurableCourier(telegram, internal, journal,
                                  IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,
-                                 report=report)
+                                 report=report, database_routing=config.database_routing)
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), lambda *_args: stop.set())

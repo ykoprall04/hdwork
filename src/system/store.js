@@ -1,0 +1,47 @@
+const {randomUUID}=require('node:crypto');
+const p=require('./policy');
+const {MysqlStore}=require('../courier/mysql-store');
+const timestamp="DATE_FORMAT(checked_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS checkedAt";
+function createSystem({readPool,writePool,now=Date.now}){
+ const tx=fn=>new MysqlStore({pool:writePool,botId:'unused'}).transaction(fn);
+ async function once(user,input,body){return tx(async c=>{
+  const [[actor]]=await c.execute('SELECT id,role,is_active FROM users WHERE id=? FOR SHARE',[user.id]);if(!actor||actor.role!=='SUPER_ADMIN'||![1,true].includes(actor.is_active)||!user.sessionToken)throw p.fail(403);const [[session]]=await c.execute('SELECT token_hash FROM hd2_sessions WHERE token_hash=? AND user_id=? AND revoked=FALSE AND expires_at>UTC_TIMESTAMP(3) FOR SHARE',[require('../access/service').digest(user.sessionToken),user.id]);if(!session)throw p.fail(401);
+  const digest=p.hash(input);await c.execute('INSERT INTO hd2_system_requests(actor_id,request_id,payload_hash) VALUES (?,?,?) ON DUPLICATE KEY UPDATE request_id=request_id',[user.id,input.requestId,digest]);
+  const [[r]]=await c.execute('SELECT payload_hash,result FROM hd2_system_requests WHERE actor_id=? AND request_id=? FOR UPDATE',[user.id,input.requestId]);if(r.payload_hash!==digest)throw p.fail(409);if(r.result)return typeof r.result==='string'?JSON.parse(r.result):r.result;
+  const result=await body(c);await c.execute('UPDATE hd2_system_requests SET result=? WHERE actor_id=? AND request_id=?',[JSON.stringify(result),user.id,input.requestId]);return result;
+ });}
+ async function routing(botId,c=readPool){p.bot(botId);const [rows]=await c.execute('SELECT id,category,profile,chat_id,thread_id,version FROM hd2_system_mappings WHERE bot_id=? AND enabled=TRUE AND verified=TRUE ORDER BY id',[botId]);return rows.map(r=>({chatId:r.chat_id,threadId:r.thread_id,threadMode:r.thread_id===null?'non_topic':'thread',profile:r.profile,commands:p.categories[r.category].commands}));}
+ return {
+ routing,
+ async mappings(user){p.admin(user);const [data]=await readPool.execute('SELECT id,bot_id AS botId,category,profile,chat_id AS chatId,thread_id AS threadId,enabled,verified,version FROM hd2_system_mappings ORDER BY id LIMIT 100');return {data};},
+ async saveMapping(user,input){p.admin(user,true);const m=p.mapping(input);return once(user,m,async c=>{
+  const [[old]]=await c.execute('SELECT version FROM hd2_system_mappings WHERE id=? FOR UPDATE',[m.id]);if(old?Number(old.version)!==m.version:m.version!==0)throw p.fail(409);
+  const fields=[m.botId,m.category,m.profile,m.chatId,m.threadId,m.chatId+':'+(m.threadId||'none'),m.enabled,m.verified];
+  if(old)await c.execute('UPDATE hd2_system_mappings SET bot_id=?,category=?,profile=?,chat_id=?,thread_id=?,route_key=?,enabled=?,verified=?,version=version+1,updated_at=UTC_TIMESTAMP(3) WHERE id=?',[...fields,m.id]);
+  else await c.execute('INSERT INTO hd2_system_mappings(bot_id,category,profile,chat_id,thread_id,route_key,enabled,verified,id) VALUES (?,?,?,?,?,?,?,?,?)',[...fields,m.id]);
+  await c.execute('INSERT INTO hd2_audit(id,order_id,action,user_id,detail) VALUES (?,NULL,?,?,?)',[randomUUID(),'SYSTEM_MAPPING_SAVED',user.id,JSON.stringify({mappingId:m.id,requestId:m.requestId,category:m.category,enabled:m.enabled,verified:m.verified})]);return {success:true,id:m.id,version:old?m.version+1:0};
+ });},
+ async history(user){p.admin(user);const [data]=await readPool.execute("SELECT id,action,user_id,detail,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS at FROM hd2_audit WHERE action='SYSTEM_MAPPING_SAVED' ORDER BY created_at DESC,id DESC LIMIT 100");return {data};},
+ async recipient(user,input){p.admin(user,true);if(!input||typeof input!=='object'||Array.isArray(input))throw p.fail();p.uuid(input.requestId);p.bot(input.botId);const d=p.destination(input);require('../courier/contract').messageId(input.anchorId);if(Object.keys(input).some(k=>!['requestId','botId','chatId','threadId','anchorId','enabled','verified'].includes(k))||typeof input.enabled!=='boolean'||typeof input.verified!=='boolean'||input.enabled&&!input.verified)throw p.fail();return once(user,input,async c=>{await c.execute('INSERT INTO hd2_system_targets(bot_id,chat_id,thread_id,anchor_id,enabled,verified) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE chat_id=VALUES(chat_id),thread_id=VALUES(thread_id),anchor_id=VALUES(anchor_id),enabled=VALUES(enabled),verified=VALUES(verified),updated_at=UTC_TIMESTAMP(3)',[input.botId,d.chatId,d.threadId,input.anchorId,input.enabled,input.verified]);await c.execute('INSERT INTO hd2_audit(id,order_id,action,user_id,detail) VALUES (?,NULL,?,?,?)',[randomUUID(),'SYSTEM_ALERT_CONFIGURED',user.id,JSON.stringify({botId:input.botId,requestId:input.requestId,enabled:input.enabled})]);return {success:true};});},
+ async report(component,status,code,at=new Date(now()).toISOString()){if(!['api','mysql','frontend','tunnel','courier','queue'].includes(component)||!['ONLINE','DEGRADED','OFFLINE','UNKNOWN'].includes(status)||! /^[A-Z][A-Z0-9_]{1,63}$/.test(code))throw p.fail();const checkedAt=new Date(at);if(!Number.isFinite(checkedAt.getTime())||checkedAt.getTime()>now()+5000)throw p.fail();return tx(async c=>{await c.execute('INSERT IGNORE INTO hd2_system_state(component,status,checked_at,code) VALUES (?,\'UNKNOWN\',UTC_TIMESTAMP(3),\'NO_EVIDENCE\')',[component]);const [[old]]=await c.execute('SELECT status FROM hd2_system_state WHERE component=? FOR UPDATE',[component]);if(old.status!==status)await c.execute('INSERT INTO hd2_system_incidents(id,component,from_status,to_status,code,created_at) VALUES (?,?,?,?,?,?)',[randomUUID(),component,old.status,status,code,checkedAt]);await c.execute('UPDATE hd2_system_state SET status=?,code=?,checked_at=? WHERE component=?',[status,code,checkedAt,component]);});},
+ async status(user){p.admin(user);let mysql='ONLINE';try{await readPool.execute('SELECT 1');}catch{return {checkedAt:new Date(now()).toISOString(),components:{api:'ONLINE',mysql:'OFFLINE',frontend:'UNKNOWN',tunnel:'UNKNOWN',courier:'UNKNOWN',queue:'UNKNOWN'},queue:null,incidents:[],telemetryUnavailable:true};}
+  const [states]=await readPool.execute(`SELECT component,status,code,${timestamp} FROM hd2_system_state`);
+  const [workers]=await readPool.execute('SELECT bot_id,expires_ms FROM hd2_courier_workers');
+  const [[queue]]=await readPool.execute("SELECT COUNT(CASE WHEN state IN ('QUEUED','SENDING') THEN 1 END) AS pending,COUNT(CASE WHEN state='SENT' AND telegram_message_id IS NOT NULL THEN 1 END) AS delivered,COUNT(CASE WHEN state='DEAD' THEN 1 END) AS failed,COALESCE(SUM(attempts>1),0) AS retry,COALESCE(MAX(CASE WHEN state IN ('QUEUED','SENDING') THEN TIMESTAMPDIFF(SECOND,created_at,UTC_TIMESTAMP(3)) END),0) AS queueAgeSeconds,MAX(CASE WHEN state='SENT' AND telegram_message_id IS NOT NULL THEN delivered_at END) AS lastSuccessfulDeliveryAt FROM hd2_courier_outbox");
+  const [incidents]=await readPool.execute('SELECT component,from_status,to_status,code,created_at FROM hd2_system_incidents ORDER BY created_at DESC,id DESC LIMIT 50');
+  const components=Object.fromEntries(['api','mysql','frontend','tunnel','courier','queue'].map(k=>[k,p.fresh(states.find(r=>r.component===k),now())]));
+  components.api='ONLINE';components.mysql=mysql;components.courier=workers.length?(workers.every(w=>Number(w.expires_ms)>now())?'ONLINE':workers.some(w=>Number(w.expires_ms)>now())?'DEGRADED':'OFFLINE'):'UNKNOWN';components.queue=Number(queue.failed)||Number(queue.queueAgeSeconds)>300?'DEGRADED':'ONLINE';
+  return {checkedAt:new Date(now()).toISOString(),components,queue,workers:workers.map(w=>({botId:w.bot_id,lastHeartbeatAt:Number(w.expires_ms)>0?new Date(Number(w.expires_ms)-60000).toISOString():null,leaseUntil:Number(w.expires_ms)})),incidents};
+ },
+ async alert(botId,code,{approved=false,cooldownMs=900000}={}){p.bot(botId);if(!approved)throw p.fail(403);if(! /^[A-Z][A-Z0-9_]{1,63}$/.test(code)||!Number.isSafeInteger(cooldownMs)||cooldownMs<60000)throw p.fail();return tx(async c=>{
+  const [[t]]=await c.execute('SELECT chat_id,thread_id,anchor_id FROM hd2_system_targets WHERE bot_id=? AND enabled=TRUE AND verified=TRUE FOR SHARE',[botId]);if(!t)return {queued:false,reason:'NO_VERIFIED_TARGET'};
+  await c.execute('INSERT IGNORE INTO hd2_system_alerts(bot_id,alert_key,window_id) VALUES (?,?,0)',[botId,code]);
+  const [[last]]=await c.execute('SELECT window_id,outbox_id FROM hd2_system_alerts WHERE bot_id=? AND alert_key=? FOR UPDATE',[botId,code]);if(last.outbox_id&&now()-Number(last.window_id)<cooldownMs)return {queued:false,reason:'COOLDOWN'};
+  const id=await new MysqlStore({pool:writePool,botId,now}).enqueueOn(c,'system:'+code+':'+now(),{method:'sendMessage',chat_id:t.chat_id,telegram_thread_id:t.thread_id,thread_mode:t.thread_id===null?'non_topic':'thread',reply_to_message_id:t.anchor_id,text:'HD Work 2.0 system alert: '+code});
+  await c.execute('UPDATE hd2_system_alerts SET outbox_id=?,window_id=? WHERE bot_id=? AND alert_key=?',[id,now(),botId,code]);return {queued:true,id};
+ });},
+ async targets(botId){p.bot(botId);const [rows]=await readPool.execute('SELECT chat_id AS chatId,thread_id AS threadId,anchor_id AS anchorId FROM hd2_system_targets WHERE bot_id=? AND enabled=TRUE AND verified=TRUE',[botId]);return rows;},
+ async jobs(user){p.admin(user);const [data]=await readPool.execute('SELECT kind,window_id,state,bytes,sha256,code,created_at,finished_at FROM hd2_system_jobs ORDER BY created_at DESC LIMIT 30');return {data};}
+ };
+}
+module.exports={createSystem};

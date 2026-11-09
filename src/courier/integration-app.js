@@ -21,11 +21,12 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
   for (const action of ['acquire', 'renew', 'release']) app.post('/internal/courier/v1/worker/' + action, async (req, res) => {
     res.json({ ok: true, ...await runtime.lease(action, req.body) });
   });
+  if(policy.configuration)app.post('/internal/courier/v1/routing',async(req,res)=>{await runtime.assertWorker(req.body.worker);res.json({ok:true,...await policy.configuration()});});
   if(testingRead)app.post('/internal/courier/v1/testing/order',async(req,res)=>res.json({ok:true,...await testingRead(req.body)}));
   app.post('/internal/courier/v1/events', async (req, res) => {
     if (!receive) throw fail(503);
     await runtime.assertWorker(req.body.worker);
-    const payload = policy.ingress(req.body);
+    const payload = await policy.ingress(req.body);
     // The ACK is emitted only after the inbox transaction has committed.
     res.json({ ok: true, ...await store.accept(payload) });
   });

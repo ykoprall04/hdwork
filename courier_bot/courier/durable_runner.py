@@ -46,9 +46,10 @@ class WorkerLease:
 
 class DurableCourier:
     def __init__(self, telegram, internal, journal, policy, lease, *, poll=False, send=False,
-                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None):
+                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False):
         self.telegram, self.internal, self.journal, self.policy, self.lease = telegram, internal, journal, policy, lease
         self.poll, self.send, self.clock, self.stopped = poll, send, clock, stopped
+        self.database_routing = database_routing
         self.cooldown_until = 0
         self.report = report
 
@@ -96,6 +97,11 @@ class DurableCourier:
         if self.stopped():
             return
         self.lease.ensure()
+        if self.database_routing:
+            configuration = self.internal.routing()
+            if configuration.get('ok') is not True:
+                raise TransportError()
+            self.policy.refresh(configuration)
         if self.poll and self.clock() >= self.cooldown_until:
             try:
                 updates = self.telegram.updates(self.journal.offset)

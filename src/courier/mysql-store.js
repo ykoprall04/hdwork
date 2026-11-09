@@ -3,9 +3,9 @@ const { eventEnvelope, outbound, digest, fail, messageId } = require('./contract
 const json = value => typeof value === 'string' ? JSON.parse(value) : value;
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
 class MysqlStore {
-  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false }) {
+  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false }) {
     this.pool = pool; this.botId = botId; this.now = now; this.maxAttempts = maxAttempts;
-    this.orderedInbox = orderedInbox;
+    this.orderedInbox = orderedInbox; this.recordDeliveryTime = recordDeliveryTime;
   }
   async transaction(run) {
     const connection = await this.pool.getConnection();
@@ -64,6 +64,7 @@ class MysqlStore {
       if (row.state !== 'SENDING' || row.lease_token !== body.lease_token || Number(row.lease_until_ms) <= this.now()) throw fail(409);
       const state = require('./delivery-state').settlementState(body.result,ack.error_code,row.attempts,this.maxAttempts);
       await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_ack_token=?,last_ack_hash=?,telegram_message_id=?,last_error_code=? WHERE id=? AND bot_id=?', [state, this.now() + Math.max(ack.retry_after * 1000, backoff(row.attempts)), body.lease_token, hash, ack.telegram_message_id, ack.error_code, id, this.botId]);
+      if(this.recordDeliveryTime&&state==='SENT')await c.execute('UPDATE hd2_courier_outbox SET delivered_at=UTC_TIMESTAMP(3) WHERE id=? AND bot_id=?',[id,this.botId]);
       return { duplicate: false };
     });
   }

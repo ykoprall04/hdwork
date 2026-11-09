@@ -1,0 +1,26 @@
+const assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
+async function run({env=process.env,argv=process.argv.slice(2),driverFactory=()=>require('mysql2/promise')}={}){
+ if(argv.length!==1||argv[0]!=='--run-system-disposable')throw Error('System rehearsal disabled');
+ const guard=require('../../ops/mysql/disposable-guard'),pool=driverFactory().createPool(guard.config(env,['--run-disposable']));
+ try{
+  const c=await pool.getConnection();try{await guard.verifyTarget(c,env.HDWORK2_MYSQL_TEST_DATABASE);for(const sql of [...guard.migrationStatements(),...require('../helpers/e2e-contracts.cjs').schemaStatements(),...require('../helpers/e2e-contracts.cjs').schemaStatements(['012_hdwork2_system_monitoring.sql'])])await c.query(sql);}finally{c.release();}
+  const service=require('../../src/access/service').createService(require('../../src/access/store').createStore(pool),'synthetic-system-only-secret-000000000');const password='synthetic-system-password';await service.bootstrap({name:'System Admin',username:'test.admin',password});const login=await service.login('test.admin',password),user={...login.user,sessionToken:login.token};
+  let now=Date.now();const system=require('../../src/system/store').createSystem({readPool:pool,writePool:pool,now:()=>now});
+  const input={id:randomUUID(),requestId:randomUUID(),version:0,botId:'synthetic-system',category:'TIAL',profile:'TIAL1',chatId:'-1001',threadId:null,enabled:true,verified:true};
+  const results=await Promise.all([system.saveMapping(user,input),system.saveMapping(user,input)]);assert.deepEqual(results[0],results[1]);assert.equal((await system.mappings(user)).data.length,1);assert.equal((await system.history(user)).data.length,1);
+  await assert.rejects(system.saveMapping(user,{...input,id:randomUUID(),requestId:randomUUID()}),e=>e.code==='ER_DUP_ENTRY');
+  await system.saveMapping(user,{...input,id:randomUUID(),requestId:randomUUID(),category:'LOGIC',profile:'SOLVER1',chatId:'-1002',threadId:'7'});
+  const routing=await system.routing(input.botId);assert.deepEqual(routing.map(r=>r.commands).sort(),[['config_psb','mo'],['order','req']].sort());
+  let status=await system.status(user);assert.equal(status.components.mysql,'ONLINE');assert.equal(status.components.frontend,'UNKNOWN');assert.equal(status.components.tunnel,'UNKNOWN');assert.equal(status.components.courier,'UNKNOWN');
+  await system.report('frontend','ONLINE','AUTHENTICATED_BROWSER_HEARTBEAT');now=Date.now();status=await system.status(user);assert.equal(status.components.frontend,'ONLINE');assert.equal(status.incidents.length,1);
+  await pool.query("UPDATE hd2_system_state SET checked_at=UTC_TIMESTAMP(3)-INTERVAL 5 MINUTE");assert.equal((await system.status(user)).components.frontend,'UNKNOWN');
+  await assert.rejects(system.alert(input.botId,'API_OFFLINE'),{statusCode:403});assert.equal((await system.alert(input.botId,'API_OFFLINE',{approved:true})).reason,'NO_VERIFIED_TARGET');
+  await system.recipient(user,{requestId:randomUUID(),botId:input.botId,chatId:'-1003',threadId:null,anchorId:'91',enabled:true,verified:true});
+  const queued=await Promise.all([system.alert(input.botId,'API_OFFLINE',{approved:true}),system.alert(input.botId,'API_OFFLINE',{approved:true})]);assert.equal(queued.filter(x=>x.queued).length,1);now+=899999;assert.equal((await system.alert(input.botId,'API_OFFLINE',{approved:true})).queued,false);now+=2;assert.equal((await system.alert(input.botId,'API_OFFLINE',{approved:true})).queued,true);
+  const policy=require('../../src/system/routing').databasePolicy({system,botId:input.botId,botUsername:'SyntheticSystemBot',alertsApproved:true});const sender=new (require('../../src/courier/mysql-store').MysqlStore)({pool,botId:input.botId,recordDeliveryTime:true});const [delivery]=await sender.claim(1);assert.equal(await policy.outgoing(delivery.payload,pool),true);assert.equal(await policy.outgoing({...delivery.payload,chat_id:'-999'},pool),false);await sender.settle(delivery.delivery_id,{lease_token:delivery.lease_token,result:'sent',telegram_message_id:'123'});assert.ok((await system.status(user)).queue.lastSuccessfulDeliveryAt);
+  const {backupJob}=require('../../src/system/resilience'),backup={pool,approved:true,dump:async()=>{},verify:async()=>({bytes:100,sha256:'a'.repeat(64)}),retain:async()=>{}};const jobs=await Promise.all([backupJob(backup),backupJob(backup)]);assert.equal(jobs.filter(x=>x.started).length,1);assert.equal((await system.jobs(user)).data[0].state,'VERIFIED');
+  await service.logout(login.token);await assert.rejects(system.saveMapping(user,{...input,requestId:randomUUID(),enabled:false}),{statusCode:401});
+  return {ok:true,checks:['real-mapping-transaction','mapping-conflict','idempotent-replay','TIAL-LOGIC-routing','evidence-freshness','incident-history','verified-alert-target','concurrent-cooldown','durable-Courier-alert','confirmed-delivery-time','single-backup-job','revoked-session'],telegram:'FAKE_ONLY',backup:'MOCK_DUMP_REAL_JOB'};
+ }finally{await pool.end();}
+}
+module.exports={run};

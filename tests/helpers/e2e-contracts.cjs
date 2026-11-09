@@ -7,10 +7,10 @@ const root=path.resolve(__dirname,'../..');
 const schemaFiles=['007_hdwork2_auth.sql','008_hdwork2_operations.sql','009_hdwork2_courier_runtime.sql','010_hdwork2_account_approval.sql','011_hdwork2_registration_rejection.sql'];
 function schemaStatements(files=schemaFiles){
  return files.flatMap(file=>{
-  assert.ok(schemaFiles.includes(file));
+  assert.ok([...schemaFiles,'012_hdwork2_system_monitoring.sql'].includes(file));
   const parts=fs.readFileSync(path.join(root,'database/manual',file),'utf8').replace(/^\s*--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean);
   assert.equal(parts.shift(),'USE hdwork2');
-  for(const sql of parts){assert.match(sql,/^(CREATE TABLE (users|hd2_[a-z_]+)|ALTER TABLE (users|hd2_orders|hd2_audit|hd2_courier_inbox)|INSERT INTO hd2_auth_guard)/);assert.doesNotMatch(sql.replace('DROP CHECK hd2_account_approval_status, ',''),/\b(USE|DROP|TRUNCATE|GRANT|DATABASE|PROCEDURE|TRIGGER)\b|hdwork2\.|hd_b2c\./i);}
+  for(const sql of parts){assert.match(sql,/^(CREATE TABLE (users|hd2_[a-z_]+)|ALTER TABLE (users|hd2_orders|hd2_audit|hd2_courier_inbox|hd2_courier_outbox)|INSERT INTO hd2_auth_guard)/);assert.doesNotMatch(sql.replace('DROP CHECK hd2_account_approval_status, ',''),/\b(USE|DROP|TRUNCATE|GRANT|DATABASE|PROCEDURE|TRIGGER)\b|hdwork2\.|hd_b2c\./i);}
   return parts;
  });
 }

@@ -2,6 +2,7 @@ const {reviewOperationalGrants}=require('./operational-grants');
 const roles={read:{prefix:'OP_READ',user:'hdwork_ops_read'},write:{prefix:'OP_WRITE',user:'hdwork_ops_write'}};
 const rejected=()=>Object.assign(Error('Operational pool unavailable'),{code:'OPERATIONAL_POOL_REJECTED'});
 function options(role,env){
+ if(env.HDWORK2_SYSTEM_MONITORING_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_SYSTEM_MONITORING_ENABLED))throw rejected();
  const spec=roles[role];if(!spec)throw rejected();const p=spec.prefix;
  if(env[p+'_ENABLED']!=='true'||env[p+'_DB_USER']!==spec.user||env[p+'_DB_NAME']!=='hdwork2'||env[p+'_DB_HOST']!=='127.0.0.1'||String(env[p+'_DB_PORT'])!=='3306'||env[p+'_DB_PASSWORD'])throw rejected();
  if(role==='write'&&(env.HDWORK2_LOCAL_READ_ONLY!=='false'||env.HDWORK2_OPERATIONAL_WRITE_APPROVED!=='true'))throw rejected();
@@ -33,7 +34,7 @@ function createManager({env=process.env,readSecret=file=>require('./private-data
     const raw=createPool({...config,password:secret});secret='';rawPools.set(role,raw);
     const [[target]]=await raw.query('SELECT DATABASE() AS db,CURRENT_USER() AS account');
     if(target.db!=='hdwork2'||target.account!==config.user+'@localhost')throw rejected();
-    const [grants]=await raw.query('SHOW GRANTS FOR CURRENT_USER');if(!reviewOperationalGrants(grants,role).ok)throw rejected();
+    const [grants]=await raw.query('SHOW GRANTS FOR CURRENT_USER');if(!reviewOperationalGrants(grants,env.HDWORK2_SYSTEM_MONITORING_ENABLED==='true'?(role==='read'?'systemRead':'systemWrite'):role).ok)throw rejected();
     pools.set(role,role==='read'?guardedRead(raw):writeGuard(raw));
    }
   }catch{await close();throw rejected();}})();

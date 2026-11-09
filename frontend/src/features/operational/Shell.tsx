@@ -38,6 +38,7 @@ export default function Shell() {
   const isJobs = location.pathname === '/jobs', isCheckIn = location.pathname === '/check-in';
   const category = isJobs || isCheckIn ? null : current || remembered;
   const links = [
+    ...(cookieMode&&['ADMIN','SUPER_ADMIN'].includes(user?.role||'')?[{to:'/admin/system',label:'Monitoring Sistem',icon:ShieldCheck}]:[]),
     ...(cookieMode?[{to:'/change-password',label:'Ganti Password',icon:ShieldCheck}]:[]),
     ...(category ? [{ to: `/work/${category}`, label: `Dashboard ${category}`, icon: LayoutDashboard }] : []),
     ...(category === 'B2C' ? [{ to: '/work/B2C/TIAL', label: 'TIAL', icon: ListTodo }, { to: '/work/B2C/LOGIC', label: 'LOGIC', icon: ListTodo }, ...(cookieMode&&!operationsEnabled ? [{to:'/work/B2C/REQ',label:'REQ',icon:ListTodo}] : [])].filter(link=>!cookieMode || user?.role==='SUPER_ADMIN' || (operationsEnabled&&link.label==='TIAL'?user?.modules?.some(m=>['TIAL','REQ'].includes(m)):link.label==='LOGIC' ? user?.modules?.some(m=>m.startsWith('LOGIC')) : user?.modules?.includes(link.label))) : []),

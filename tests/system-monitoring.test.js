@@ -1,0 +1,38 @@
+const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
+const {mapping,fresh,admin}=require('../src/system/policy');
+const {retry,startWorker,backupJob}=require('../src/system/resilience');
+test('mapping validates existing TIAL/LOGIC contracts, verification, topic and exact privilege',()=>{
+ const input={id:randomUUID(),requestId:randomUUID(),version:0,botId:'synthetic-bot',category:'LOGIC',profile:'SOLVER1',chatId:'-1001',threadId:null,enabled:true,verified:true};assert.equal(mapping(input).category,'LOGIC');
+ for(const patch of [{category:'LOGIN'},{profile:'TIAL1'},{verified:false},{chatId:'1'},{threadId:'0'},{threadId:'2147483648'},{extra:true}])assert.throws(()=>mapping({...input,...patch}));
+ for(const role of ['HD','SHOW_ONLY'])assert.throws(()=>admin({role}),{statusCode:403});assert.throws(()=>admin({role:'ADMIN'},true));
+});
+test('stale, absent or future evidence is UNKNOWN rather than fabricated ONLINE',()=>{
+ const now=1800000000000;assert.equal(fresh(null,now),'UNKNOWN');assert.equal(fresh({status:'ONLINE',checkedAt:new Date(now+1).toISOString()},now),'UNKNOWN');assert.equal(fresh({status:'ONLINE',checkedAt:new Date(now-90001).toISOString()},now),'UNKNOWN');assert.equal(fresh({status:'OFFLINE',checkedAt:new Date(now).toISOString()},now),'OFFLINE');
+});
+test('recovery uses finite exponential backoff and never restarts any service',async()=>{
+ const delays=[],codes=[];let attempts=0;await assert.rejects(retry(async()=>{attempts++;throw Error('secret-value-not-reported');},{delay:async ms=>delays.push(ms),report:c=>codes.push(c)}),/PROBE_EXHAUSTED/);assert.equal(attempts,4);assert.deepEqual(delays,[1000,2000,4000]);assert.ok(codes.every(c=>c==='PROBE_RETRY'));
+});
+test('monitor worker excludes overlap and waits for its own in-flight probe on close',async()=>{
+ let release,started;const began=new Promise(r=>started=r),blocked=new Promise(r=>release=r);let probes=0;const worker=startWorker({interval:60000,probe:{api:async()=>{probes++;started();await blocked;}},system:{async report(){},async status(){return {components:{}};}}});const first=worker.tick();await began;await worker.tick();assert.equal(probes,1);release();await first;await worker.close();
+});
+test('backup requires explicit approval, reserves one durable job, verifies before retention and records failure',async()=>{
+ let reserved=false,retained=0;const statements=[];const pool={async getConnection(){return {async execute(sql){statements.push(sql);if(sql.includes('GET_LOCK'))return [[{acquired:1}]];if(sql.startsWith('INSERT')){if(reserved)return [{affectedRows:0}];reserved=true;return [{affectedRows:1}];}return [{}];},release(){}};}};
+ const config={pool,approved:true,dump:async()=>{},verify:async()=>({bytes:10,sha256:'a'.repeat(64)}),retain:async()=>retained++};await assert.rejects(backupJob({...config,approved:false}),/APPROVAL/);assert.equal(statements.length,0);assert.equal((await backupJob(config)).status,'VERIFIED');assert.equal((await backupJob(config)).started,false);assert.equal(retained,1);reserved=false;await assert.rejects(backupJob({...config,verify:async()=>({bytes:0})}),/REQUIRES_REVIEW/);assert.ok(statements.some(s=>s.includes("state='FAILED'")));
+});
+test('worker launcher refuses to read credentials or create pools without approval',async()=>{await assert.rejects(require('../scripts/system-monitor-worker').run({},[]),/NOT_APPROVED/);assert.equal(require.cache[require.resolve('../src/config/database')],undefined);});
+test('system HTTP API enforces role, enable gate and CSRF before mutation service',async()=>{
+ const express=require('express'),http=require('node:http');let mutated=0;
+ const h={auth(req,_res,next){req.user={id:1,role:req.headers['x-test-role']||'SHOW_ONLY'};req.sessionToken='synthetic';next();},csrf(req){if(req.headers['x-csrf-token']!=='synthetic')throw Object.assign(Error(),{statusCode:403});},error(res,e){res.status(e.statusCode||503).json({success:false});}};
+ const app=express();app.use(express.json());app.use(require('../src/system/routes').createRoutes({enabled:()=>true,http:h,system:{async status(){return {components:{mysql:'UNKNOWN'}};},async saveMapping(){mutated++;return {success:true};}}}));const server=http.createServer(app);await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
+ try{for(const role of ['HD','SHOW_ONLY'])assert.equal((await fetch(base+'/status',{headers:{'x-test-role':role}})).status,403);assert.equal((await fetch(base+'/status',{headers:{'x-test-role':'ADMIN'}})).status,200);assert.equal((await fetch(base+'/mappings',{method:'POST',headers:{'x-test-role':'SUPER_ADMIN','content-type':'application/json'},body:'{}'})).status,403);assert.equal(mutated,0);assert.equal((await fetch(base+'/mappings',{method:'POST',headers:{'x-test-role':'SUPER_ADMIN','content-type':'application/json','x-csrf-token':'synthetic'},body:'{}'})).status,200);assert.equal(mutated,1);}finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+test('opt-in grants contain only exact system tables and minimal courier metadata; old profiles remain strict',()=>{
+ const {policies,reviewOperationalGrants}=require('../src/config/operational-grants');for(const role of ['systemRead','systemWrite','courierSystem','courierSendSystem']){const rows=Object.entries(policies[role]).map(([t,ps])=>({g:`GRANT ${ps.join(', ')} ON hdwork2.${t} TO 'synthetic'@'localhost'`}));assert.equal(reviewOperationalGrants(rows,role).ok,true);assert.equal(reviewOperationalGrants([...rows,{g:"GRANT SELECT ON other_db.* TO 'synthetic'@'localhost'"}],role).ok,false);}assert.ok(!policies.read.hd2_system_mappings);assert.ok(!policies.systemRead.hd2_courier_outbox.join().includes('payload'));
+});
+test('private outage journal survives a fresh instance and defers alerts until MySQL recovery',async()=>{
+ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{createJournal}=require('../src/system/journal');const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hdwork-system-test-'));await fs.chmod(dir,0o700);try{await createJournal(dir).append();const calls=[],system={async report(...args){calls.push(args);},async alert(){calls.push('alert');}};await createJournal(dir).flush(system,'synthetic',true);assert.equal(calls[0][0],'mysql');assert.equal(calls[0][1],'OFFLINE');assert.ok(Number.isFinite(Date.parse(calls[0][3])));assert.equal(calls[1],'alert');assert.deepEqual(await fs.readdir(dir),[]);}finally{await fs.rm(dir,{recursive:true});}
+});
+test('database connection failure is journaled by the separate worker before recovery',async()=>{
+ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hdwork-worker-test-'));await fs.chmod(dir,0o700);let observed;const reported=new Promise(r=>observed=r);let runtime;
+ try{runtime=require('../src/system/runtime').startSystemRuntime({env:{HDWORK2_SYSTEM_WORKER_APPROVED:'true',HDWORK2_SYSTEM_MONITORING_ENABLED:'true',HDWORK2_SYSTEM_JOURNAL_DIRECTORY:dir},system:{},pool:{async getConnection(){throw Error('synthetic-db-offline');}},report:()=>observed()});await reported;await runtime.close();const files=await fs.readdir(dir);assert.equal(files.length,1);assert.equal(JSON.parse(await fs.readFile(path.join(dir,files[0]),'utf8')).code,'MYSQL_PERSISTENCE_UNAVAILABLE');}finally{await runtime?.close();await fs.rm(dir,{recursive:true});}
+});

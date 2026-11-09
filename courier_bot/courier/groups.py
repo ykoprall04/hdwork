@@ -39,6 +39,20 @@ class IngressPolicy:
         self.groups = validate_groups(groups)
         self.test_window, self.selected_message = test_window, None
 
+    def refresh(self, configuration):
+        groups = validate_groups(configuration.get('groups'))
+        targets = configuration.get('alertTargets', [])
+        if not isinstance(targets, list) or len(targets) > 20:
+            raise ValueError('alert_targets_invalid')
+        for target in targets:
+            if (not isinstance(target, dict) or set(target) != {'chatId', 'threadId', 'anchorId'} or
+                    not re.fullmatch(r'-[1-9]\d{0,15}', str(target['chatId'])) or
+                    not re.fullmatch(r'[1-9]\d{0,9}', str(target['anchorId'])) or
+                    int(target['anchorId']) > 2147483647 or
+                    (target['threadId'] is not None and (not re.fullmatch(r'[1-9]\d{0,9}', str(target['threadId'])) or int(target['threadId']) > 2147483647))):
+                raise ValueError('alert_targets_invalid')
+        self.groups, self.alert_targets = groups, targets
+
     def allows_source(self, update):
         # Inspect source identifiers only; do not project text/attachments first.
         if not isinstance(update, dict):
@@ -85,6 +99,10 @@ class IngressPolicy:
 
     def outgoing(self, payload):
         from .http import TransportError
+        if (isinstance(payload, dict) and payload.get('method') == 'sendMessage' and
+                re.fullmatch(r'HD Work 2\.0 system alert: [A-Z][A-Z0-9_]{1,63}', payload.get('text', '')) and
+                any(t['chatId'] == payload.get('chat_id') and t['threadId'] == payload.get('telegram_thread_id') and t['anchorId'] == payload.get('reply_to_message_id') and payload.get('thread_mode') == ('non_topic' if t['threadId'] is None else 'thread') for t in getattr(self, 'alert_targets', []))):
+            return
         if (not isinstance(payload, dict) or payload.get('method') != 'sendMessage' or
                 not any(g['chatId'] == payload.get('chat_id') and g['threadId'] == payload.get('telegram_thread_id') and g['threadMode'] == payload.get('thread_mode') for g in self.groups) or
                 not isinstance(payload.get('reply_to_message_id'), str) or

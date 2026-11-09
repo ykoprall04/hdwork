@@ -21,6 +21,9 @@ class InternalClient:
     def event(self, event):
         return self.post('/internal/courier/v1/events', {**event, **({'worker': self.worker} if self.worker else {})})
 
+    def routing(self):
+        return self.post('/internal/courier/v1/routing', {'worker': self.worker})
+
     def claim(self):
         return self.post('/internal/courier/v1/outbox/claim', {'limit': 1, **({'worker': self.worker} if self.worker else {})})['messages']
 

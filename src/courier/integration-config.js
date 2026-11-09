@@ -2,7 +2,7 @@
 const { validateGroups } = require('./groups');
 function configuration(env) {
   const reject = () => { throw Error('Courier integration configuration rejected'); };
-  for (const flag of ['COURIER_RECEIVE_ENABLED', 'COURIER_OUTBOX_ENABLED', 'COURIER_WORKER_ENABLED']) {
+  for (const flag of ['COURIER_RECEIVE_ENABLED', 'COURIER_OUTBOX_ENABLED', 'COURIER_WORKER_ENABLED','COURIER_DATABASE_ROUTING_ENABLED','HDWORK2_SYSTEM_ALERTS_APPROVED']) {
     if (env[flag] !== undefined && !['true', 'false'].includes(env[flag])) reject();
   }
   if (env.HDWORK2_LOCAL_READ_ONLY !== 'false' || env.COURIER_ENABLED !== 'true' || env.COURIER_INTEGRATION_ENABLED !== 'true' ||

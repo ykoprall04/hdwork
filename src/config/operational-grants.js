@@ -4,7 +4,10 @@ const write={users:read.users,hd2_user_modules:['SELECT'],hd2_sessions:['SELECT'
 const courier={hd2_orders:['SELECT','INSERT'],hd2_courier_inbox:['SELECT','INSERT','UPDATE'],hd2_daily_keys:['SELECT','INSERT','UPDATE'],hd2_tial_keys:['SELECT','INSERT','UPDATE'],hd2_audit:['INSERT'],hd2_live_events:['INSERT'],hd2_courier_workers:['SELECT','INSERT','UPDATE'],hd2_courier_nonces:['SELECT','INSERT','DELETE']};
 const courierSend={...courier,hd2_courier_outbox:['SELECT','INSERT','UPDATE']};
 const trialWrite={...write,users:['SELECT (id, is_active, name, role, username)'],hd2_orders:['SELECT','UPDATE (completion_note, duplicate_decision, final_user_id, finished_at, owner_user_id, started_at, status, version)'],hd2_audit:['SELECT','INSERT'],hd2_courier_outbox:['SELECT','INSERT','UPDATE']};
-const policies={read,write,courier,courierSend,trialWrite};
+const systemRead={...read,hd2_system_mappings:['SELECT'],hd2_system_state:['SELECT'],hd2_system_incidents:['SELECT'],hd2_system_jobs:['SELECT'],hd2_courier_workers:['SELECT (bot_id, expires_ms)'],hd2_courier_outbox:['SELECT (attempts, bot_id, created_at, delivered_at, due_ms, id, idem_key, last_error_code, lease_until_ms, state, telegram_message_id)']};
+const systemWrite={...write,hd2_system_mappings:['SELECT','INSERT','UPDATE'],hd2_system_state:['SELECT','INSERT','UPDATE'],hd2_system_incidents:['INSERT'],hd2_system_jobs:['SELECT','INSERT','UPDATE'],hd2_system_requests:['SELECT','INSERT','UPDATE'],hd2_system_targets:['SELECT','INSERT','UPDATE'],hd2_system_alerts:['SELECT','INSERT','UPDATE'],hd2_courier_workers:['SELECT (bot_id, expires_ms)']};
+const systemCourier={hd2_system_mappings:['SELECT'],hd2_system_targets:['SELECT']};
+const policies={read,write,courier,courierSend,trialWrite,systemRead,systemWrite,courierSystem:{...courier,...systemCourier},courierSendSystem:{...courierSend,...systemCourier}};
 function privileges(text){
  const parts=text.match(/[A-Z_ ]+(?:\s*\([^)]*\))?(?=,|$)/gi)||[];
  return parts.map(p=>{const m=/^\s*([A-Z_ ]+?)(?:\s*\(([^)]*)\))?\s*$/i.exec(p);if(!m)throw Error('Grant rejected');return m[1].trim().toUpperCase()+(m[2]?' ('+m[2].replace(/`/g,'').split(',').map(v=>v.trim()).sort().join(', ')+')':'');});
