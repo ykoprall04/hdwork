@@ -9,7 +9,7 @@ test('four workspace module mappings exactly match backend scopes', () => {
   for (const [workspace, modules] of Object.entries(workspaceModules)) assert.deepEqual(modules, backend.areas[workspace]);
   assert.deepEqual(accessibleWorkspaces(backend.modules), Object.keys(workspaceModules));
 });
-test('workspace navigation exposes only assigned modules and denies direct unknown routes', () => {
+test('workspace scope helper reports assigned modules and rejects unknown workspaces', () => {
   assert.deepEqual(accessibleWorkspaces(['B2B']), ['B2B']);
   assert.deepEqual(accessibleWorkspaces(['REQ', 'ASSUREN']), ['B2C', 'ASSUREN']);
   assert.deepEqual(accessibleWorkspaces([]), []);
