@@ -35,7 +35,7 @@ function createManager({env=process.env,readSecret=file=>require('./private-data
     const raw=createPool({...config,password:secret});secret='';rawPools.set(role,raw);
     const [[target]]=await raw.query('SELECT DATABASE() AS db,CURRENT_USER() AS account');
     if(target.db!=='hdwork2'||target.account!==config.user+'@localhost')throw rejected();
-    const [grants]=await raw.query('SHOW GRANTS FOR CURRENT_USER');if(!reviewOperationalGrants(grants,env.HDWORK2_LIVE_CHAT_ENABLED==='true'?(role==='read'?'chatRead':'chatWrite'):env.HDWORK2_SYSTEM_MONITORING_ENABLED==='true'?(role==='read'?'systemRead':'systemWrite'):role).ok)throw rejected();
+    const [grants]=await raw.query('SHOW GRANTS FOR CURRENT_USER');if(!reviewOperationalGrants(grants,require('./live-chat-activation').profiles(env)[role]).ok)throw rejected();
     if(env.HDWORK2_SYSTEM_MONITORING_ENABLED==='true'){await raw.execute('SELECT component,status,checked_at FROM hd2_system_state LIMIT 0');if(role==='read')await raw.execute('SELECT delivered_at FROM hd2_courier_outbox LIMIT 0');}
     if(env.HDWORK2_LIVE_CHAT_ENABLED==='true')await raw.execute('SELECT id,order_id FROM hd2_chat_messages LIMIT 0');
     pools.set(role,role==='read'?guardedRead(raw):writeGuard(raw));

@@ -16,10 +16,8 @@ async function run(){
   reader=await connect('hdwork_ops_read',secrets.readPassword);
   writer=await connect('hdwork_ops_write',secrets.writePassword);
   await require(path.join(root,'src/config/local-database-check')).checkRuntimeDatabases({authPool:auth,readPool:reader,operations:true});
+  await require(path.join(root,'src/config/live-chat-activation')).preflight({reader,writer,env});
   const [[identity]]=await writer.query('SELECT CURRENT_USER() AS account,DATABASE() AS db');
-  if(identity.account!=='hdwork_ops_write@localhost'||identity.db!=='hdwork2')throw Error('WRITER_IDENTITY_REJECTED');
-  const [grants]=await writer.query('SHOW GRANTS FOR CURRENT_USER');
-  if(!require(path.join(root,'src/config/operational-grants')).reviewOperationalGrants(grants,'write').ok)throw Error('WRITER_GRANTS_REJECTED');
   const [rows]=await reader.query('SELECT * FROM hd2_orders ORDER BY id');
   const [outbox]=await writer.query('SELECT bot_id,state,COUNT(*) AS total FROM hd2_courier_outbox GROUP BY bot_id,state');
   const [accounts]=await auth.query('SELECT id,username,role,is_active,approval_status FROM users ORDER BY id');
