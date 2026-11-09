@@ -17,3 +17,11 @@ test('workspace scope helper reports assigned modules and rejects unknown worksp
   assert.equal(canOpenWorkspace('unknown', backend.modules), false);
   assert.equal(canOpenWorkspace('__proto__', backend.modules), false);
 });
+
+test('B2C subarea grants never imply access to the other subarea, even for unassigned administrators', () => {
+  assert.equal(canOpenWorkspace('TIAL', ['REQ']), true);
+  assert.equal(canOpenWorkspace('LOGIC', ['REQ']), false);
+  assert.equal(canOpenWorkspace('TIAL', ['LOGIC_PSB']), false);
+  assert.equal(canOpenWorkspace('LOGIC', ['LOGIC_MO']), true);
+  for (const area of ['B2C', 'TIAL', 'LOGIC', 'ASSUREN', 'B2B', 'REPLACEMENT']) assert.equal(canOpenWorkspace(area, []), false);
+});

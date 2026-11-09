@@ -1,21 +1,22 @@
+import {lazy, Suspense} from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppSidebar from "@/components/AppSidebar";
 import { AuthProvider } from "@/contexts/AuthContext";
-import B2cStagingPage from "@/pages/B2cStagingPage";
-import DashboardPage from "@/pages/DashboardPage";
-import AttendancePage from "@/pages/AttendancePage";
-import LoginPage from "@/pages/LoginPage";
-import OrdersPage from "@/pages/OrdersPage";
-import OrderDetailPage from "@/pages/OrderDetailPage";
-import TeamPage from "@/pages/TeamPage";
-import ReportsPage from "@/pages/ReportsPage";
-import UserManagementPage from "@/pages/UserManagementPage";
-import GroupManagementPage from "@/pages/GroupManagementPage";
+const B2cStagingPage = lazy(() => import("@/pages/B2cStagingPage"));
+const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const AttendancePage = lazy(() => import("@/pages/AttendancePage"));
+const LoginPage = lazy(() => import("@/pages/LoginPage"));
+const OrdersPage = lazy(() => import("@/pages/OrdersPage"));
+const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
+const TeamPage = lazy(() => import("@/pages/TeamPage"));
+const ReportsPage = lazy(() => import("@/pages/ReportsPage"));
+const UserManagementPage = lazy(() => import("@/pages/UserManagementPage"));
+const GroupManagementPage = lazy(() => import("@/pages/GroupManagementPage"));
 import { NetworkToolsRoute } from "@/components/WorkspaceOutlet";
 
-import HdWorkspacePage from "@/pages/HdWorkspacePage";
+const HdWorkspacePage = lazy(() => import("@/pages/HdWorkspacePage"));
 
 function InternalAuthLayout() {
   return <AuthProvider><Outlet /></AuthProvider>;
@@ -23,7 +24,7 @@ function InternalAuthLayout() {
 
 export default function LegacyRoutes() {
   return (
-        <Routes>
+        <Suspense fallback={<p role="status" className="p-6">Memuat halaman…</p>}><Routes>
           <Route element={<InternalAuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
 
@@ -47,6 +48,6 @@ export default function LegacyRoutes() {
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Route>
-        </Routes>
+        </Routes></Suspense>
   );
 }

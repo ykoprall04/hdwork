@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import NetworkToolsPage from "@/pages/NetworkToolsPage";
 import { readTerminalRecovery } from "@/lib/terminal-session";
+const NetworkToolsPage = lazy(() => import("@/pages/NetworkToolsPage"));
 
 // Keep the SSH workspace (including xterm's screen and scrollback) mounted
 // across route changes, but never across users or login sessions.
@@ -19,7 +19,7 @@ function NetworkToolsWorkspace() {
   if (!visited && !active) return null;
   return (
     <div hidden={!active}>
-      <NetworkToolsPage active={active} />
+      <Suspense fallback={<p role="status">Memuat Network Tools…</p>}><NetworkToolsPage active={active} /></Suspense>
     </div>
   );
 }

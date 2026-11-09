@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { KeyRound, MoreHorizontal, Plus, Search, UserCog } from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { KeyRound, Plus, Search, UserCog } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,9 +18,9 @@ export default function UserManagementPage() {
   const [dialogOpen,setDialogOpen] = useState(false); const [editing,setEditing] = useState<ManagedUser | null>(null); const [form,setForm] = useState(emptyForm); const [saving,setSaving] = useState(false)
   const [resetUser,setResetUser] = useState<ManagedUser | null>(null); const [newPassword,setNewPassword] = useState("")
 
-  const load = async () => { if(!token) return; try { setLoading(true); setError(""); setUsers(await getManagedUsers(token,{cityId,search})) } catch(e) { setError(e instanceof Error ? e.message : "Gagal mengambil user") } finally { setLoading(false) } }
+  const load = useCallback(async () => { if(!token) return; try { setLoading(true); setError(""); setUsers(await getManagedUsers(token,{cityId,search})) } catch(e) { setError(e instanceof Error ? e.message : "Gagal mengambil user") } finally { setLoading(false) } },[token,cityId,search])
   useEffect(() => { if(!token) return; getUserOptions(token).then(setOptions).catch((e)=>setError(e instanceof Error ? e.message : "Gagal mengambil opsi")) },[token])
-  useEffect(() => { const timer=setTimeout(load,180); return () => clearTimeout(timer) },[token,cityId,search])
+  useEffect(() => { const timer=setTimeout(load,180); return () => clearTimeout(timer) },[load])
   if(user?.role!=="ADMIN" && user?.role!=="SUPER_ADMIN") return <div className="p-6 text-muted-foreground">Halaman ini hanya untuk admin.</div>
 
   const openCreate=()=>{ setEditing(null); setForm({...emptyForm, city_id: options.cities[0]?.id || 0, role: options.roles[0] || "HD"}); setDialogOpen(true) }

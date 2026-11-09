@@ -1,5 +1,9 @@
 # Audit dan persiapan aktivasi seluruh fitur HD Work 2.0
 
+Revisi keamanan berikutnya: [safe-frontend-only-deployment.md](safe-frontend-only-deployment.md).
+Boundary tanpa modul kini menolak mounting konten; uraian halaman terbuka di audit
+historis ini bukan izin untuk merender konten terlindungi.
+
 Branch `chore/remove-cacti-hdwork2`, dasar `bdcf73c`. Audit dilakukan di checkout
 cloud, bukan pada folder Windows `D:\HDWork2-New`. Checkout cloud bersih sebelum
 sinkronisasi fast-forward dari `752dd50`; commit baru hanya memperbaiki preservasi
