@@ -14,6 +14,7 @@ function safeCode(e){return /^[A-Z][A-Z0-9_]{1,63}$/.test(e?.code||'')?e.code:'B
 async function main(config) {
   const url = new URL(config.origin);
   if (url.hostname !== 'localhost' || url.protocol !== 'https:' || !/^test\./.test(config.username)) throw Error('Test target rejected');
+  assert.equal(config.orders?.length,4);for(const o of config.orders){assert.match(o.id,/^[a-f0-9-]{36}$/i);assert.match(o.reference,/^E2E-BROWSER-/);assert.ok(['TIAL','ASSUREN','B2B','REPLACEMENT'].includes(o.module));}
   const root = path.resolve(__dirname, '../..'), localRoot = path.join(root, '.local');
   const dir = fs.mkdtempSync(path.join(localRoot, 'browser-test-'));
   diagnostic.profile=path.basename(dir);diagnosticFile=path.join(localRoot,diagnostic.profile+'-diagnostic.json');
@@ -74,16 +75,21 @@ async function main(config) {
     await until("location.pathname==='/jobs'");
     assert.equal(await evaluate("localStorage.getItem('hdwork:operational:auth:v1')"), null);
     const checks = [];
-    for (const category of ['B2C', 'ASSUREN', 'B2B', 'REPLACEMENT']) {
+    for (const order of config.orders) {
+      const category=order.module==='TIAL'?'B2C':order.module;
       mark(category+'-list');
-      await call('Page.navigate', { url: config.origin + '/work/' + category + (category === 'B2C' ? '/TIAL' : '') });
-      await until("document.body.innerText.includes('Buat order')");
-      await fill('Referensi order', 'BROWSER-' + category); await fill('Deskripsi pekerjaan', 'Synthetic browser work');
-      mark(category+'-create');await click('Simpan order'); await until("/^\\/orders\\//.test(location.pathname)&&document.body.innerText.includes('BROWSER-" + category + "')");
-      mark(category+'-pick');await click('PICK');mark(category+'-done');await click('DONE'); await until("document.body.innerText.includes('BUKA KEMBALI')");
-      mark(category+'-reload');
-      await call('Page.reload'); await until("document.body.innerText.includes('BUKA KEMBALI')&&document.body.innerText.includes('BROWSER-" + category + "')");
-      checks.push(category + ':UI-create-pick-done-refresh-history');
+      await call('Page.navigate',{url:config.origin+'/work/'+category+(category==='B2C'?'/TIAL':'')});
+      await until("document.body.innerText.includes('"+order.reference+"')");
+      assert.equal(await evaluate("document.body.innerText.includes('Simpan order')"),false);
+      await evaluate(`document.querySelector('a[href="/orders/${order.id}"]').click()`);
+      await until("location.pathname==='/orders/"+order.id+"'&&document.body.innerText.includes('"+order.reference+"')");
+      mark(category+'-pick');await click('PICK');
+      await until("document.body.innerText.includes('Durasi proses')&&document.body.innerText.includes('ANTRE')");
+      mark(category+'-done');await click('DONE');await until("document.body.innerText.includes('BUKA KEMBALI')");
+      mark(category+'-reload');await call('Page.reload');
+      await until("document.body.innerText.includes('BUKA KEMBALI')&&document.body.innerText.includes('"+order.reference+"')");
+      assert.equal(await evaluate("document.body.innerText.includes('Riwayat aktivitas')"),true);
+      checks.push(category+':UI-telegram-order-pick-done-refresh-history-feedback');
     }
     mark('mobile-layout');await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'), true);

@@ -1,7 +1,7 @@
 const {createHash}=require('node:crypto');
 const {modules,areas}=require('./modules');
 const fail=(statusCode=400,message='Permintaan pekerjaan tidak valid')=>Object.assign(Error(message),{statusCode});
-const uuid=value=>{if(typeof value!=='string'||! /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value))throw fail();return value;};
+const uuid=value=>{if(typeof value!=='string'||! /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value))throw fail();return value;};
 const moduleOf=o=>({order:'TIAL',req:'REQ',config_psb:'LOGIC_PSB',mo:'LOGIC_MO'})[o.command]||o.module;
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function transition(order,user,input){
@@ -45,7 +45,7 @@ function where(f,user,{recap=false}={}){
  if(f.from){clauses.push('o.business_day BETWEEN ? AND ?');values.push(f.from,f.to);}
  if(!recap){clauses.push(f.tab==='incoming'?"(o.status='WAITING' OR (o.status='DUPLICATE' AND o.duplicate_decision IS NULL))":f.tab==='process'?"o.status='IN_PROGRESS'":"(o.status IN ('DONE','FAILED') OR (o.status='DUPLICATE' AND o.duplicate_decision='REJECT_DUPLICATE'))");if(f.mine){clauses.push('o.owner_user_id=?');values.push(user.id);}if(f.hd){clauses.push(f.tab==='process'?'o.owner_user_id=?':'o.final_user_id=?');values.push(f.hd);}if(f.status){clauses.push('o.status=?');values.push(f.status);}}
  if(f.command){clauses.push('o.command=?');values.push(f.command);}
- if(f.q){clauses.push("(o.sc_in LIKE ? ESCAPE '=' OR o.inet LIKE ? ESCAPE '=')");const q='%'+f.q.replace(/[=%_]/g,'=$&')+'%';values.push(q,q);}
+ if(f.q){clauses.push(`(LOWER(o.sc_in) LIKE ? ESCAPE '=' OR LOWER(o.inet) LIKE ? ESCAPE '=' OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$.STO'))) LIKE ? ESCAPE '=' OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."NO INET/TELP"'))) LIKE ? ESCAPE '=' OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."NO VOICE"'))) LIKE ? ESCAPE '=')`);const q='%'+f.q.toLowerCase().replace(/[=%_]/g,'=$&')+'%';values.push(q,q,q,q,q);}
  return {sql:clauses.join(' AND '),values};
 }
 module.exports={modules,fail,uuid,moduleOf,hash,transition,filters,where};

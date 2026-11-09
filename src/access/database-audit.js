@@ -1,5 +1,6 @@
-const required={users:['SELECT'],hd2_sessions:['SELECT','INSERT','UPDATE'],hd2_security_audit:['INSERT'],hd2_user_modules:['SELECT']};
-function reviewGrants(rows){
+const moduleRequired={users:['SELECT'],hd2_sessions:['SELECT','INSERT','UPDATE'],hd2_security_audit:['INSERT'],hd2_user_modules:['SELECT']};
+function reviewGrants(rows,{accountManagement=false}={}){
+  const required=accountManagement?{users:['SELECT','INSERT','UPDATE'],hd2_sessions:['SELECT','INSERT','UPDATE'],hd2_security_audit:['SELECT','INSERT'],hd2_user_modules:['SELECT','INSERT','DELETE'],hd2_auth_guard:['SELECT','UPDATE']}:moduleRequired;
   const permissions=Object.fromEntries(Object.keys(required).map(table=>[table,new Set()]));
   let unsafe=false,unsupported=false;
   for(const row of rows){
@@ -26,7 +27,7 @@ async function audit(){
     if(target.db!=='hdwork2'||target.account!=='hdwork_auth@localhost'||Number(target.port)!==3306)throw Error('Audit account rejected');
     const [rows]=await connection.query('SHOW GRANTS FOR CURRENT_USER');const grants=reviewGrants(rows);
     const [tables]=await connection.query("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA='hdwork2' AND TABLE_NAME IN ('users','hd2_sessions','hd2_security_audit','hd2_user_modules')");
-    const visible=Object.keys(required).every(name=>tables.some(t=>t.TABLE_NAME===name));
+    const visible=Object.keys(moduleRequired).every(name=>tables.some(t=>t.TABLE_NAME===name));
     const [[admin]]=await connection.query("SELECT COUNT(*) AS activeSuperAdmins FROM hdwork2.users WHERE role='SUPER_ADMIN' AND is_active=TRUE");
     const result={ok:grants.ok&&visible&&Number(admin.activeSuperAdmins)>0,connection:'PASS',account:'hdwork_auth@localhost',database:'hdwork2',version:target.version,readOnly:true,grants,authTablesVisible:visible,activeSuperAdmins:Number(admin.activeSuperAdmins),loginTested:false,writesPerformed:false};
     if(!result.ok)process.exitCode=1;return result;

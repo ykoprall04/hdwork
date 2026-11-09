@@ -1,8 +1,8 @@
 // Native MySQL, fake Telegram only. No operational schema or service activation.
-const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), vm = require('node:vm');
+const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 const assert = require('node:assert/strict'), { spawn } = require('node:child_process');
 const { randomUUID, createHash, createHmac, randomBytes } = require('node:crypto');
-const { createRequire } = require('node:module');
+const {schemaStatements,approvedAccount,durationStats,pickRace,auditLinks,runtime:loadRuntime,childEnvironment}=require('../helpers/e2e-contracts.cjs');
 
 async function run({ env = process.env, argv = process.argv.slice(2), driverFactory = () => require('mysql2/promise') } = {}) {
   if (argv.length !== 1 || argv[0] !== '--run-courier-disposable') throw Error('Courier rehearsal disabled');
@@ -19,15 +19,9 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     try {
       await guard.verifyTarget(c, options.database);
       for (const sql of guard.migrationStatements()) await c.query(sql);
-      for (const name of ['007_hdwork2_auth.sql','008_hdwork2_operations.sql','009_hdwork2_courier_runtime.sql']) {
+      for (const name of ['007_hdwork2_auth.sql','008_hdwork2_operations.sql','009_hdwork2_courier_runtime.sql','010_hdwork2_account_approval.sql']) {
         if(name==='009_hdwork2_courier_runtime.sql')await c.execute("INSERT INTO hd2_courier_inbox(id,bot_id,update_id,payload_hash,payload,state,due_ms) VALUES (?,'migration-fixture','1',?,?,'IGNORED',0)",[randomUUID(),'a'.repeat(64),JSON.stringify({synthetic:true})]);
-        const parts = fs.readFileSync(path.resolve(__dirname,'../../database/manual',name),'utf8').replace(/^\s*--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean);
-        assert.equal(parts.shift(),'USE hdwork2');
-        for (const sql of parts) {
-          assert.match(sql,/^(CREATE TABLE (users|hd2_[a-z_]+)|ALTER TABLE (users|hd2_orders|hd2_audit|hd2_courier_inbox)|INSERT INTO hd2_auth_guard)/);
-          assert.doesNotMatch(sql,/\b(DROP|TRUNCATE|USE|DATABASE|PROCEDURE|TRIGGER)\b/i);
-          await c.query(sql);
-        }
+        for(const sql of schemaStatements([name]))await c.query(sql);
       }
       const [[preserved]]=await c.execute("SELECT state,received_seq FROM hd2_courier_inbox WHERE bot_id='migration-fixture'");
       assert.equal(preserved.state,'IGNORED');assert.ok(Number(preserved.received_seq)>0);
@@ -43,7 +37,7 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     await new Promise(r => server.listen(0,'127.0.0.1',r));
     const internalUrl='http://127.0.0.1:'+server.address().port;
     async function python(data) {
-      const child = spawn(env.HDWORK2_TEST_PYTHON || (process.platform==='win32'?'python':'python3'),['tests/helpers/courier-roundtrip.py','--mock-only'],{cwd:path.resolve(__dirname,'../..'),env:{...process.env,PYTHONPATH:'courier_bot'},stdio:['pipe','pipe','pipe']});
+      const child = spawn(env.HDWORK2_TEST_PYTHON || (process.platform==='win32'?'python':'python3'),['tests/helpers/courier-roundtrip.py','--mock-only'],{cwd:path.resolve(__dirname,'../..'),env:childEnvironment(process.env,{PYTHONPATH:'courier_bot'}),windowsHide:true,stdio:['pipe','pipe','pipe']});
       let out='',err=''; child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);
       child.stdin.end(JSON.stringify({server:internalUrl,journal:path.join(temp,'journal.sqlite'),groups,...data}));
       const code=await new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',resolve);});
@@ -55,17 +49,11 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     await auth.bootstrap({name:'Synthetic Admin',username:'admin',password});
     const accounts=[];
     for (const [i,role] of ['HD','HD','SHOW_ONLY'].entries()) {
-      const id=await auth.manage(1,null,{name:'Synthetic HD '+i,username:'person'+i,password,role,is_active:true,modules:i===2?['REQ']:['TIAL','REQ','LOGIC_PSB','LOGIC_MO']});
+      const {id}=await approvedAccount(auth,1,{name:'Synthetic HD '+i,username:'person'+i,password,role,is_active:true,modules:i===2?['REQ']:['TIAL','REQ','LOGIC_PSB','LOGIC_MO']});
       accounts.push({id,...await auth.login('person'+i,password)});
     }
-    function load(file, overrides, environment) {
-      const filename=path.resolve(__dirname,'../..',file), realRequire=createRequire(filename), module={exports:{}};
-      vm.runInNewContext(fs.readFileSync(filename,'utf8'),{module,require:n=>Object.hasOwn(overrides,n)?overrides[n]:realRequire(n),process:{env:environment},console,Buffer});
-      return module.exports;
-    }
     const operationalEnv={HDWORK2_OPERATIONS_ENABLED:'true',HDWORK2_AUTH_V2:'true',DB_NAME:'hdwork2',JWT_SECRET:jwtKey,FRONTEND_ORIGINS:'https://app.example.invalid'};
-    const h=load('src/access/http.js',{'../config/database':pool},operationalEnv);
-    const routes=load('src/operations/routes.js',{'../access/http':h,'../config/database':pool},operationalEnv);
+    const {operations:routes}=loadRuntime(pool,operationalEnv);
     const app=require('express')();app.use(require('express').json());app.use('/api/operations',routes);
     webServer=require('node:http').createServer(app);await new Promise(r=>webServer.listen(0,'127.0.0.1',r));
     const webUrl='http://127.0.0.1:'+webServer.address().port;
@@ -107,7 +95,15 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
       const response=await web('/orders/'+id+'/actions',who,{requestId:randomUUID(),version:d.data.version,action,...(note!==undefined?{note}:{}),...(confirm?{confirm:true}:{})});
       assert.equal(response.status,200,action+' failed');
     }
-    await action(canonical.id,accounts[0],'PICK');await action(canonical.id,accounts[1],'TAKEOVER');await action(canonical.id,accounts[1],'DONE','checked');
+    assert.equal((await web('/orders',accounts[0],{requestId:randomUUID(),module:'TIAL',reference:'FORBIDDEN',description:'No manual orders'})).status,403);
+    const beforePick=Number((await pool.query('SELECT COUNT(*) AS n FROM hd2_courier_outbox'))[0][0].n);
+    const {winner}=await pickRace((i,body)=>web('/orders/'+canonical.id+'/actions',accounts[i],body));
+    assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM hd2_courier_outbox'))[0][0].n),beforePick+1);
+    const other=1-winner;await action(canonical.id,accounts[other],'TAKEOVER');
+    const stale=await (await web('/orders/'+canonical.id,accounts[winner])).json();
+    assert.equal(stale.data.status,'IN_PROGRESS');assert.equal(stale.data.feedback.status,'ANTRE');
+    assert.equal((await web('/orders/'+canonical.id+'/actions',accounts[winner],{requestId:randomUUID(),version:stale.data.version,action:'DONE'})).status,409);
+    await action(canonical.id,accounts[other],'DONE','checked');
     const before=Number((await pool.query('SELECT COUNT(*) AS n FROM hd2_courier_outbox'))[0][0].n);
     await action(canonical.id,accounts[0],'REOPEN',undefined,true);
     assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM hd2_courier_outbox'))[0][0].n),before);
@@ -115,9 +111,12 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     await action(duplicate.id,accounts[0],'CONTINUE_DUPLICATE');await action(duplicate.id,accounts[0],'REJECT_DUPLICATE');
     await action(duplicate.id,accounts[1],'REOPEN',undefined,true);await action(duplicate.id,accounts[1],'REJECT_DUPLICATE');
     for(const order of orders.filter(o=>!['501','502'].includes(o.message_id))){await action(order.id,accounts[0],'PICK');await action(order.id,accounts[0],'DONE');}
+    await auditLinks(pool,canonical.id);
+    const stats=await (await web('/recap?area=ALL')).json();durationStats(stats.data);assert.equal(stats.data.durationCount,4);
+    const overview=await (await web('/overview')).json();durationStats(overview.all);assert.equal(overview.all.durationSeconds,overview.TIAL.durationSeconds+overview.LOGIC.durationSeconds);
     const [queued]=await pool.query('SELECT payload FROM hd2_courier_outbox');
     const payloads=queued.map(r=>typeof r.payload==='string'?JSON.parse(r.payload):r.payload);
-    assert.ok(payloads.some(p=>p.text==='✅ Done (ACTCOMP)\nchecked\nJgn lupa VALINS after PS. Salam, Synthetic HD 1!'));
+    assert.ok(payloads.some(p=>p.text==='✅ Done (ACTCOMP)\nchecked\nJgn lupa VALINS after PS. Salam, Synthetic HD '+other+'!'));
     assert.equal(payloads.filter(p=>p.text==='✅ Done').length,3);
     assert.ok(payloads.some(p=>p.text==='❌ synthetic reason'));assert.ok(payloads.some(p=>p.text==='❌ Duplikat Order'));
     const lost=await python({send:true,lose_outbox_ack:true});assert.equal(lost.sent.length,1);assert.equal(lost.pendingAck,true);
@@ -126,6 +125,7 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     const expected=payloads.map(p=>createHash('sha256').update(canonicalJson(p)).digest('hex')).sort();
     assert.deepEqual([...lost.sent,...delivered.sent].sort(),expected);
     assert.equal(Number((await pool.query("SELECT COUNT(*) AS n FROM hd2_courier_outbox WHERE state='SENT'"))[0][0].n),payloads.length);
+    assert.equal((await (await web('/orders/'+canonical.id)).json()).data.feedback.status,'TERKIRIM');
     // Strict FIFO blocks later work while its predecessor is backing off.
     const extra=number=>({version:1,bot_id:botId,update_id:String(number),event:{kind:'message',chat_id:'-1001',message_id:String(number),telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1762315200,text:'/req next '+number,attachments:[]}});
     const firstPending=await store.accept(extra(900)),secondPending=await store.accept(extra(901));
@@ -165,17 +165,20 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     let retryJob=claims[0];
     for(let attempt=1;attempt<=5;attempt++){
       assert.equal(retryJob.attempt,attempt);
-      await store.settle(retryId,{lease_token:retryJob.lease_token,result:'retry',error_code:attempt===1?'RATE_LIMIT':'NETWORK',retry_after:attempt===1?3:0});
+      await store.settle(retryId,{lease_token:retryJob.lease_token,result:'retry',error_code:'RATE_LIMIT',retry_after:attempt===1?3:0});
       assert.deepEqual(await store.claim(),[]);shift+=64000;
       if(attempt<5)[retryJob]=await store.claim();
     }
     assert.equal((await pool.execute('SELECT state FROM hd2_courier_outbox WHERE id=?',[retryId]))[0][0].state,'DEAD');
     const expiredId=await store.enqueue('lease-expiry-test-only',payloads[0]);const [expiredJob]=await store.claim();shift+=60001;
     await assert.rejects(store.settle(expiredId,{lease_token:expiredJob.lease_token,result:'sent',telegram_message_id:'5000'}),{statusCode:409});
-    assert.deepEqual(await store.claim(),[]);shift+=2000;const [newLease]=await store.claim();assert.notEqual(newLease.lease_token,expiredJob.lease_token);
-    await store.settle(expiredId,{lease_token:newLease.lease_token,result:'sent',telegram_message_id:'5001'});
+    assert.deepEqual(await store.claim(),[]);shift+=64000;assert.deepEqual(await store.claim(),[]);
+    assert.equal((await pool.execute('SELECT state FROM hd2_courier_outbox WHERE id=?',[expiredId]))[0][0].state,'DEAD');
+    const uncertainId=await store.enqueue('uncertain-test-only',payloads[0]);const [uncertainJob]=await store.claim();
+    await store.settle(uncertainId,{lease_token:uncertainJob.lease_token,result:'retry',error_code:'NETWORK'});shift+=64000;assert.deepEqual(await store.claim(),[]);
+    assert.equal((await pool.execute('SELECT state FROM hd2_courier_outbox WHERE id=?',[uncertainId]))[0][0].state,'DEAD');
     const [plan]=await pool.execute("EXPLAIN SELECT id FROM hd2_courier_inbox WHERE bot_id=? AND state='PENDING' ORDER BY received_seq LIMIT 1",[botId]);
-    return {ok:true,migrations:'004-009',orders:8,webRoundtripOrders:5,outboxSent:payloads.length,pythonRestart:true,lostAckRecovered:true,databaseRecovery:true,sse:true,queueIndex:plan[0].key,telegram:'FAKE_ONLY'};
+    return {ok:true,migrations:'004-010',approval:true,doublePick:true,auditCorrelation:true,feedback:true,durationStats:true,orders:8,webRoundtripOrders:5,outboxSent:payloads.length,pythonRestart:true,lostAckRecovered:true,databaseRecovery:true,sse:true,queueIndex:plan[0].key,telegram:'FAKE_ONLY'};
   } finally {
     if(oldFlag===undefined)delete process.env.HDWORK2_OPERATIONS_ENABLED;else process.env.HDWORK2_OPERATIONS_ENABLED=oldFlag;
     liveAbort?.abort();await liveRead?.catch(()=>{});await worker?.close();

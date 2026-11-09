@@ -14,3 +14,9 @@ local_agent/.env
 .DS_Store
 uploads/results/*
 !uploads/results/.gitkeep
+
+# Local dependency cache
+.npm-cache/
+
+# Local linked worktrees
+/.worktrees/

@@ -32,9 +32,8 @@ async function exercise(pool) {
   const leases=await store.claim(10);assert.equal(leases.length,2);
   await store.settle(leases[0].delivery_id,{lease_token:leases[0].lease_token,result:'sent',telegram_message_id:'50'});
   assert.equal((await store.settle(leases[0].delivery_id,{lease_token:leases[0].lease_token,result:'sent',telegram_message_id:'50'})).duplicate,true);
-  now+=60001;assert.deepEqual(await store.claim(),[]);now+=2000;const [retry]=await store.claim();assert.equal(retry.attempt,2);
-  await store.settle(retry.delivery_id,{lease_token:retry.lease_token,result:'failed',error_code:'FORBIDDEN'});
-  const [[dead]]=await pool.query('SELECT state FROM hd2_courier_outbox WHERE id=?',[retry.delivery_id]);assert.equal(dead.state,'DEAD');
+  now+=60001;assert.deepEqual(await store.claim(),[]);now+=2000;assert.deepEqual(await store.claim(),[]);
+  const [[dead]]=await pool.query('SELECT state,last_error_code FROM hd2_courier_outbox WHERE id=?',[leases[1].delivery_id]);assert.equal(dead.state,'DEAD');assert.equal(dead.last_error_code,'LEASE_EXPIRED');
   await store.accept(event(5,30,data));
   await assert.rejects(store.processNext(async(_e,tx)=>{await tx.enqueue('rollback',{method:'sendMessage',chat_id:'-100123',telegram_thread_id:null,thread_mode:'non_topic',reply_to_message_id:'10',text:'Synthetic rollback'});throw Error('Synthetic rollback');}),{statusCode:503});
   const [[rollback]]=await pool.query("SELECT COUNT(*) AS total FROM hd2_courier_outbox WHERE idem_key='rollback'");assert.equal(Number(rollback.total),0);

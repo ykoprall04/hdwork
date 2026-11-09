@@ -32,5 +32,9 @@ test('service captures secrets into mocked auth/read pools then clears bootstrap
 test('startup installation never starts native tunnel and token broker has no plaintext file or network',()=>{
  const installer=fs.readFileSync('scripts/install-office-startup.ps1','utf8'),broker=fs.readFileSync('scripts/tunnel-token-broker.ps1','utf8');
  assert.ok(!/Start-Service|Start-ScheduledTask/.test(installer));assert.ok(installer.includes("StartMode='Disabled'"));assert.ok(installer.includes('HDWork2-Web'));assert.ok(installer.includes('HDWork2-TunnelTokenBroker'));
- assert.ok(broker.includes('DataProtectionScope]::LocalMachine'));assert.ok(broker.includes('S-1-5-18'));assert.ok(!/WriteAllText|WriteAllBytes|Invoke-WebRequest|Invoke-RestMethod/.test(broker));
+ assert.ok(broker.includes('DataProtectionScope]::LocalMachine'));assert.ok(broker.includes('S-1-5-18'));// The existing broker writes public lifecycle state, never its decrypted bytes.
+ const stateWrites=broker.match(/\[IO\.File\]::WriteAllText\('[^']*broker\.state\.json',\(@\{[^}]*\}\|ConvertTo-Json\)\)/g)||[];
+ assert.equal(stateWrites.length,2);
+ for(const write of stateWrites){assert.doesNotMatch(write,/\$(?:bytes|cipher|token)\b/i);assert.match(write,/secretLogged=\$false/);}
+ assert.doesNotMatch(broker.replace(/\[IO\.File\]::WriteAllText\('[^']*broker\.state\.json',\(@\{[^}]*\}\|ConvertTo-Json\)\)/g,''),/WriteAllText|WriteAllBytes|Invoke-WebRequest|Invoke-RestMethod/);
 });

@@ -1,16 +1,14 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { validate } = require('../src/operations/create');
+const { create } = require('../src/operations/create');
 const { filters, where, transition } = require('../src/operations/policy');
 const { isWebOrder, modules } = require('../src/operations/modules');
 const { checkDatabase } = require('../src/config/local-database-check');
 const requestId = 'b9497048-7443-4384-946b-a564e763d410';
 
-test('manual orders validate all workspace modules and reject forged attributes before touching storage', () => {
-  for (const module of modules) assert.equal(validate({ requestId, module, reference: ' REF ', description: ' Work ' }).reference, 'REF');
-  for (const change of [{ module: 'UNKNOWN' }, { requestId: 'bad' }, { reference: '' }, { description: 'x'.repeat(4001) }, { ownerId: 1 }, { description: '\x00' }]) {
-    assert.throws(() => validate({ requestId, module: 'B2B', reference: 'REF', description: 'Work', ...change }), { statusCode: 400 });
-  }
+test('manual order creation is retired across all workspace modules', async () => {
+ for(const module of modules)await assert.rejects(create(null,null,null,{requestId,module,reference:'REF',description:'Work'}),{statusCode:403});
 });
+
 test('workspace filters and live scopes preserve module authorization and only include explicit web origins', () => {
   for (const module of ['ASSUREN', 'B2B', 'REPLACEMENT']) {
     const user = { id: 1, modules: [module] }, f = filters({ area: module }, user);

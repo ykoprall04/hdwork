@@ -2,13 +2,14 @@
 const fs = require('node:fs'), path = require('node:path'), net = require('node:net');
 const { spawn } = require('node:child_process'), { randomBytes } = require('node:crypto');
 const mysql = require('mysql2/promise');
+const {schemaStatements,childEnvironment}=require('../tests/helpers/e2e-contracts.cjs');
 const root = path.resolve(__dirname, '..');
 const base = process.env.HDWORK2_TEST_MYSQL_BASE || 'C:/Program Files/MySQL/MySQL Server 8.4';
 const mysqld = path.join(base, 'bin/mysqld.exe');
 const port = 13316;
 const wait = ms => new Promise(r => setTimeout(r, ms));
 function launch(args, log) {
-  const child = spawn(mysqld, ['--no-defaults', ...args], { windowsHide: true, stdio: ['ignore', log, log] });
+  const child = spawn(mysqld, ['--no-defaults', ...args], { windowsHide: true, env:childEnvironment(), stdio: ['ignore', log, log] });
   child.on('error', () => {}); return child;
 }
 async function finished(child) { return new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', code => code === 0 ? resolve() : reject(Error('Private MySQL process failed'))); }); }
@@ -44,9 +45,13 @@ async function main() {
       return env;
     }
     // Existing rehearsals populate only new, guarded hdwork2_test_* schemas.
-    for (const [file, flag] of [['mysql-operations.cjs','--run-operations-disposable'], ['mysql-courier-integration.cjs','--run-courier-disposable']]) {
-      const result = await require('../tests/integration/' + file).run({ env: await target(), argv: [flag] });
-      console.log(JSON.stringify({ suite: file, ...result }));
+    for (const [file,flag] of [['mysql-auth.cjs','--run-auth-disposable'],['mysql-operations.cjs','--run-operations-disposable'],['mysql-courier-integration.cjs','--run-courier-disposable']]) {
+      // Fresh process prevents environment flags, cached pools and auth sessions crossing suites.
+      const suite=spawn(process.execPath,[path.join(root,'tests/integration',file),flag],{cwd:root,env:childEnvironment(process.env,await target()),windowsHide:true,stdio:['ignore','pipe','ignore']});
+      let output='';suite.stdout.on('data',b=>output+=b);
+      const code=await new Promise((resolve,reject)=>{suite.once('error',reject);suite.once('exit',resolve);});
+      if(code!==0)throw Error('Disposable suite failed: '+file);
+      console.log(output.trim());
     }
     const env = await target(), guard = require('../ops/mysql/disposable-guard');
     const pool = mysql.createPool(guard.config(env, ['--run-disposable']));
@@ -55,11 +60,7 @@ async function main() {
       try {
         await guard.verifyTarget(c, env.HDWORK2_MYSQL_TEST_DATABASE);
         for (const sql of guard.migrationStatements()) await c.query(sql);
-        for (const file of ['007_hdwork2_auth.sql','008_hdwork2_operations.sql','009_hdwork2_courier_runtime.sql']) {
-          const parts = fs.readFileSync(path.join(root, 'database/manual', file), 'utf8').replace(/^\s*--.*$/gm, '').split(';').map(s => s.trim()).filter(Boolean);
-          if (parts.shift() !== 'USE hdwork2') throw Error('Fixture rejected');
-          for (const sql of parts) { if (/\b(USE|DROP|TRUNCATE|DATABASE|TRIGGER|PROCEDURE)\b/i.test(sql)) throw Error('Fixture rejected'); await c.query(sql); }
-        }
+        for(const sql of schemaStatements())await c.query(sql);
       } finally { c.release(); }
       console.log(JSON.stringify({ suite: 'local-base-web', ...await require('../tests/integration/local-base-web.cjs').exercise(pool) }));
     } finally { await pool.end(); }

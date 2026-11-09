@@ -30,7 +30,7 @@ test('manual orders cannot authorize courier replies; allowed replies retry only
  assert.equal(await p.outgoing({...payload,chat_id:'-1009999'},mockConnection('req')),false);
  assert.equal(await p.outgoing(payload,mockConnection('req')),true);
  const id=store.enqueue('synthetic-request',payload);assert.ok(store.enqueue('synthetic-request',payload)===id);
- let sends=0;const fakeTransport=async()=>++sends===1?{result:'retry',error_code:'NETWORK'}:{result:'sent',telegram_message_id:'77'};
+ let sends=0;const fakeTransport=async()=>++sends===1?{result:'retry',error_code:'RATE_LIMIT'}:{result:'sent',telegram_message_id:'77'};
  let [delivery]=store.claim(1);store.settle(delivery.delivery_id,{lease_token:delivery.lease_token,...await fakeTransport(delivery.payload)});assert.equal(store.claim(1).length,0);
  now+=2000;[delivery]=store.claim(1);assert.equal(delivery.attempt,2);
  const ack={lease_token:delivery.lease_token,...await fakeTransport(delivery.payload)};store.settle(id,ack);assert.equal(store.settle(id,ack).duplicate,true);assert.equal(store.claim(1).length,0);assert.equal(sends,2);

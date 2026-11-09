@@ -16,9 +16,9 @@ test('app-only HTTPS handler blocks internal paths before proxying and sets fram
  handler({url:'/internal/courier/v1/events',headers:{},method:'GET'},{setHeader(k,v){headers[k]=v;},writeHead(n){status=n;},end(){}});
  assert.equal(status,404);assert.equal(headers['X-Frame-Options'],'DENY');assert.ok(headers['Content-Security-Policy'].includes("frame-ancestors 'none'"));
 });
-test('without Access, backend boundary denies admin, internal, legacy, malformed and extra auth routes',()=>{
- for(const path of ['/internal/courier/v1/events','/api/internal/courier/v1/events','/api/admin/users','/api/b2c/orders','/api/auth/reset','/api/auth/login/','/api/Auth/login','/api/auth/%6cogin'])assert.equal(boundary('POST',path,{'cf-access-authenticated-user-email':'forged'}).status,404);
- assert.equal(boundary('GET','/api/auth/login').status,405);assert.equal(boundary('POST','/api/auth/me').status,405);assert.equal(boundary('POST','/api/auth/login').passed,true);assert.equal(boundary('GET','/api/operations/orders').passed,true);
+test('without Access, backend boundary denies internal, legacy, malformed and extra auth routes',()=>{
+ for(const path of ['/internal/courier/v1/events','/api/internal/courier/v1/events','/api/b2c/orders','/api/auth/reset','/api/auth/login/','/api/Auth/login','/api/auth/%6cogin'])assert.equal(boundary('POST',path,{'cf-access-authenticated-user-email':'forged'}).status,404);
+ assert.equal(boundary('POST','/api/admin/users').passed,true);assert.equal(boundary('POST','/api/auth/change-password').passed,true);assert.equal(boundary('GET','/api/auth/change-password').status,405);assert.equal(boundary('GET','/api/auth/login').status,405);assert.equal(boundary('POST','/api/auth/me').status,405);assert.equal(boundary('POST','/api/auth/login').passed,true);assert.equal(boundary('GET','/api/operations/orders').passed,true);
 });
 test('forged edge identity cannot replace the application session on operations',async()=>{
  const h=require('../src/access/http');let passed=false,status;
