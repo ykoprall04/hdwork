@@ -9,7 +9,8 @@ Telegram → Python Courier journal → signed/leased inbox API → MySQL inbox 
 Node processor → hd2_chat_messages → shared module-scoped SSE → operational UI.
 Web replies use cookie session + CSRF + rate limit → locked order/session/module
 checks → chat record + audit + idempotent request + existing Courier outbox in a
-single transaction. Only the current HD owner of IN_PROGRESS may reply. Admins
+single transaction. Only the current HD, ADMIN or SUPER_ADMIN owner of IN_PROGRESS with the matching
+module may reply. Administrative roles gain no automatic ownership. Admins
 and Show Only can read their allowed modules; the restricted trial account cannot
 use this new feature. The browser cannot supply chat/topic/bot/reply destinations.
 
