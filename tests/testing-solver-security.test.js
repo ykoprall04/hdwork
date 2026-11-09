@@ -1,5 +1,15 @@
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 const policy=require('../src/operations/testing-solver-scope');
+test('trial scope remains mandatory alongside the approved general writer',()=>{
+ const env={...require('../src/config/office-web').officeEnvironment({dist:'.local/online-candidate-security/dist',publicOrigin:'https://hdwork2.yoloo.space'}),HDWORK2_SERVICE_AUTH_APPROVED:'true',HDWORK2_SERVICE_AUTH_POLICY:'operational-write',HDWORK2_LOCAL_READ_ONLY:'false',HDWORK2_AUTH_WRITE_ENABLED:'true',OP_WRITE_ENABLED:'true',HDWORK2_OPERATIONAL_WRITE_APPROVED:'true',OP_WRITE_DB_USER:'hdwork_ops_write',OP_WRITE_DB_NAME:'hdwork2',OP_WRITE_DB_HOST:'127.0.0.1',OP_WRITE_DB_PORT:'3306',HDWORK2_TESTING_SOLVER_ENABLED:'true',HDWORK2_TESTING_SOLVER_SCOPE:JSON.stringify(scope())};
+ const s=policy.configuration(env);assert.equal(s.username,'trial_yanto');
+ assert.throws(()=>policy.action(s,user(),{...order(),chat_id:'-999'},{action:'PICK'}));
+ assert.throws(()=>policy.configuration({...env,HDWORK2_OPERATIONAL_WRITE_APPROVED:'false'}));
+ const expired={...scope(),expiresAt:new Date(1).toISOString()};
+ assert.equal(policy.configuration({...env,HDWORK2_TESTING_SOLVER_SCOPE:JSON.stringify(expired)}),null);
+ assert.throws(()=>policy.action(s,user(),order(),{action:'PICK'},Date.now()+172800000));
+ assert.throws(()=>policy.configuration({...env,HDWORK2_TESTING_SOLVER_SCOPE:JSON.stringify({...expired,chatId:'-999'})}));
+});
 const scope=()=>({username:'trial_yanto',userId:37,chatId:'-5436357946',botId:'hdworkopsbot-testing',botUsername:'HDWorkOpsBot',threadId:null,chatVerified:true,expiresAt:new Date(Date.now()+86400000).toISOString()});
 const user=()=>({id:37,username:'trial_yanto',name:'Trial',role:'HD',is_active:1,modules:['TIAL']});
 const order=()=>({id:randomUUID(),bot_id:'hdworkopsbot-testing',chat_id:'-5436357946',thread_id:null,message_id:'91',command:'order',telegram_timestamp:123,status:'WAITING',version:0,owner_user_id:null,duplicate_of:null});

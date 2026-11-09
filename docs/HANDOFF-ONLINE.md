@@ -1,5 +1,8 @@
 # HANDOFF ONLINE — HD Work 2.0
 
+
+Pembaruan deployment operasional 9 November 2026, 19:36 WIB: writer MySQL aktif, browser publik dan uji transaksi status PASS, 11 order terjaga, layanan legacy tetap berjalan. Produksi umum masih menunggu penetapan grup Telegram dan petugas permanen; integrasi existing hanya grup testing. Detail dan pemulihan: [operational-deployment-20261109.md](operational-deployment-20261109.md). Bukti terbaru .local/operational-deployment.json, operational-browser-result.json, operational-flow-result.json. Bagian berikut adalah riwayat sebelum deployment ini.
+
 Snapshot dibuat 9 November 2026, Asia/Jakarta. Project: D:/HDWork2-New. Repository: ykoprall04/hdwork.
 
 **ONLINE. Akun trial_yanto sekarang HD dengan guard testing aktif dan pemeriksaan API publik PASS. Uji nyata CEK -> DONE/reply Telegram masih menunggu satu pesan dummy dari pengguna; belum ada aksi order yang dicoba. DNS/Cloudflare tidak diubah pada aktivasi solver.**

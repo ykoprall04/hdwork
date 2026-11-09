@@ -7,8 +7,12 @@ function validate(scope,now=Date.now()){
 }
 function configuration(env=process.env){
  if(env.HDWORK2_TESTING_SOLVER_ENABLED===undefined||env.HDWORK2_TESTING_SOLVER_ENABLED==='false')return null;
- if(env.HDWORK2_TESTING_SOLVER_ENABLED!=='true'||env.HDWORK2_LOCAL_READ_ONLY!=='true'||env.OP_WRITE_ENABLED!=='false'||env.HDWORK2_OPERATIONAL_WRITE_APPROVED!=='false'||env.HDWORK2_PUBLIC_ORIGIN!=='https://hdwork2.yoloo.space')throw fail();
+ const operational=env.HDWORK2_SERVICE_AUTH_POLICY==='operational-write'&&require('../config/persistent-auth').validatePersistentAuth(env);
+ if(env.HDWORK2_TESTING_SOLVER_ENABLED!=='true'||(!operational&&(env.HDWORK2_LOCAL_READ_ONLY!=='true'||env.OP_WRITE_ENABLED!=='false'||env.HDWORK2_OPERATIONAL_WRITE_APPROVED!=='false'))||env.HDWORK2_PUBLIC_ORIGIN!=='https://hdwork2.yoloo.space')throw fail();
  let scope;try{scope=JSON.parse(env.HDWORK2_TESTING_SOLVER_SCOPE);}catch{throw fail();}
+ // An expired trial must never prevent the general operational service starting.
+ // Validate its complete identity before disabling only the expired trial.
+ if(operational&&Date.parse(scope?.expiresAt)<=Date.now()){validate(scope,Date.parse(scope.expiresAt)-1);return null;}
  return Object.freeze({...validate(scope)});
 }
 function actor(scope,user,now){validate(scope,now);if(!user||Number(user.id)!==scope.userId||user.username!==username||user.role!=='HD'||![true,1].includes(user.is_active??true))throw fail();}

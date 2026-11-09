@@ -19,6 +19,10 @@ GRANT SELECT ON hdwork2.hd2_audit TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_live_events TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_user_modules TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT (id,name,role,is_active) ON hdwork2.users TO 'hdwork_ops_read'@'localhost';
+-- Match the integrated read policy: feedback metadata only, never payload/lease token.
+GRANT SELECT (order_id,request_id,user_id) ON hdwork2.hd2_web_requests TO 'hdwork_ops_read'@'localhost';
+GRANT SELECT (id,bot_id,idem_key,created_at,state,telegram_message_id,last_error_code,lease_until_ms) ON hdwork2.hd2_courier_outbox TO 'hdwork_ops_read'@'localhost';
 
--- No outbox permission, UPDATE orders, user/password modification, DDL on tables,
+-- No courier outbox permission, read access to payload/lease token, UPDATE orders,
+-- user/password modification, DDL on tables,
 -- global grants, GRANT OPTION, other database, or existing-account password reset.

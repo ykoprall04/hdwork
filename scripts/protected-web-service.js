@@ -10,13 +10,16 @@ async function run(){
  const testingScope=require('../src/operations/testing-solver-scope').configuration(env);
  const {bootstrap,validateBundle,validateOperationalBundle}=require('./office-web-service');
  const secrets=await bootstrap(process.stdin,{validate:value=>{
-  if(!testingScope)return validateOperationalBundle(value,env);
-  if(Object.keys(value).sort().join(',')!=='authPassword,readPassword,signingSecret,testingTelegramToken,testingWritePassword')throw Error('Testing bundle rejected');
+  if(env.HDWORK2_TESTING_SOLVER_ENABLED!=='true')return validateOperationalBundle(value,env);
+  const operational=env.HDWORK2_SERVICE_AUTH_POLICY==='operational-write';
+  const expected=['authPassword','readPassword','signingSecret','testingTelegramToken','testingWritePassword',...(operational?['writePassword']:[])].sort().join(',');
+  if(Object.keys(value).sort().join(',')!==expected)throw Error('Testing bundle rejected');
+  if(operational)validateOperationalBundle({authPassword:value.authPassword,readPassword:value.readPassword,signingSecret:value.signingSecret,writePassword:value.writePassword},env);
   validateBundle({authPassword:value.authPassword,readPassword:value.readPassword,signingSecret:value.signingSecret});
   if(typeof value.testingWritePassword!=='string'||!value.testingWritePassword||typeof value.testingTelegramToken!=='string'||!/^\d{6,12}:[A-Za-z0-9_-]{30,}$/.test(value.testingTelegramToken))throw Error('Testing secrets rejected');return value;
  }});
  let app,pool,closing=false,leaseEnded=false;
- const save=status=>fs.writeFileSync(path.join(home,'state/state.json'),JSON.stringify({status,pid:process.pid,origin:env.HDWORK2_PUBLIC_ORIGIN,readOnly:true,courier:false,testingSolver:!!testingScope,testingSenderOnly:!!testingScope,updatedAt:new Date().toISOString()}));
+ const save=status=>fs.writeFileSync(path.join(home,'state/state.json'),JSON.stringify({status,pid:process.pid,origin:env.HDWORK2_PUBLIC_ORIGIN,readOnly:env.HDWORK2_LOCAL_READ_ONLY==='true',pools:require('../src/config/operational-pools').status(),courier:false,testingSolver:!!testingScope,testingSenderOnly:!!testingScope,updatedAt:new Date().toISOString()}));
  const close=async()=>{if(closing)return;closing=true;try{await require('../src/config/testing-solver-runtime').close();if(app)await app.close();else if(pool)await pool.end();await require('../src/config/operational-pools').close();}finally{save('STOPPED');process.stdin.destroy();}};
  process.stdin.once('end',()=>{leaseEnded=true;if(app)void close();});
  try{

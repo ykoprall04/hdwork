@@ -1,4 +1,14 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),{createRequire}=require('node:module'),http=require('node:http');
+test('trial and regular HD requests use their own writer paths when both profiles are enabled',async()=>{
+ const file=require.resolve('../src/operations/routes'),native=createRequire(file),m={exports:{}},calls=[],write={};let trialEnabled=true;
+ const h={auth(req,_res,next){req.user={id:1,username:req.headers['x-test-user'],role:'HD',modules:['TIAL']};req.sessionToken='synthetic';next();},csrf(){}};
+ const mocked=name=>name==='../access/http'?h:name==='../config/operational-pools'?{getWritePool:()=>write}:name==='./testing-solver-scope'?{configuration:()=>trialEnabled?{}:null}:name==='../config/testing-solver-runtime'?{async act(){calls.push('trial');return {success:true};}}:name==='./mutate'?{async act(p){assert.equal(p,write);calls.push('general');return {success:true};}}:native(name);
+ vm.runInNewContext(fs.readFileSync(file,'utf8'),{module:m,require:mocked,process:{env:{HDWORK2_OPERATIONS_ENABLED:'true',HDWORK2_AUTH_V2:'true',DB_NAME:'hdwork2',HDWORK2_TESTING_SOLVER_ENABLED:'true'}}});
+ const app=require('express')();app.use(require('express').json());app.use('/api/operations',m.exports);const server=http.createServer(app);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const send=username=>fetch('http://127.0.0.1:'+server.address().port+'/api/operations/orders/synthetic/actions',{method:'POST',headers:{'content-type':'application/json','x-test-user':username},body:'{}'});
+ try{assert.equal((await send('regular_hd')).status,200);assert.equal((await send('trial_yanto')).status,200);trialEnabled=false;assert.equal((await send('trial_yanto')).status,403);assert.deepEqual(calls,['general','trial']);}
+ finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
 test('operation HTTP routes select read/write pools without falling back to auth pool',async()=>{
  const file=require.resolve('../src/operations/routes'),native=createRequire(file),m={exports:{}},readPool={identity:'read'},writePool={identity:'write'},calls=[];
  const h={auth(req,_res,next){req.user={id:1,role:'HD',modules:['B2B']};req.sessionToken='synthetic';next();},csrf(){calls.push('csrf');}};

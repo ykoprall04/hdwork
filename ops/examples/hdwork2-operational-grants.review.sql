@@ -31,7 +31,7 @@ GRANT SELECT, INSERT, DELETE ON hdwork2.hd2_courier_nonces TO 'hdwork_courier'@'
 GRANT SELECT (id,name,role,is_active) ON hdwork2.users TO 'hdwork_ops_write'@'localhost';
 GRANT SELECT ON hdwork2.hd2_user_modules TO 'hdwork_ops_write'@'localhost';
 GRANT SELECT ON hdwork2.hd2_sessions TO 'hdwork_ops_write'@'localhost';
-GRANT SELECT, INSERT ON hdwork2.hd2_orders TO 'hdwork_ops_write'@'localhost';
+GRANT SELECT ON hdwork2.hd2_orders TO 'hdwork_ops_write'@'localhost';
 GRANT UPDATE (status,owner_user_id,final_user_id,duplicate_decision,completion_note,started_at,finished_at,version) ON hdwork2.hd2_orders TO 'hdwork_ops_write'@'localhost';
 GRANT INSERT ON hdwork2.hd2_audit TO 'hdwork_ops_write'@'localhost';
 GRANT SELECT, INSERT, UPDATE ON hdwork2.hd2_web_requests TO 'hdwork_ops_write'@'localhost';

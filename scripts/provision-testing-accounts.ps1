@@ -32,7 +32,7 @@ try {
         try {
             $failure=$discardedErrors | ConvertFrom-Json
             if ($failure.code -match '^[A-Z0-9_]{1,80}$') {
-                [pscustomobject]@{status='BLOCKED';code=$failure.code;partialChangesPossible=($failure.partialChangesPossible -eq $true)} | ConvertTo-Json
+                [pscustomobject]@{status='BLOCKED';code=$failure.code;account=$failure.account;role=$failure.role;missingPrivileges=$failure.missingPrivileges;unsafePrivileges=$failure.unsafePrivileges;partialChangesPossible=($failure.partialChangesPossible -eq $true)} | ConvertTo-Json -Depth 5
             }
         } catch { }
         $discardedErrors=$null

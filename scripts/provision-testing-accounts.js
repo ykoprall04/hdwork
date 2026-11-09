@@ -9,7 +9,7 @@ function review(text=fs.readFileSync(sqlFile,'utf8')){
  const statements=text.replace(/^--.*$/mg,'').split(';').map(s=>s.trim()).filter(Boolean);
  const groups=Object.fromEntries(accounts.map(a=>[a.user,[]]));
  for(const sql of statements){const m=/^GRANT [A-Z_, ()a-z]+ ON hdwork2\.[a-z0-9_]+ TO '(hdwork_courier|hdwork_ops_read)'@'localhost'$/.exec(sql);if(!m)throw denied('SQL_REVIEW_REJECTED');groups[m[1]].push(sql);}
- for(const a of accounts)if(!reviewOperationalGrants(groups[a.user].map(grant=>({grant})),a.role).ok)throw denied('SQL_GRANTS_REJECTED');
+ for(const a of accounts){const result=reviewOperationalGrants(groups[a.user].map(grant=>({grant})),a.role);if(!result.ok)throw Object.assign(denied('SQL_GRANTS_REJECTED'),{account:a.user,role:a.role,missingPrivileges:result.missing,unsafePrivileges:result.unsafe});}
  return {groups,sha256:crypto.createHash('sha256').update(text).digest('hex'),statements:statements.length};
 }
 async function adminInput(){let chunks=[],size=0;for await(const b of process.stdin){size+=b.length;if(size>16384)throw denied('ADMIN_INPUT_REJECTED');chunks.push(b);}const bytes=Buffer.concat(chunks);try{const v=JSON.parse(bytes.toString('utf8'));if(!/^[A-Za-z0-9_]{1,64}$/.test(v.adminUser||'')||typeof v.adminPassword!=='string'||!v.adminPassword)throw denied('ADMIN_INPUT_REJECTED');return v;}finally{bytes.fill(0);for(const b of chunks)b.fill(0);}}
@@ -23,7 +23,7 @@ async function provision({mode,confirmed=false,input,createConnection,readSecret
   const existing=new Map(found.map(row=>[row.User,row]));
   // Preflight every existing account. No GRANT, unlock or password reset on it.
   const inspections=new Map();for(const a of accounts)if(existing.has(a.user)){
-   const [rows]=await query(c,"SHOW GRANTS FOR '"+a.user+"'@'localhost'");const grants=reviewOperationalGrants(rows,a.role);const locked=existing.get(a.user).account_locked!=='N';inspections.set(a.user,{locked,grantsMatch:grants.ok,unsafePrivileges:grants.unsafe});if(mode==='apply'&&(!grants.ok||locked))throw denied('EXISTING_ACCOUNT_REQUIRES_REVIEW');
+   const [rows]=await query(c,"SHOW GRANTS FOR '"+a.user+"'@'localhost'");const grants=reviewOperationalGrants(rows,a.role);const locked=existing.get(a.user).account_locked!=='N';inspections.set(a.user,{locked,grantsMatch:grants.ok,unsafePrivileges:grants.unsafe,missingPrivileges:grants.missing});if(mode==='apply'&&(!grants.ok||locked))throw denied('EXISTING_ACCOUNT_REQUIRES_REVIEW');
   }
   if(mode==='inspect')return {status:'INSPECTED_NO_WRITES',accounts:accounts.map(a=>({user:a.user,exists:existing.has(a.user),...inspections.get(a.user)})),sqlSha256:sql.sha256,writesPerformed:false};
   const [logging]=await query(c,"SHOW GLOBAL VARIABLES LIKE 'log_raw'");if(logging.length!==1||!['OFF','0'].includes(String(logging[0].Value).toUpperCase()))throw denied('SERVER_RAW_LOGGING_REVIEW_REQUIRED');
@@ -46,5 +46,5 @@ async function provision({mode,confirmed=false,input,createConnection,readSecret
 async function run(){const arg=process.argv.slice(2).join(' '),sql=review();if(arg==='--review'){console.log(JSON.stringify({status:'REVIEW_PASS',sqlSha256:sql.sha256,grantStatements:sql.statements,accounts:accounts.map(a=>a.user),database:'hdwork2',writesPerformed:false}));return;}
  const mode=arg==='--inspect'?'inspect':arg==='--apply --confirmed'?'apply':null;if(!mode)throw denied('EXPLICIT_PROVISION_CONFIRMATION_REQUIRED');
  const input=await adminInput();const result=await provision({mode,confirmed:mode==='apply',input,sql,createConnection:opts=>require('mysql2/promise').createConnection(opts),readSecret:file=>require('../src/config/private-database-env').readPrivateDpapi(file)});console.log(JSON.stringify(result));}
-if(require.main===module)run().catch(e=>{console.error(JSON.stringify({status:'BLOCKED',code:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'PROVISIONING_FAILED',created:e.created||[],verified:e.verified||[],partialChangesPossible:!!e.partialChangesPossible}));process.exitCode=1;});
+if(require.main===module)run().catch(e=>{console.error(JSON.stringify({status:'BLOCKED',code:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'PROVISIONING_FAILED',...(e.code==='SQL_GRANTS_REJECTED'?{account:e.account,role:e.role,missingPrivileges:e.missingPrivileges,unsafePrivileges:e.unsafePrivileges}:{}),created:e.created||[],verified:e.verified||[],partialChangesPossible:!!e.partialChangesPossible}));process.exitCode=1;});
 module.exports={review,provision,adminInput};
