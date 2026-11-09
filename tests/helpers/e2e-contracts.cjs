@@ -4,13 +4,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {createRequire}=require('node:module');
 const {randomUUID}=require('node:crypto');
 const root=path.resolve(__dirname,'../..');
-const schemaFiles=['007_hdwork2_auth.sql','008_hdwork2_operations.sql','009_hdwork2_courier_runtime.sql','010_hdwork2_account_approval.sql'];
+const schemaFiles=['007_hdwork2_auth.sql','008_hdwork2_operations.sql','009_hdwork2_courier_runtime.sql','010_hdwork2_account_approval.sql','011_hdwork2_registration_rejection.sql'];
 function schemaStatements(files=schemaFiles){
  return files.flatMap(file=>{
   assert.ok(schemaFiles.includes(file));
   const parts=fs.readFileSync(path.join(root,'database/manual',file),'utf8').replace(/^\s*--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean);
   assert.equal(parts.shift(),'USE hdwork2');
-  for(const sql of parts){assert.match(sql,/^(CREATE TABLE (users|hd2_[a-z_]+)|ALTER TABLE (users|hd2_orders|hd2_audit|hd2_courier_inbox)|INSERT INTO hd2_auth_guard)/);assert.doesNotMatch(sql,/\b(USE|DROP|TRUNCATE|GRANT|DATABASE|PROCEDURE|TRIGGER)\b|hdwork2\.|hd_b2c\./i);}
+  for(const sql of parts){assert.match(sql,/^(CREATE TABLE (users|hd2_[a-z_]+)|ALTER TABLE (users|hd2_orders|hd2_audit|hd2_courier_inbox)|INSERT INTO hd2_auth_guard)/);assert.doesNotMatch(sql.replace('DROP CHECK hd2_account_approval_status, ',''),/\b(USE|DROP|TRUNCATE|GRANT|DATABASE|PROCEDURE|TRIGGER)\b|hdwork2\.|hd_b2c\./i);}
   return parts;
  });
 }
@@ -43,7 +43,7 @@ async function auditLinks(pool,id){
  for(const row of rows){
   const d=typeof row.detail==='string'?JSON.parse(row.detail):row.detail;
   assert.match(d.requestId,/^[a-f0-9-]{36}$/i);
-  const [[request]]=await pool.execute('SELECT result FROM hd2_web_requests WHERE order_id=? AND request_id=?',[id,d.requestId]);assert.ok(request?.result);
+  const [[request]]=await pool.execute('SELECT result FROM hd2_web_requests WHERE order_id=? AND request_id=?',[id,d.requestId]);if(row.action==='ACTION_REJECTED'){assert.equal(request,undefined);assert.equal(d.outboxId,null);continue;}assert.ok(request?.result);
   if(d.outboxId){const [[out]]=await pool.execute('SELECT id,idem_key FROM hd2_courier_outbox WHERE id=?',[d.outboxId]);assert.equal(out?.id,d.outboxId);assert.ok(out.idem_key.endsWith(':'+d.requestId));}
   else assert.equal(row.action,'REOPEN');
  }

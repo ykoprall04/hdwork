@@ -7,7 +7,7 @@ async function act(pool,token,userId,id,input,{testingScope=null}={}){
  if(!input||typeof input!=='object'||Array.isArray(input))throw fail();
  uuid(id);uuid(input.requestId);if(Object.keys(input).some(k=>!['requestId','version','action','note','confirm'].includes(k))||!Number.isSafeInteger(input.version)||input.version<0)throw fail();
  const store=new MysqlStore({pool,botId:'unused'});
- return store.transaction(async c=>{
+ try{return await store.transaction(async c=>{
  const [[user]]=await c.execute('SELECT id,name,role,is_active'+(testingScope?',username':'')+' FROM users WHERE id=? FOR SHARE',[userId]);
  if(!user||user.role!=='HD'||![1,true].includes(user.is_active))throw fail(403);
  if(testingScope)require('./testing-solver-scope').actor(testingScope,user);
@@ -33,6 +33,22 @@ async function act(pool,token,userId,id,input,{testingScope=null}={}){
  await c.execute('INSERT INTO hd2_audit(id,inbox_id,order_id,action,user_id,from_status,to_status,detail) VALUES (?,NULL,?,?,?,?,?,?)',[randomUUID(),id,input.action,user.id,order.status,next.status,JSON.stringify({note:note||null,actorName:user.name,requestId:input.requestId,outboxId,...(user.username?{actorUsername:user.username}:{}),previousOwnerId:order.owner_user_id,previousOwnerName:previousOwner?.name||null,ownerId:next.owner_user_id})]);
  await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,'change')",[moduleOf(order)]);
  const result={success:true,id,version:input.version+1,status:next.status};await c.execute('UPDATE hd2_web_requests SET result=? WHERE user_id=? AND request_id=?',[JSON.stringify(result),user.id,input.requestId]);return result;
- });
+ });}catch(error){
+ // The rejected mutation rolled back. Record a scoped rejection in a separate
+ // transaction; never enqueue a reply or alter the order for an unsuccessful PICK.
+ if(error.statusCode===409&&['PICK','CONTINUE_DUPLICATE','REJECT_DUPLICATE'].includes(input.action)){
+  await store.transaction(async c=>{
+   const [[user]]=await c.execute('SELECT id,name,role,is_active FROM users WHERE id=? FOR SHARE',[userId]);
+   if(!user||user.role!=='HD'||![1,true].includes(user.is_active))return;
+   const [grants]=await c.execute('SELECT module FROM hd2_user_modules WHERE user_id=? FOR SHARE',[userId]);
+   const [[session]]=await c.execute('SELECT token_hash FROM hd2_sessions WHERE token_hash=? AND user_id=? AND revoked=FALSE AND expires_at>UTC_TIMESTAMP(3) FOR SHARE',[digest(token),userId]);
+   if(!session)return;
+   const order=await require('./claim-protection').lockOrder(c,id);
+   if(!order||!grants.some(g=>g.module===moduleOf(order)))return;
+   await c.execute('INSERT INTO hd2_audit(id,inbox_id,order_id,action,user_id,from_status,to_status,detail) VALUES (?,NULL,?,?,?,?,?,?)',[randomUUID(),id,'ACTION_REJECTED',userId,order.status,order.status,JSON.stringify({requestId:input.requestId,attemptedAction:input.action,reason:error.publicMessage||'Order berubah atau tindakan tidak sesuai',actorName:user.name,outboxId:null})]);
+  });
+ }
+ throw error;
+ }
 }
 module.exports={act};

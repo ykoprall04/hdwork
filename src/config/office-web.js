@@ -12,7 +12,7 @@ function officeEnvironment({local=false,dist,publicOrigin=origin}={}) {
 function officeIngress({hostname='hdwork.yoloo.space'}={}) {
   if(!['hdwork.yoloo.space','hdwork2.yoloo.space'].includes(hostname))throw Error('Office ingress hostname rejected');
   // Named tunnel; deployment must later substitute its verified UUID.
-  return ingress().replace(/hdwork\.yoloo\.space/g,hostname).replace(/tunnel: [^\n]+/,'tunnel: hdwork2').replace(/      access:\n        required: true\n        teamName: [^\n]+\n        audTag:\n          - [^\n]+\n/g,'').replace('No actual tunnel ID, Access audience or credentials.','Application sessions only; no Cloudflare Access. Not activated.').replace('(ready|internal|','(health|ready|internal|');
+  return ingress().replace('^/api/auth/(login|logout|me)$','^/api/auth/(login|logout|me|change-password|register|registration-token)$').replace('    path: "^/api/operations(/|$)"','    path: "^/api/(operations|admin/users)(/|$)"').replace(/hdwork\.yoloo\.space/g,hostname).replace(/tunnel: [^\n]+/,'tunnel: hdwork2').replace(/      access:\n        required: true\n        teamName: [^\n]+\n        audTag:\n          - [^\n]+\n/g,'').replace('No actual tunnel ID, Access audience or credentials.','Application sessions only; no Cloudflare Access. Not activated.').replace('(ready|internal|','(health|ready|internal|');
 }
 function checkFiles(env,{root=path.resolve(__dirname,'../..')}={}) {
   validatePersistentAuth({...env,HDWORK2_SERVICE_AUTH_APPROVED:'true'});

@@ -59,7 +59,7 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           Object.assign(row,{status:p[0],last_actor_id:p[1]});
           if (p[0]==='IN_PROGRESS') row.started_at='mock-processing-time'; else row.finished_at='mock-processing-time';
         } else if (sql.startsWith('INSERT INTO hd2_live_events')) {
-          state.liveEvents ||= [];state.liveEvents.push({module:p[0],kind:'arrival'});
+          state.liveEvents ||= [];state.liveEvents.push({module:p[0],kind:p[1]||'arrival'});
         } else if (sql.startsWith('INSERT INTO hd2_audit')) {
           const names=['id','inbox_id','order_id','action','actor_id','from_status','to_status','detail'];
           state.audit.push(Object.fromEntries(names.map((name,i)=>[name,p[i]])));

@@ -34,3 +34,5 @@ test('coalesced SSE batches suppress repeated event identifiers before counting 
 test('completed timer freezes at server finishedAt, missing terminal timestamp never runs a fake timer',()=>{
  const completed={status:'DONE',startedAt:'2026-11-08T00:00:00Z',finishedAt:'2026-11-08T01:23:59Z'};assert.equal(workDuration(completed,Date.parse('2026-11-09T00:00:00Z')),'01:23');assert.equal(workDuration(completed,Date.parse('2026-11-10T00:00:00Z')),'01:23');assert.equal(workDuration({...completed,finishedAt:null},Date.now()),duration(null,Date.now()));
 });
+
+test('module authorization hides duplicate and claim actions outside the account scope',()=>{const duplicate={...order,status:'DUPLICATE',module:'TIAL',decision:null,duplicateOf:'canonical'} as Work;assert.deepEqual(visibleActions(duplicate,{id:1,role:'HD',modules:['REQ']}),[]);assert.deepEqual(visibleActions(duplicate,{id:1,role:'HD',modules:['TIAL']}),['CONTINUE_DUPLICATE','REJECT_DUPLICATE']);});

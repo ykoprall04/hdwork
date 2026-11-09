@@ -46,7 +46,7 @@ test('offline integrated HTTP rehearsal: pending approval, Telegram ingestion, d
   assert.equal(pool.state.order.status,'WAITING');
   const action=(who,body)=>send('/api/operations/orders/'+id+'/actions',who,body);
   const {winner}=await pickRace((i,body)=>action([first,second][i],body)),owner=[first,second][winner],other=[first,second][1-winner];
-  assert.equal(pool.state.outbox.length,1);assert.equal(pool.state.audit.length,1);
+  assert.equal(pool.state.outbox.length,1);assert.equal(pool.state.audit.filter(p=>p[2]==='PICK').length,1);assert.equal(pool.state.audit.filter(p=>p[2]==='ACTION_REJECTED').length,1);
   let detail=await (await send('/api/operations/orders/'+id,owner)).json();assert.equal(detail.data.status,'IN_PROGRESS');assert.equal(detail.data.feedback.status,'ANTRE');
   assert.equal((await action(other,{requestId:randomUUID(),version:1,action:'DONE'})).status,409);
   assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'FAILED',note:'  '})).status,400);

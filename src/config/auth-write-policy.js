@@ -177,6 +177,8 @@ function authWritePolicy(env = process.env, { now = Date.now } = {}) {
         // Route-level role, CSRF and scope checks must still pass.
         if (
           authMutation ||
+          ['/api/auth/register','/api/auth/change-password'].includes(req.path) ||
+          /^\/api\/admin\/users(?:\/[1-9]\d*\/(?:update|approve|reject|reset|revoke))?$/.test(req.path) ||
           req.path.startsWith('/api/operations/')
         ) {
           return next();

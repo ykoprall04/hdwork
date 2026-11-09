@@ -44,7 +44,7 @@ test('concurrent replay inserts one inbox/order; distinct duplicates retain the 
  await Promise.all([processor.processNext(),processor.processNext()]);assert.equal(pool.state.orders.length,1);
  const original=structuredClone(pool.state.orders[0]);
  await store.accept({...e,update_id:'900',event:{...e.event,message_id:'900'}});await processor.processNext();
- const duplicate=pool.state.orders[1];assert.equal(duplicate.status,'DUPLICATE');assert.equal(duplicate.duplicate_of,original.id);assert.deepEqual(pool.state.orders[0],original);
+ const duplicate=pool.state.orders[1];assert.equal(duplicate.status,'DUPLICATE');assert.deepEqual(pool.state.liveEvents.map(e=>e.kind),['arrival','change']);assert.equal(duplicate.duplicate_of,original.id);assert.deepEqual(pool.state.orders[0],original);
  await store.accept({...e,update_id:'901',event:{...e.event,message_id:'901',reply_to_message_id:'900',text:'DONE'}});await processor.processNext();
  assert.deepEqual(pool.state.orders[0],original);assert.equal(duplicate.status,'DUPLICATE');assert.equal(pool.state.outbox.length,0);
 });

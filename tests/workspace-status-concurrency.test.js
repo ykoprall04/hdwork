@@ -5,7 +5,7 @@ test('concurrent status PICK uses version lock; retry is idempotent and reply pr
  const {pool,id}=fixture(),first={requestId:randomUUID(),version:0,action:'PICK'},second={...first,requestId:randomUUID()};
  const result=await Promise.allSettled([act(pool,'synthetic',1,id,first),act(pool,'synthetic',2,id,second)]);
  assert.equal(result[0].status,'fulfilled');assert.equal(result[1].reason.statusCode,409);assert.equal(pool.state.order.version,1);
- await act(pool,'synthetic',1,id,first);assert.equal(pool.state.outbox.length,1);assert.equal(pool.state.audit.length,1);
+ await act(pool,'synthetic',1,id,first);assert.equal(pool.state.outbox.length,1);assert.equal(pool.state.audit.filter(p=>p[2]==='PICK').length,1);assert.equal(pool.state.audit.filter(p=>p[2]==='ACTION_REJECTED').length,1);
  const reply=JSON.parse(pool.state.outbox[0].payload);assert.equal(reply.thread_mode,'thread');assert.equal(reply.telegram_thread_id,'11');assert.equal(reply.reply_to_message_id,'102');
  await act(pool,'synthetic',1,id,{requestId:randomUUID(),version:1,action:'DONE'});assert.equal(pool.state.order.status,'DONE');assert.equal(pool.state.order.version,2);
 });

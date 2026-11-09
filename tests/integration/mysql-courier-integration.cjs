@@ -19,7 +19,7 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     try {
       await guard.verifyTarget(c, options.database);
       for (const sql of guard.migrationStatements()) await c.query(sql);
-      for (const name of ['007_hdwork2_auth.sql','008_hdwork2_operations.sql','009_hdwork2_courier_runtime.sql','010_hdwork2_account_approval.sql']) {
+      for (const name of ['007_hdwork2_auth.sql','008_hdwork2_operations.sql','009_hdwork2_courier_runtime.sql','010_hdwork2_account_approval.sql','011_hdwork2_registration_rejection.sql']) {
         if(name==='009_hdwork2_courier_runtime.sql')await c.execute("INSERT INTO hd2_courier_inbox(id,bot_id,update_id,payload_hash,payload,state,due_ms) VALUES (?,'migration-fixture','1',?,?,'IGNORED',0)",[randomUUID(),'a'.repeat(64),JSON.stringify({synthetic:true})]);
         for(const sql of schemaStatements([name]))await c.query(sql);
       }
@@ -73,7 +73,8 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     const inputs=[raw,raw,'/req@HDWorkOpsBot original request','/CONFIG_PSB\nOrder ID:X-AOi002\nSTO:ABC','/MO@hdworkopsbot\nSC/IN:X-MOk003\nSTO:ABC',raw,'/MO\nSC/IN:X-MOk004\nSTO:ABC','DONE'];
     const updates=inputs.map((text,i)=>({update_id:101+i,message:{message_id:501+i,chat:{id:[-1001,-1002,-1001,-1003,-1003,-999,-1001,-1001][i]},from:{id:9},date:1762315200+(i===1?86400:0),text,...(i===7?{reply_to_message:{message_id:501}}:{})}}));
     const first=await python({poll:true,updates,lose_event_ack:true});
-    assert.equal(first.offset,109);assert.equal(first.states.PENDING,5);assert.equal(first.states.IGNORED,3);
+    assert.equal(first.offset,109);assert.equal(first.states.PENDING,5);assert.equal(first.states.IGNORED,2); // Unmapped source is discarded before journal serialization.
+    assert.equal(Object.values(first.states).reduce((a,b)=>a+b,0),7);
     const processor=require('../../src/b2c-workflow/workflow').createB2CProcessor({store,config:{enabled:true,webOnly:true,botId,botUsername:'HDWorkOpsBot',identityKey:'synthetic-order-identity-'.repeat(2),dedupeBy:'sc_in',actors:[],groups:groups.map(g=>({module:g.profile==='SOLVER1'?'LOGIC_PSB':'TIAL',chatId:g.chatId,threadId:null,threadMode:'non_topic',commandProfile:g.profile,allowedCommands:g.commands}))}});
     worker=require('../../src/courier/inbox-worker').startInboxWorker(processor);
     const resumed=await python({poll:true,rounds:2});assert.equal(resumed.states.ACKED,5);assert.equal(resumed.offset,109);
@@ -84,7 +85,8 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     const [orders]=await pool.query('SELECT id,chat_id,message_id,status,duplicate_of FROM hd2_orders ORDER BY telegram_timestamp,message_id');
     const canonical=orders.find(o=>o.message_id==='501'),duplicate=orders.find(o=>o.message_id==='502');
     assert.equal(canonical.chat_id,'-1001');assert.equal(duplicate.chat_id,'-1002');assert.equal(duplicate.duplicate_of,canonical.id);assert.equal(duplicate.status,'DUPLICATE');
-    assert.equal((await (await web('/orders?area=TIAL')).json()).data.length,3);
+    assert.equal((await (await web('/orders?area=TIAL')).json()).data.length,2)
+    assert.equal((await (await web('/orders?area=TIAL&tab=duplicates')).json()).data.length,1);
     assert.equal((await (await web('/orders?area=LOGIC')).json()).data.length,2);
     const reqOrder=(await (await web('/orders?command=req')).json()).data[0];
     assert.equal((await (await web('/orders/'+reqOrder.id)).json()).requestText,' original request');

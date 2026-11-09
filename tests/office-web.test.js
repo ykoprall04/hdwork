@@ -45,3 +45,5 @@ test('generic tunnel renderer preserves named application-only ingress and expli
  assert.ok(text.includes('tunnel: hdwork2'));assert.ok(!text.includes('required: true'));assert.ok(text.includes('^/api(/|$)'));
  assert.throws(()=>renderIngress({securityMode:'application-session',access:{required:false},hostname:'unapproved.example.org',tunnelName:'hdwork2'}));
 });
+
+test('proposed office ingress routes real account APIs before API deny without changing read-only candidate',()=>{const {officeIngress}=require('../src/config/office-web');const proposed=officeIngress({hostname:'hdwork2.yoloo.space'});assert.ok(proposed.includes('login|logout|me|change-password|register|registration-token'));assert.ok(proposed.indexOf('operations|admin/users')<proposed.indexOf('^/api(/|$)'));const candidate=require('../src/config/online-candidate').ingress();assert.ok(!candidate.includes('admin/users'));});

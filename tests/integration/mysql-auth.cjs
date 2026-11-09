@@ -5,7 +5,7 @@ async function run({env=process.env,argv=process.argv.slice(2),driverFactory=()=
  if(argv.length!==1||argv[0]!=='--run-auth-disposable')throw Error('Auth rehearsal disabled');
  const guard=require('../../ops/mysql/disposable-guard');const options=guard.config(env,['--run-disposable']);const pool=driverFactory().createPool(options);
  try{
- const c=await pool.getConnection();try{await guard.verifyTarget(c,options.database);for(const sql of schemaStatements(['007_hdwork2_auth.sql','010_hdwork2_account_approval.sql']))await c.query(sql);}finally{c.release();}
+ const c=await pool.getConnection();try{await guard.verifyTarget(c,options.database);for(const sql of schemaStatements(['007_hdwork2_auth.sql','010_hdwork2_account_approval.sql','011_hdwork2_registration_rejection.sql']))await c.query(sql);}finally{c.release();}
  const service=require('../../src/access/service').createService(require('../../src/access/store').createStore(pool),'synthetic-auth-test-secret-000000000');
  const input={name:'Synthetic Admin',username:'synthetic.admin',password:'synthetic-password-123'};await service.bootstrap(input);
  assert.equal(await service.login('unknown',input.password),null);assert.equal(await service.login(input.username,'wrong'),null);
@@ -26,9 +26,23 @@ async function run({env=process.env,argv=process.argv.slice(2),driverFactory=()=
  const old=await service.login('delegated',input.password);
  await service.changePassword(delegated.id,{currentPassword:input.password,password:'replacement-password-456'});await assert.rejects(service.me(old.token));
  assert.equal(await service.login('delegated',input.password),null);assert.ok(await service.login('delegated','replacement-password-456'));
+ // Exercise the real SQL store with persistent public applications and rollback.
+ const application={name:'SQL Applicant',username:'sql.applicant',password:input.password,confirmPassword:input.password};
+ const race=await Promise.allSettled([service.register(application),service.register({...application,username:'SQL.APPLICANT'})]);
+ assert.equal(race.filter(r=>r.status==='fulfilled').length,1);assert.equal(race.find(r=>r.status==='rejected').reason.statusCode,409);
+ const [[pending]]=await pool.execute('SELECT id,password_hash,approval_status,is_active FROM users WHERE username=?',['sql.applicant']);
+ assert.equal(pending.approval_status,'PENDING');assert.equal(Number(pending.is_active),0);assert.ok(await require('bcrypt').compare(input.password,pending.password_hash));
+ assert.equal(await service.login('sql.applicant',input.password),null);
+ await assert.rejects(service.manage(delegated.id,pending.id,{role:'HD',modules:['TIAL']},'APPROVE'),{statusCode:403});
+ await service.manage(admin,pending.id,{role:'HD',modules:['TIAL']},'APPROVE');assert.equal((await service.login('sql.applicant',input.password)).user.role,'HD');
+ const rejected=await service.register({...application,username:'sql.rejected'});await service.manage(admin,rejected,{},'REJECT');
+ assert.equal(await service.login('sql.rejected',input.password),null);const [[rejection]]=await pool.execute('SELECT approval_status FROM users WHERE id=?',[rejected]);assert.equal(rejection.approval_status,'REJECTED');
+ const originalStore=require('../../src/access/store').createStore(pool);
+ const failedService=require('../../src/access/service').createService({...originalStore,tx:fn=>originalStore.tx(s=>fn({...s,audit:async()=>{throw Error('synthetic-audit-failure');}}))},'synthetic-auth-test-secret-000000000');
+ await assert.rejects(failedService.register({...application,username:'sql.rollback'}));const [[rolled]]=await pool.query("SELECT COUNT(*) AS n FROM users WHERE username='sql.rollback'");assert.equal(Number(rolled.n),0);
  const [sessions]=await pool.query('SELECT token_hash FROM hd2_sessions');assert.ok(sessions.every(s=>/^[a-f0-9]{64}$/.test(s.token_hash)&&s.token_hash!==a.token));
  const [audit]=await pool.query('SELECT action FROM hd2_security_audit');assert.ok(audit.some(r=>r.action==='LOGIN_FAILED'));assert.ok(audit.some(r=>r.action==='PASSWORD_RESET'));
- return {ok:true,checks:['ddl007-010','bcrypt-login','multi-device','logout','revoke','roles-modules','reset-disable','super-admin-protected','pending-approval','password-session-revocation','safe-audit']};
+ return {ok:true,checks:['ddl007-010','bcrypt-login','multi-device','logout','revoke','roles-modules','reset-disable','super-admin-protected','pending-approval','password-session-revocation','safe-audit','real-registration-uniqueness','public-super-approval','rejection-persistence','registration-rollback']};
  }finally{await pool.end();}
 }
 if(require.main===module){if(process.argv.length===2)console.log('Auth disposable rehearsal disabled.');else run().then(r=>console.log(JSON.stringify(r))).catch(()=>{console.error('Auth disposable rehearsal rejected or failed.');process.exitCode=1;});}
