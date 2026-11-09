@@ -5,8 +5,10 @@ LOGIN is introduced. Preview and legacy code/data remain separate and unchanged.
 
 ## Runtime and approval boundaries
 
-The admin page `/admin/system` calls `/api/operations/system/*`. ADMIN and
-SUPER_ADMIN can read and manage mappings; only SUPER_ADMIN changes alert
+The monitoring page `/admin/system` calls `/api/operations/system/*`. ADMIN and
+SUPER_ADMIN can read and manage mappings. HD can read status, queue counts and
+incidents through GET /status only; worker identities and configuration are
+omitted. HD never submits frontend heartbeats or configuration writes. Only SUPER_ADMIN changes alert
 recipients. Account/session is rechecked inside configuration transactions, with
 CSRF, request hashing/idempotency, versions, uniqueness and append-only audit.
 Routes are disabled unless `HDWORK2_SYSTEM_MONITORING_ENABLED=true`.

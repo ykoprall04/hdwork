@@ -2,6 +2,7 @@ const {fail,uuid,hash}=require('../operations/policy');
 const {id,messageId}=require('../courier/contract');
 const categories={TIAL:{profiles:['TIAL1','TIAL2'],commands:['order','req']},LOGIC:{profiles:['SOLVER1'],commands:['config_psb','mo']}};
 function admin(user,superOnly=false){if(!user||!(superOnly?['SUPER_ADMIN']:['SUPER_ADMIN','ADMIN']).includes(user.role))throw fail(403);}
+function viewer(user){if(!user||!['HD','ADMIN','SUPER_ADMIN'].includes(user.role))throw fail(403);}
 function bot(value){if(typeof value!=='string'||! /^[a-z][a-z0-9_-]{1,63}$/.test(value))throw fail();return value;}
 function destination(input){const chatId=id(input.chatId,true);if(!chatId.startsWith('-'))throw fail();return {chatId,threadId:messageId(input.threadId,true)};}
 function mapping(input){
@@ -11,4 +12,4 @@ function mapping(input){
  return {...input,...destination(input)};
 }
 const fresh=(row,now=Date.now(),ttl=90000)=>row&&Number.isFinite(Date.parse(row.checkedAt))&&now-Date.parse(row.checkedAt)>=0&&now-Date.parse(row.checkedAt)<=ttl?row.status:'UNKNOWN';
-module.exports={admin,bot,destination,mapping,categories,fresh,uuid,hash,fail};
+module.exports={admin,viewer,bot,destination,mapping,categories,fresh,uuid,hash,fail};
