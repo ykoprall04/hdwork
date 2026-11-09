@@ -84,3 +84,11 @@ asserts two normal orders and a separate pending duplicate, preserving coverage.
 Stage 1 status: INTEGRATION PASS for the isolated scope above. No LIVE VERIFIED
 claim is made for the office deployment or Telegram. The production schema,
 permissions, ingress and rollout still need separate review and approval.
+
+Follow-up: the additional HTTPS/MySQL gate failed because the TIAL fixture searched
+for a noncanonical two-prefix reference. Its reference now follows the existing
+parser contract; an offline regression asserts fixture reference equals stored SC/IN.
+The repeated gate passes with real Chromium, HTTPS, cookie/CSRF, MySQL 8.4.13,
+Telegram-shaped ingress, concurrent PICK, DONE/GAGAL, reload/history, delivery
+metadata, mobile layout and logout. No real Telegram send occurred. The disposable
+container was removed. This closes the previously reported stage gate failure.

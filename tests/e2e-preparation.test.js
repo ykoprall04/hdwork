@@ -22,6 +22,7 @@ test('offline integrated HTTP rehearsal: pending approval, Telegram ingestion, d
  ingestion.execute=async(sql,p)=>{assert.equal(sql,'SELECT id,status FROM hd2_orders WHERE bot_id=? AND message_id=?');return [ingestion.state.orders.filter(o=>o.bot_id===p[0]&&o.message_id===p[1])];};
  const orders=await seedTelegram(ingestion);
  assert.equal(ingestion.state.orders.length,4);assert.equal(ingestion.state.inbox.length,4);
+ for(const order of orders)assert.equal(ingestion.state.orders.find(o=>o.id===order.id).sc_in,order.reference,'Fixture search must use the canonical parsed SC/IN');
  assert.ok(ingestion.state.orders.every(o=>o.command&&o.status==='WAITING'));
  const selected=orders.find(o=>o.module==='B2B');
  const {pool}=fixture();Object.assign(pool.state.order,ingestion.state.orders.find(o=>o.id===selected.id));

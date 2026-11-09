@@ -14,7 +14,7 @@ function safeCode(e){return /^[A-Z][A-Z0-9_]{1,63}$/.test(e?.code||'')?e.code:'B
 async function main(config) {
   const url = new URL(config.origin);
   if (url.hostname !== 'localhost' || url.protocol !== 'https:' || !/^test\./.test(config.username)) throw Error('Test target rejected');
-  assert.equal(config.orders?.length,4);for(const o of config.orders){assert.match(o.id,/^[a-f0-9-]{36}$/i);assert.match(o.reference,/^E2E-BROWSER-/);assert.ok(['TIAL','ASSUREN','B2B','REPLACEMENT'].includes(o.module));}
+  assert.equal(config.orders?.length,4);for(const o of config.orders){assert.match(o.id,/^[a-f0-9-]{36}$/i);assert.match(o.reference,o.module==='TIAL'?/^E2EBROWSER-AOi/:/^E2E-BROWSER-/);assert.ok(['TIAL','ASSUREN','B2B','REPLACEMENT'].includes(o.module));}
   const root = path.resolve(__dirname, '../..'), localRoot = path.join(root, '.local');
   const dir = fs.mkdtempSync(path.join(localRoot, 'browser-test-'));
   diagnostic.profile=path.basename(dir);diagnosticFile=path.join(localRoot,diagnostic.profile+'-diagnostic.json');
