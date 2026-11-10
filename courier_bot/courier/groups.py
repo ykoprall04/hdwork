@@ -56,6 +56,18 @@ class IngressPolicy:
                 raise ValueError('alert_targets_invalid')
         self.groups, self.alert_targets = groups, targets
 
+    def _group_for_message(self, message):
+        chat, thread = message['chat'].get('id'), message.get('message_thread_id')
+        group = next((g for g in self.groups if g['chatId'] == str(chat) and g['threadId'] == (str(thread) if thread is not None else None)), None)
+        # Telegram discussion replies may carry a thread identifier in a non-forum
+        # supergroup. Preserve the configured non-topic route, not that metadata.
+        reply = message.get('reply_to_message')
+        if (group is None and self.chat_enabled and type(thread) is int and 0 < thread <= 2147483647 and
+                isinstance(reply, dict) and type(reply.get('message_id')) is int and 0 < reply['message_id'] <= 2147483647 and
+                message.get('is_topic_message') is not True and message['chat'].get('is_forum') is not True):
+            group = next((g for g in self.groups if g['chatId'] == str(chat) and g['threadMode'] == 'non_topic' and g['threadId'] is None), None)
+        return group
+
     def allows_source(self, update):
         # Inspect source identifiers only; do not project text/attachments first.
         if not isinstance(update, dict):
@@ -68,7 +80,7 @@ class IngressPolicy:
             return False
         if self.test_window and chat < 0 and str(chat) != '-5436357946':
             raise ValueError('non_testing_group_encountered')
-        group = next((g for g in self.groups if g['chatId'] == str(chat) and g['threadId'] == (str(thread) if thread is not None else None)), None)
+        group = self._group_for_message(message)
         if group is None:
             return False
         return not (group['threadMode'] == 'non_topic' and (message.get('is_topic_message') is True or message['chat'].get('is_forum') is True))
@@ -81,13 +93,15 @@ class IngressPolicy:
             return None, 'IGNORED', 'unsupported_update'
         event = envelope['event']
         message = update.get('message', update.get('edited_message', {}))
-        group = next((g for g in self.groups if g['chatId'] == event['chat_id'] and g['threadId'] == event['telegram_thread_id']), None)
+        group = self._group_for_message(message)
         if group is None:
             return None, 'IGNORED', 'unmapped_group_or_thread'
         if group['threadMode'] == 'non_topic' and (message.get('is_topic_message') is True or message.get('chat', {}).get('is_forum') is True):
             return None, 'IGNORED', 'forum_not_allowed'
         if event['kind'] != 'message':
             return None, 'IGNORED', 'edit_requires_review'
+        if group['threadMode'] == 'non_topic':
+            event['telegram_thread_id'] = None
         if self.chat_enabled and event['reply_to_message_id'] is not None:
             return envelope, 'PENDING', None
         parsed = parse_command(event['text'], group['profile'], self.bot_username)

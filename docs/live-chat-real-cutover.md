@@ -207,6 +207,43 @@ rollback otomatis pesan yang sudah dikirim ke Telegram.
 
 ## Batas bukti
 
+### Patch penerimaan reply di atas base 4ef886e
+
+Telemetry operator menunjukkan offset journal melampaui update terakhir yang
+tersimpan, sementara inbox MySQL hanya berisi dua command awal. Raw update yang
+difilter tidak disimpan, sehingga field mentah reply yang dilewati belum dapat
+dikonfirmasi dari data historis. Tes regresi menemukan dua celah penerimaan:
+
+* Reply diskusi pada supergroup non-forum dapat membawa `message_thread_id`.
+  Filter lama mensyaratkan null dan melewatinya sebelum journal. Normalisasi baru
+  hanya berlaku saat chat aktif, chat ID sudah terdaftar sebagai non-topic, ada
+  reply anchor valid dan tidak ada flag forum/topic. Projection menggunakan route
+  null yang terkonfigurasi; raw update tidak dimutasi. Forum dan route lain tetap
+  ditolak atau harus cocok dengan mapping topic eksplisit.
+* Reply ke notifikasi operasional bot (misalnya PICK) belum mempunyai baris chat
+  OUT. Lookup tambahan mengaitkan hanya outbox SENT/sendMessage yang bot, chat,
+  topic dan anchor order aslinya cocok. Tidak ada kiriman baru atau perubahan
+  status/owner order dari proses capture.
+
+Patch aplikasi hanya `courier_bot/courier/groups.py` dan `src/chat/service.js`.
+Helper `prepare-live-chat-incoming-fix.js --prepared <preparation-4ef> --patch-commit
+<SHA-fix-disetujui>` memeriksa preimage terhadap Git base 4ef, source desired terhadap
+commit fix, dan memastikan bagian outgoing/auth tidak berubah. Helper membuat
+backup/payload dua file serta manifest privat baru. Source aktif belum diubah.
+
+Executor file-only mendukung `--confirmed-courier-stopped yes` KHUSUS manifest
+`HDWORK2_INCOMING_CHAT_FIX` dengan tepat dua file tersebut dan config byte-identik.
+Overlay umum tetap memerlukan web berhenti. Apply/rollback patch ini tidak menulis
+ulang environment yang identik dan hanya memerlukan restart Courier. Web tetap
+berjalan; tidak ada perubahan token, grant, schema, cutoff, journal atau queue.
+
+Persetujuan release 4ef tidak otomatis dianggap persetujuan patch aplikasi baru:
+review SHA fix dan setujui penerapan dua file + restart Courier sebelum apply.
+Simpan manifest patch untuk mencatat runtime sebagai base 4ef + fix tersebut.
+Setelah apply, gunakan plan produksi dan cutoff yang SAMA. Jangan rewind offset
+atau replay pesan yang terlewati. Uji satu reply baru untuk membuktikan jalur nyata;
+fixture yang lulus tidak membuktikan bahwa pesan produksi sudah diterima.
+
 Jika supervisor berhenti dengan kode startup umum, gunakan tool pendamping
 `diagnose-production-courier.js --snapshot <snapshot-aktif> --plan <plan-produksi>
 --plan-sha256 <hash-plan-yang-disetujui>`. Tool memuat konfigurasi melalui source
