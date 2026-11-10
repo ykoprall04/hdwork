@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "environment": "production",
+  "repository": "REPLACE_WITH_REVIEWED_REPOSITORY_PATH",
+  "webSnapshot": "REPLACE_WITH_EXISTING_PROTECTED_SNAPSHOT_PATH",
+  "routingReview": "REPLACE_WITH_VERIFIED_ROUTING_REVIEW_PATH",
+  "apiOrigin": "https://replace-with-verified-origin.invalid",
+  "bot": {
+    "telegramId": "REPLACE_WITH_VERIFIED_NUMERIC_ID",
+    "internalId": "REPLACE_WITH_EXISTING_INTERNAL_NAMESPACE",
+    "username": "REPLACE_WITH_VERIFIED_USERNAME",
+    "taskName": "REPLACE_WITH_REVIEWED_PRODUCTION_TASK",
+    "legacyNamespaceReviewed": false
+  }
+}

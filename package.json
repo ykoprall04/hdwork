@@ -17,7 +17,9 @@
     "check:startup:private": "node scripts/private-runtime.js startup-check",
     "start:api:private": "node scripts/private-runtime.js api",
     "start:local:private": "node scripts/private-runtime.js local",
-    "build:operational": "node scripts/build-operational-frontend.js --build"
+    "build:operational": "node scripts/build-operational-frontend.js --build",
+    "ops:health": "node scripts/hdwork2-control.js health",
+    "ops:plan": "node scripts/hdwork2-control.js plan"
   },
   "keywords": [],
   "author": "",

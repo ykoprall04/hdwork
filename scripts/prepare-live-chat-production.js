@@ -5,7 +5,7 @@ const roots=['src/chat/service.js','src/config/operational-pools.js','src/config
 const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const normalized=bytes=>bytes.toString('utf8').replace(/\r\n/g,'\n');
 const pathKey=value=>process.platform==='win32'?value.toLowerCase():value;
-function operatorJson(bytes){let text;if(bytes[0]===0xff&&bytes[1]===0xfe)text=bytes.subarray(2).toString('utf16le');else text=bytes.toString('utf8').replace(/^\uFEFF/,'');try{return JSON.parse(text);}catch{throw Error('ROUTING_JSON_INVALID_USE_UTF8_OR_UTF16LE_WITH_BOM');}}
+const {operatorJson}=require('../src/config/operator-json');
 const cleanEnv=()=>Object.fromEntries(['SystemRoot','WINDIR','PATH','Path','PATHEXT','TEMP','TMP'].filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
 function git(repo,args){return cp.execFileSync('git',args,{cwd:repo,encoding:null,stdio:['ignore','pipe','pipe'],env:cleanEnv(),maxBuffer:8*1024*1024});}
 async function regular(file,max=2*1024*1024){if(pathKey(await fs.realpath(file))!==pathKey(path.resolve(file)))throw Error('PREPARATION_LINK_REJECTED');const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink>1||stat.size>max)throw Error('UNSAFE_PREPARATION_INPUT');return fs.readFile(file);}
