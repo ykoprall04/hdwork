@@ -37,3 +37,6 @@ test('native metadata backup uses only reader privilege, verifies files, and nev
  for(const file of fs.readdirSync(root).filter(f=>fs.statSync(path.join(root,f)).isFile()))assert.equal(fs.readFileSync(path.join(root,file),'utf8').includes('synthetic-private-reader-only'),false);
  assert.ok(queries.every(sql=>!/^\s*(INSERT|UPDATE|DELETE|ALTER|GRANT|CREATE|DROP)\b/i.test(sql)));
 });
+test('MySQL escaped CHECK metadata is accepted only for the exact known category contract',()=>{
+ const checks=[{name:'hd2_system_mappings_chk_1',clause:"(`category` in (_utf8mb4\\'TIAL\\',_utf8mb4\\'LOGIC\\'))"}];assert.equal(migration(checks,[]).status,'REQUIRED');assert.throws(()=>migration([{...checks[0],clause:"(`category` in (_utf8mb4\\'TIAL\\',_utf8mb4\\'OTHER\\'))"}],[]),/CATEGORY_CHECK_REQUIRES_REVIEW/);
+});

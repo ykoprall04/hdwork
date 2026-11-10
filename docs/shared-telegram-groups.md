@@ -52,3 +52,15 @@ Preparation checks current Courier/task owner, builds for the existing verified 
 A separate read-only native web-account connection backs up mapping rows plus table DDL to the private release directory. Only the existing reader password is transferred through a private stdin pipe after LocalMachine DPAPI unprotection; it is never printed, written to a file, or placed in arguments/environment. The backup probe reads no order/queue rows, changes no grants and runs no DDL. It produces `mapping-backup.report.json` and a migration SQL candidate using the actual verified category constraint name. Unexpected/partial schema stops the procedure with its real error code, errno and SQL state where available.
 
 Expected final result: `SHARED_RELEASE_AND_MAPPING_BACKUP_READY_NOT_DEPLOYED`. Retain its directory and reports. This result means backups/preparation succeeded, **not** that migration or deployment occurred. Do not run the historical incoming-only overlay or old autostart preparation against this release. Subsequent host-specific apply/repin steps must use these verified artifacts, stop the sole Courier normally, verify 014 under native accounts, and preserve the queue-fencing rollback restrictions above. Approval is not requested again; Windows host output is needed because the cloud session cannot execute commands on that machine.
+
+### Resume the failed metadata backup without rebuilding
+
+The first Windows attempt completed verified source/frontend backup at `C:\ProgramData\HDWork2SharedGroups-d9252dccb37d4cc383a644c3b1ba44f0`, release-plan hash `17c858079bb10c54bff4474a3bf5bc437f5e013fb06b7b5357b512eadd729674`, but the read-only metadata query failed with MySQL 1064. The unquoted `precision` alias is reserved in MySQL 8.4. Metadata aliases are now quoted, and the exact category constraint parser also accepts MySQL's escaped literal representation. A disposable MySQL 8.4 regression reproduces the old error and validates the fixed queries plus constraint detection before/after migration 014.
+
+After pulling the management fix, run elevated as the same DPAPI owner:
+
+```powershell
+.\scripts\resume-shared-group-backup.ps1
+```
+
+Defaults pin that exact existing packet/hash. The command verifies owner and active source/config hashes, then repeats only the native reader metadata backup through private stdin. It refuses to overwrite any existing backup/report/generated SQL. No rebuild, migration, runtime/autostart change, old-queue inspection or Telegram access occurs. Errors now include the failed metadata phase along with native code, errno and SQL state.
