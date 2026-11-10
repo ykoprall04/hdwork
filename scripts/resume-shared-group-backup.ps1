@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
  [string]$Directory='C:\ProgramData\HDWork2SharedGroups-d9252dccb37d4cc383a644c3b1ba44f0',
- [string]$ReleasePlanSha256='17c858079bb10c54bff4474a3bf5bc437f5e013fb06b7b5357b512eadd729674'
+ [string]$ReleasePlanSha256='17c858079bb10c54bff4474a3bf5bc437f5e013fb06b7b5357b512eadd729674',
+ [switch]$VerifyMigrationOnly
 )
 $ErrorActionPreference='Stop'
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
@@ -12,7 +13,7 @@ $planFile=Join-Path $Directory 'release.review.json'
 if((Get-FileHash -LiteralPath $planFile -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ReleasePlanSha256){throw 'VERIFIED_RELEASE_PLAN_CHANGED'}
 $plan=Get-Content -LiteralPath $planFile -Raw|ConvertFrom-Json
 if($plan.ownerSid -ne $identity.User.Value -or $plan.release -ne '827bb86c83ae5b6edd8f0e8f601df2e4cd00207a' -or -not $plan.backupComplete){throw 'APPROVED_RELEASE_AND_OWNER_REQUIRED'}
-foreach($file in @('mapping-backup.json','mapping-backup.report.json','migration-014.native.review.sql')){if(Test-Path -LiteralPath (Join-Path $Directory $file)){throw 'MAPPING_BACKUP_ARTIFACT_ALREADY_EXISTS_DO_NOT_OVERWRITE'}}
+if(-not $VerifyMigrationOnly){foreach($file in @('mapping-backup.json','mapping-backup.report.json','migration-014.native.review.sql')){if(Test-Path -LiteralPath (Join-Path $Directory $file)){throw 'MAPPING_BACKUP_ARTIFACT_ALREADY_EXISTS_DO_NOT_OVERWRITE'}}}
 # Revalidate all pinned active runtime/configuration bytes before reading the existing credential.
 Push-Location $root
 try{
@@ -30,7 +31,8 @@ try{
  $engine=Join-Path $PSScriptRoot 'backup-shared-group-metadata.js'
  if($Directory.Contains('"') -or $engine.Contains('"')){throw 'PATH_REJECTED'}
  $info=New-Object Diagnostics.ProcessStartInfo
- $info.FileName=$node;$info.Arguments='"'+$engine+'" --release-directory "'+$Directory+'"';$info.WorkingDirectory=$root
+ $argumentMode=if($VerifyMigrationOnly){'--verify-migration-directory'}else{'--release-directory'}
+ $info.FileName=$node;$info.Arguments='"'+$engine+'" '+$argumentMode+' "'+$Directory+'"';$info.WorkingDirectory=$root
  $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
  $info.EnvironmentVariables.Clear()
  foreach($key in @('SystemRoot','WINDIR','PATH','PATHEXT','TEMP','TMP')){$v=[Environment]::GetEnvironmentVariable($key);if($v){$info.EnvironmentVariables[$key]=$v}}
@@ -40,7 +42,7 @@ try{
  if(-not $child.WaitForExit(45000)){$child.Kill();throw 'OWNED_NATIVE_BACKUP_TIMEOUT'}
  if($child.ExitCode -ne 0){Write-Output $stderr.Result;throw 'NATIVE_MAPPING_BACKUP_FAILED_RUNTIME_UNCHANGED'}
  Write-Output $stdout.Result
- [pscustomobject]@{Status='SHARED_RELEASE_AND_MAPPING_BACKUP_READY_NOT_DEPLOYED';Directory=$Directory;RuntimeChanged=$false;AutostartChanged=$false;MigrationApplied=$false;TelegramAccessed=$false}|ConvertTo-Json
+ [pscustomobject]@{Status=$(if($VerifyMigrationOnly){'MIGRATION014_VERIFIED_RUNTIME_UNCHANGED'}else{'SHARED_RELEASE_AND_MAPPING_BACKUP_READY_NOT_DEPLOYED'});Directory=$Directory;RuntimeChanged=$false;AutostartChanged=$false;MigrationAppliedByThisCommand=$false;Migration014=$(if($VerifyMigrationOnly){'VERIFIED'}else{'PENDING'});TelegramAccessed=$false}|ConvertTo-Json
 }finally{
  $transfer=$null;$bundle=$null;if($plain){[Array]::Clear($plain,0,$plain.Length)}
  if($child){try{if(-not $child.HasExited){$child.Kill()}}finally{$child.Dispose()}}

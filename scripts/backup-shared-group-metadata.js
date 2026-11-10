@@ -14,14 +14,14 @@ const metadataSql={
  columns:"SELECT COLUMN_NAME AS `name`,DATA_TYPE AS `type`,CHARACTER_MAXIMUM_LENGTH AS `maximumLength`,DATETIME_PRECISION AS `precision`,IS_NULLABLE AS `nullable` FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='hd2_system_mappings'",
  checks:"SELECT t.CONSTRAINT_NAME AS `name`,c.CHECK_CLAUSE AS `clause` FROM information_schema.TABLE_CONSTRAINTS t JOIN information_schema.CHECK_CONSTRAINTS c ON c.CONSTRAINT_SCHEMA=t.CONSTRAINT_SCHEMA AND c.CONSTRAINT_NAME=t.CONSTRAINT_NAME WHERE t.TABLE_SCHEMA=DATABASE() AND t.TABLE_NAME='hd2_system_mappings' AND t.CONSTRAINT_TYPE='CHECK'"
 };
-async function backup({directory,input=process.stdin,connect,bootstrap=require('./office-web-service').bootstrap,now=()=>new Date().toISOString()}={}){
+async function backup({directory,input=process.stdin,connect,bootstrap=require('./office-web-service').bootstrap,now=()=>new Date().toISOString(),verifyOnly=false}={}){
  const raw=fs.readFileSync(path.join(directory,'release.review.json')),plan=JSON.parse(raw),snapshot=plan.snapshot;
  if(plan.kind!=='HDWORK2_SHARED_GROUPS_RELEASE'||!plan.backupComplete||plan.release!==require('./prepare-shared-groups-release').release)throw Error('APPROVED_SHARED_RELEASE_REQUIRED');
- const current=fs.readFileSync(path.join(snapshot,'service/environment.json'));if(hash(current)!==plan.environmentSha256)throw Error('RUNTIME_ENVIRONMENT_CHANGED');const env=JSON.parse(current);
+ const current=fs.readFileSync(path.join(snapshot,'service/environment.json'));if(hash(current)!==plan.environmentSha256&&(!verifyOnly||hash(current)!==plan.candidateEnvironmentSha256))throw Error('RUNTIME_ENVIRONMENT_CHANGED');const env=JSON.parse(current);
  const secrets=await bootstrap(input,{validate:value=>{if(!value||Object.keys(value).join(',')!=='readPassword'||typeof value.readPassword!=='string'||!value.readPassword)throw Error('READ_ACCOUNT_ONLY_REQUIRED');return value;}});
  let c;try{
   const opts=require('../src/config/operational-pools').options('read',env);const connectionOptions={...opts,password:secrets.readPassword};for(const key of ['connectionLimit','queueLimit','waitForConnections'])delete connectionOptions[key];c=await (connect||require('mysql2/promise').createConnection)(connectionOptions);
-  const query=async(phase,sql)=>{try{return await c.query(sql);}catch(error){error.phase=phase;throw error;}};
+  const query=async(phase,sql,parameters)=>{try{return await c.query(sql,parameters);}catch(error){error.phase=phase;throw error;}};
   const [[identity]]=await query('IDENTITY','SELECT CURRENT_USER() AS account,DATABASE() AS db');if(identity.account!=='hdwork_ops_read@localhost'||identity.db!=='hdwork2')throw Error('NATIVE_READ_ACCOUNT_IDENTITY_MISMATCH');
   const [grants]=await query('GRANTS','SHOW GRANTS FOR CURRENT_USER');if(!require('../src/config/operational-grants').reviewOperationalGrants(grants,'chatRead').ok)throw Error('NATIVE_READ_GRANTS_REJECTED');
   await query('READ_ONLY_TRANSACTION','SET TRANSACTION READ ONLY');await c.beginTransaction();
@@ -30,11 +30,22 @@ async function backup({directory,input=process.stdin,connect,bootstrap=require('
   const [columns]=await query('MAPPING_COLUMNS',metadataSql.columns);
   const [checks]=await query('MAPPING_CHECKS',metadataSql.checks);
   const result=migration(checks,columns.map(c=>c.name));if(result.status==='ALREADY_PRESENT'){const name=columns.find(c=>c.name==='group_name'),boundary=columns.find(c=>c.name==='blocked_before');if(name.type!=='varchar'||Number(name.maximumLength)!==100||name.nullable!=='NO'||boundary.type!=='datetime'||Number(boundary.precision)!==3||boundary.nullable!=='YES')throw Error('MIGRATION_014_COLUMN_CONTRACT_MISMATCH');}await c.commit();
+  if(verifyOnly){
+   if(result.status!=='ALREADY_PRESENT')throw Error('MIGRATION_014_NOT_APPLIED');
+   const baseline=JSON.parse(fs.readFileSync(path.join(directory,'mapping-backup.json'))).rows;
+   const projected=rows.map(row=>Object.fromEntries(Object.keys(baseline[0]||row).map(key=>[key,row[key]])));
+   const unchanged=JSON.stringify(projected)===JSON.stringify(baseline);
+   if(hash(current)===plan.environmentSha256&&!unchanged)throw Error('MAPPING_CHANGED_SINCE_BACKUP');
+   const botId=JSON.parse(fs.readFileSync(path.join(directory,'backup/production-plan.json'))).botId;const [[worker]]=await query('WORKER_LEASE','SELECT expires_ms FROM hd2_courier_workers WHERE bot_id=?',[botId]);
+   const leaseExpiry=Number(worker?.expires_ms||0);if(!Number.isSafeInteger(leaseExpiry)||leaseExpiry<0)throw Error('COURIER_LEASE_METADATA_INVALID');
+   const report={workerLeaseExpiresMs:leaseExpiry,status:'MIGRATION014_NATIVE_READ_PASS',releasePlanSha256:hash(raw),environmentSha256:hash(current),mappingUnchanged:unchanged,verifiedAt:now(),sqlWrites:false,queueRowsRead:false,orderRowsRead:false,telegramAccessed:false};
+   fs.writeFileSync(path.join(directory,'migration014.verify.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});return report;
+  }
   const bytes=Buffer.from(JSON.stringify({version:1,checkedAt:now(),account:identity.account,database:identity.db,table:'hd2_system_mappings',ddl,rows},null,2)+'\n');const file=path.join(directory,'mapping-backup.json');fs.writeFileSync(file,bytes,{flag:'wx',mode:0o600});if(hash(fs.readFileSync(file))!==hash(bytes))throw Error('MAPPING_BACKUP_VERIFICATION_FAILED');
   const sqlFile=path.join(directory,'migration-014.native.review.sql');if(result.sql)fs.writeFileSync(sqlFile,result.sql,{flag:'wx',mode:0o600});
   const report={status:'MAPPING_BACKUP_VERIFIED',releasePlanSha256:hash(raw),backupSha256:hash(bytes),rowCount:rows.length,migration014:result.status,migrationSqlSha256:result.sql?hash(Buffer.from(result.sql)):null,sqlWrites:false,queueRowsRead:false,orderRowsRead:false,telegramAccessed:false};
   fs.writeFileSync(path.join(directory,'mapping-backup.report.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx',mode:0o600});return report;
  }finally{secrets.readPassword='';if(c)await c.end();}
 }
-if(require.main===module){if(process.argv.length!==4||process.argv[2]!=='--release-directory'){console.error('RELEASE_DIRECTORY_REQUIRED');process.exitCode=1;}else backup({directory:path.resolve(process.argv[3])}).then(r=>console.log(JSON.stringify(r,null,2))).catch(e=>{console.error(JSON.stringify({status:'MAPPING_BACKUP_FAILED',code:e.code||e.message,errno:e.errno||null,sqlState:e.sqlState||null,phase:e.phase||null,sqlWrites:false}));process.exitCode=1;});}
+if(require.main===module){if(process.argv.length!==4||!['--release-directory','--verify-migration-directory'].includes(process.argv[2])){console.error('RELEASE_DIRECTORY_REQUIRED');process.exitCode=1;}else backup({directory:path.resolve(process.argv[3]),verifyOnly:process.argv[2]==='--verify-migration-directory'}).then(r=>console.log(JSON.stringify(r,null,2))).catch(e=>{console.error(JSON.stringify({status:process.argv[2]==='--verify-migration-directory'?'MIGRATION014_VERIFY_FAILED':'MAPPING_BACKUP_FAILED',code:e.code||e.message,errno:e.errno||null,sqlState:e.sqlState||null,phase:e.phase||null,sqlWrites:false}));process.exitCode=1;});}
 module.exports={backup,migration,metadataSql};

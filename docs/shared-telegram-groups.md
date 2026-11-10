@@ -64,3 +64,28 @@ After pulling the management fix, run elevated as the same DPAPI owner:
 ```
 
 Defaults pin that exact existing packet/hash. The command verifies owner and active source/config hashes, then repeats only the native reader metadata backup through private stdin. It refuses to overwrite any existing backup/report/generated SQL. No rebuild, migration, runtime/autostart change, old-queue inspection or Telegram access occurs. Errors now include the failed metadata phase along with native code, errno and SQL state.
+
+### Apply after confirmed migration 014
+
+The operator reported successful execution of the verified migration SQL (USE + ALTER, two successful statements). The apply command still verifies the new columns/check **read-only under the native reader**, and compares the original mapping fields to the preserved backup before stopping anything. It never executes DDL or sends a test Telegram message.
+
+```powershell
+cd D:\HDWork2-New
+git pull --ff-only origin chore/remove-cacti-hdwork2
+if ($LASTEXITCODE -ne 0) { throw 'Synchronization failed.' }
+.\scripts\deploy-shared-groups-release.ps1 -Mode Apply
+```
+
+Defaults pin release directory `HDWork2SharedGroups-d9252dccb37d4cc383a644c3b1ba44f0` and manifest hash `17c858079bb10c54bff4474a3bf5bc437f5e013fb06b7b5357b512eadd729674`. Source, frontend, encrypted config and mapping backups must still match. Both existing web/Courier must initially be healthy and have the recorded identities. An initial failure stops before task/source changes.
+
+The command disables/stops only the verified Courier task and waits for its owned Node/Python processes to exit through owner-stdin shutdown. It never force-kills an unidentified process. If a stale worker lease remains, it waits for its existing expiry without deleting or stealing it. It then stops only the verified LocalService web task, installs the approved source/frontend with the shared-groups flag, and generates new hash pins for the same Courier identity, journal, global cutoff and secret references. It updates only the action of the existing Courier task; owner, trigger and settings remain unchanged. No extra task/bot/poller is created, and former testing tasks remain disabled.
+
+The web starts first. A new READY state with both native operational pools is required, followed by a TLS-verified local `/login` and frontend asset hash check using the existing public certificate. Courier starts only after these pass. Its existing identity/lease/readiness verification must pass. Expected result: `SHARED_GROUPS_RUNTIME_READY`; this is host readiness, **not** proof of real two-way delivery.
+
+```powershell
+.\scripts\deploy-shared-groups-release.ps1 -Mode Status
+```
+
+For a failure before any service start attempt, the script restores pre-start source/config/frontend and original Courier action and attempts to resume only those two original tasks, retaining additive migration 014. After the durable start-attempt marker, backend downgrade is prohibited because mapping/disable boundaries might already have been used. It requests Courier stop, restores the previous frontend, retains the fence-capable backend/config, and reports the actual error for recovery. It never restores old database rows, removes migration columns, resets journal/offset/cutoff or enables testing services. A previous failed apply is not blindly retried over an ambiguous state.
+
+After successful host status, confirm a new incoming Telegram reply appears in the web and a new authorized web reply is received in Telegram. Add/convert groups through the web and test the supported routes; do not report real delivery based only on mock/native test fixtures or task readiness.
