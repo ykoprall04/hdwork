@@ -31,3 +31,24 @@ After shared routing has been activated, do **not** blindly restore an older Cou
 ## Validation
 
 Backend unit/HTTP fixtures exercise routing and role guards. The explicit `tests/integration/mysql-shared-groups.cjs --run-shared-groups-disposable` rehearsal requires the existing disposable-only namespace/loopback guard and MySQL 8, applies reviewed schema only to a new isolated test database, and checks all seven commands, shared workspace chat, disabled routes, unchanged held rows, no replay after reactivation, and final send authorization. It never contacts Telegram. Windows autostart/deployment and real group integration still require host verification after approval.
+
+## Approved deployment continuation: prepare on the existing Windows host
+
+Deployment approval for application commit `827bb86` is already recorded. Management-only scripts may have a later commit; `prepare-shared-groups-release.ps1` pins the application source/dependency graph and frontend provenance to the exact approved SHA, not the management HEAD.
+
+Run elevated as the existing DPAPI owner:
+
+```powershell
+cd D:\HDWork2-New
+git pull --ff-only origin chore/remove-cacti-hdwork2
+if ($LASTEXITCODE -ne 0) { throw 'Synchronization failed.' }
+.\scripts\prepare-shared-groups-release.ps1
+```
+
+The defaults identify the previously verified `HDWork2CourierAutostart-e119dcbb14804568a245acb506f2f5e7` artifact directory and its pinned `d65e9eb1005953ebd26a9c6f2bec528f20fca663c155def56d6a63f17d45cb45` configuration hash. A mismatch stops preparation; never substitute an unverified current hash merely to pass the check.
+
+Preparation checks current Courier/task owner, builds for the existing verified runtime origin, stages exact approved application bytes, and verifies private frontend/source/encrypted-configuration/plan backups. The original production plan remains unchanged; the candidate adds only `routingMode: database` and retains all secret references, bot identity, journal/lock paths and global cutoff. The candidate web environment adds only the shared-groups feature flag. No journal/offset is reset or restored.
+
+A separate read-only native web-account connection backs up mapping rows plus table DDL to the private release directory. Only the existing reader password is transferred through a private stdin pipe after LocalMachine DPAPI unprotection; it is never printed, written to a file, or placed in arguments/environment. The backup probe reads no order/queue rows, changes no grants and runs no DDL. It produces `mapping-backup.report.json` and a migration SQL candidate using the actual verified category constraint name. Unexpected/partial schema stops the procedure with its real error code, errno and SQL state where available.
+
+Expected final result: `SHARED_RELEASE_AND_MAPPING_BACKUP_READY_NOT_DEPLOYED`. Retain its directory and reports. This result means backups/preparation succeeded, **not** that migration or deployment occurred. Do not run the historical incoming-only overlay or old autostart preparation against this release. Subsequent host-specific apply/repin steps must use these verified artifacts, stop the sole Courier normally, verify 014 under native accounts, and preserve the queue-fencing rollback restrictions above. Approval is not requested again; Windows host output is needed because the cloud session cannot execute commands on that machine.
