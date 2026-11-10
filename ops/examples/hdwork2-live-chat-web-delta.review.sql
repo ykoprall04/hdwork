@@ -25,4 +25,3 @@ GRANT SELECT, INSERT, UPDATE ON hdwork2.hd2_system_targets TO 'hdwork_ops_write'
 GRANT SELECT, INSERT, UPDATE ON hdwork2.hd2_system_alerts TO 'hdwork_ops_write'@'localhost';
 GRANT SELECT (bot_id, expires_ms) ON hdwork2.hd2_courier_workers TO 'hdwork_ops_write'@'localhost';
 GRANT SELECT, INSERT ON hdwork2.hd2_chat_messages TO 'hdwork_ops_write'@'localhost';
-
