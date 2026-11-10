@@ -3,9 +3,11 @@ function prepare(env){
  if(env)profiles(env);
  const required={HDWORK2_SERVICE_AUTH_POLICY:'operational-write',HDWORK2_LOCAL_READ_ONLY:'false',OP_WRITE_ENABLED:'true',HDWORK2_OPERATIONAL_WRITE_APPROVED:'true',HDWORK2_AUTH_V2:'true',HDWORK2_OPERATIONS_ENABLED:'true',B2C_COMMAND_SCHEMA_READY:'true'};
  if(!env||Object.entries(required).some(([k,v])=>env[k]!==v))throw Error('LIVE_CHAT_REQUIRES_EXISTING_APPROVED_WRITER');
- if(env.HDWORK2_TESTING_SOLVER_ENABLED==='true')throw Error('LIVE_CHAT_REJECTS_RESTRICTED_TRIAL_RUNTIME');
  const patch={HDWORK2_SYSTEM_MONITORING_ENABLED:'true',HDWORK2_LIVE_CHAT_ENABLED:'true'};
  const candidate={...env,...patch};require('./persistent-auth').validatePersistentAuth(candidate);
+ // A trial overlay is per-account, not a restriction on the approved general writer.
+ // Validate it without disabling its flag, changing its scope or altering the secret bundle.
+ require('../operations/testing-solver-scope').configuration(candidate);
  return {patch,changes:Object.keys(patch).filter(k=>env[k]!==patch[k]).map(key=>({key,before:env[key]??null,after:patch[key]})),candidate};
 }
 function profiles(env){

@@ -35,8 +35,10 @@ exists:
 ```
 
 The planner refuses read-only/session-audit-only deployments, absent write
-approval, invalid persistent service scope and the restricted single-order trial
-runtime. It never silently changes OP_WRITE_ENABLED,
+approval and invalid persistent service/trial scope. A valid trial overlay may
+coexist with an already approved general writer. Its flag/scope and secret bundle
+remain unchanged; trial_yanto remains denied all Live Chat reads and replies.
+It never silently changes OP_WRITE_ENABLED,
 HDWORK2_OPERATIONAL_WRITE_APPROVED or HDWORK2_LOCAL_READ_ONLY. An unsupported
 runtime needs a separately reviewed operational deployment, not this two-field
 patch. Backend web Courier/network settings stay false and separate from the
@@ -92,10 +94,10 @@ and the previous approved web runtime; do not disable validation to force it up.
 
 ## Verification boundary
 
-Verification: 342 backend tests PASS, with focused activation/chat/pool regression
+Verification: 343 backend tests PASS, with focused activation/chat/pool regression
 checks also PASS. Automated checks use synthetic environment objects, mock SQL adapters and private
 temporary fixture files only. They cover the exact two-field diff, preserved write
-permissions, trial/read-only denial, grant-profile parity, missing/overbroad grants,
+permissions, trial isolation and read-only denial, grant-profile parity, missing/overbroad grants,
 identity/schema rejection and a preparation CLI that leaves its input unchanged.
 The existing real chat service mock tests retain ownership, session, CSRF,
 idempotency, audit, original topic/reply and no-write-on-rejection checks.
@@ -105,3 +107,13 @@ Windows task, Tunnel or VPN was accessed. This cloud checkout cannot access
 D:\HDWork2-New or restart the office Windows service. Runtime activation and real
 Telegram usability remain unverified until the host-specific steps above are
 approved and executed there.
+
+## Correction after host preparation feedback
+
+The earlier LIVE_CHAT_REJECTS_RESTRICTED_TRIAL_RUNTIME gate was too broad: the
+existing operational-write runtime permits a valid per-account trial overlay.
+The planner now validates that existing scope and preserves it, including expired
+trial behavior, instead of rejecting the entire approved general writer. It does
+not turn off the trial flag: that could also break the protected bundle's expected
+key set. A malformed trial scope or a deployment without the previously approved
+general writer still fails closed. Runtime/schema/Courier checks remain pending.

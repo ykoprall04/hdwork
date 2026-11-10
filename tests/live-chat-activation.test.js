@@ -24,3 +24,14 @@ test('offline CLI writes only a review patch; never changes active config, reads
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'hdwork-chat-plan-'));try{const service=path.join(root,'service');await fs.mkdir(service);const input=path.join(service,'environment.json'),output=path.join(root,'activation.review.json');const bytes=JSON.stringify(environment());await fs.writeFile(input,bytes);const result=await require('../scripts/prepare-live-chat-activation').run(['--prepare','--environment',input,'--output',output]);assert.equal(result.status,'REVIEW_ONLY_NOT_ACTIVATED');assert.equal(result.databaseAccessed,false);assert.equal(await fs.readFile(input,'utf8'),bytes);assert.equal((await fs.readdir(service)).length,1);assert.ok(!JSON.stringify(result).includes('DB_USER'));await assert.rejects(require('../scripts/prepare-live-chat-activation').run(['--prepare','--environment',input,'--output',output]),{code:'EEXIST'});await fs.writeFile(input,JSON.stringify({...environment(),DB_PASSWORD:'synthetic-rejected'}));await assert.rejects(require('../scripts/prepare-live-chat-activation').run(['--prepare','--environment',input,'--output',path.join(root,'other.json')]),/PLAINTEXT_SECRET/);
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('approved writer can enable chat while preserving valid active or expired trial overlay and trial chat denial',async()=>{
+ const scope={username:'trial_yanto',userId:123,botId:'hdworkopsbot-testing',chatId:'-5436357946',threadId:null,botUsername:'HDWorkOpsBot',chatVerified:true};
+ for(const expiresAt of [new Date(Date.now()+3600000).toISOString(),new Date(Date.now()-3600000).toISOString()]){
+  const env={...environment(),HDWORK2_PUBLIC_ORIGIN:'https://hdwork2.yoloo.space',FRONTEND_ORIGINS:'https://hdwork2.yoloo.space',HDWORK2_TESTING_SOLVER_ENABLED:'true',HDWORK2_TESTING_SOLVER_SCOPE:JSON.stringify({...scope,expiresAt})};
+  const result=prepare(env);assert.equal(result.candidate.HDWORK2_TESTING_SOLVER_ENABLED,'true');assert.equal(result.candidate.HDWORK2_TESTING_SOLVER_SCOPE,env.HDWORK2_TESTING_SOLVER_SCOPE);assert.deepEqual(Object.keys(result.patch),['HDWORK2_SYSTEM_MONITORING_ENABLED','HDWORK2_LIVE_CHAT_ENABLED']);assert.equal(result.candidate.OP_WRITE_ENABLED,'true');
+  await assert.rejects(require('../src/chat/service').createChat({readPool:{execute(){assert.fail('trial cannot read chat');}}}).conversations({}, {username:'trial_yanto',modules:['TIAL']}),{statusCode:403});
+  await assert.rejects(require('../src/chat/service').createChat({readPool:{execute(){assert.fail('trial cannot read messages');}}}).messages('00000000-0000-4000-8000-000000000001',{}, {username:'trial_yanto',modules:['TIAL']}),{statusCode:403});
+  assert.throws(()=>prepare({...env,HDWORK2_TESTING_SOLVER_SCOPE:JSON.stringify({...scope,expiresAt,chatVerified:false})}));
+ }
+});
