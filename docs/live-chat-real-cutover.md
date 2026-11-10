@@ -221,6 +221,16 @@ Tool ini tersedia pada commit management sesudah release `4ef886e`, dan tidak
 mengubah source release yang sudah aktif. READ_ONLY_PROBES_PASS bukan bukti
 delivery/polling atau keberhasilan Live Chat dua arah.
 
+Jika probe read-only PASS tetapi supervisor tetap berhenti, gunakan management
+wrapper `start-production-courier-with-trace.js --snapshot <snapshot> --plan <plan>
+--plan-sha256 <hash> --approved-deployment yes`. Ini adalah startup Courier nyata
+yang sudah disetujui, bukan probe read-only. Wrapper menjalankan supervisor/module
+Courier dari snapshot tanpa memodifikasi file produksi, memakai plan/cutoff dan
+mekanisme lock/lease yang sama. Satu-satunya tambahan adalah event startup fixed
+phase/type/HTTP status/errno; tidak ada exception text, token, payload atau env
+yang dicetak. Trace otomatis dimatikan ketika READY. Jika gagal, hentikan retry
+dan tangani phase yang dilaporkan. Biarkan terminal terbuka bila berhasil.
+
 Tes Node membuktikan isolasi dan regresi via SQL contract fixtures; tes Python
 memakai SQLite disposable lokal dan transport fixture. Build hanya membuktikan
 artifact dapat dibuat. Semuanya BUKAN bukti integrasi Telegram produksi. Setelah
