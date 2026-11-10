@@ -63,7 +63,8 @@ test('integration config is disabled by default, isolated hdwork2 and does not p
 
 test('explicit courier startup uses mock hdwork2 readiness, loopback listener and separately gated inbox worker with clean shutdown', async () => {
   const filename=path.resolve('courier-b2c-server.js'), source=fs.readFileSync(filename,'utf8');
-  for(const enabled of [false,true]) {
+  for(const [enabled,defer] of [[false,false],[true,false],[true,true]]) {
+    let ready;
     const calls=[],module={exports:{}},mockPool={async query(sql){calls.push(sql);if(sql.startsWith('SELECT'))return [[{db:'hdwork2',account:'courier_only@localhost'}]];return [Object.entries(require('../src/config/operational-grants').policies.courier).map(([t,ps])=>({grant:`GRANT ${ps.join(', ')} ON hdwork2.${t} TO synthetic`}))];},async execute(sql){calls.push(sql);return [[]];},async end(){calls.push('pool-end');}};
     const server={once(){},listen(port,host,cb){assert.equal(port,3091);assert.equal(host,'127.0.0.1');calls.push('listen');cb();},close(cb){calls.push('server-close');cb?.();}};
     const dependencies={
@@ -73,17 +74,21 @@ test('explicit courier startup uses mock hdwork2 readiness, loopback listener an
       './src/courier/mysql-store':{MysqlStore:class{constructor(){}}},
       './src/courier/runtime-store':{RuntimeStore:class{constructor(){}}},
       './src/courier/groups':{createGroupPolicy:()=>({})},
-      './src/courier/integration-app':{createIntegrationApp:opts=>{assert.equal(opts.send,false);assert.equal(opts.receive,false);return {}; }},
+      './src/courier/integration-app':{createIntegrationApp:opts=>{ready=opts.ready;assert.equal(opts.send,false);assert.equal(opts.receive,false);return {}; }},
       'node:http':{createServer:()=>server},
       './src/courier/inbox-worker':{startInboxWorker:()=>{calls.push('worker-start');return{async close(){calls.push('worker-close');}};}},
       './src/b2c-workflow/workflow':{createB2CProcessor:opts=>{assert.equal(opts.config.webOnly,true);return{};}}
     };
     const fakeRequire=n=>{assert.ok(Object.hasOwn(dependencies,n),'Unexpected dependency: '+n);return dependencies[n];};fakeRequire.main={};
     vm.runInNewContext(source,{module,require:fakeRequire,process:{env:{}},console});
-    const app=await module.exports.startIntegration({env:{...env(),COURIER_WORKER_ENABLED:String(enabled)}});
-    assert.equal(calls.includes('worker-start'),enabled);assert.ok(calls.filter(c=>c.startsWith('SELECT ')).length>=4);
+    const app=await module.exports.startIntegration({env:{...env(),COURIER_WORKER_ENABLED:String(enabled)},deferInboxWorker:defer});
+    assert.equal(calls.includes('worker-start'),enabled&&!defer);assert.ok(calls.filter(c=>c.startsWith('SELECT ')).length>=4);
+    assert.equal(ready(),!defer);
+    if(defer){app.startWorker();app.startWorker();assert.equal(calls.filter(c=>c==='worker-start').length,1);assert.equal(ready(),true);}
     await Promise.all([app.close(),app.close()]);assert.equal(calls.filter(c=>c==='pool-end').length,1);
     assert.equal(calls.includes('worker-close'),enabled);
+    assert.equal(ready(),false);
+    assert.throws(()=>app.startWorker(),/already closing/);
   }
 });
 

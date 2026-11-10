@@ -64,7 +64,7 @@ function inspect(configFile, mode = 'health') {
   if (mode === 'plan') result.release = {
     phases: ['inventory-and-backup', 'review-migration-grant-and-rollback-plan', 'stage-immutable-release', 'approved-activation', 'real-health-and-chat-verification', 'rollback-if-required'],
     botControllers: 1, businessApis: 1, preserveBotNamespace: true,
-    requiredEvidence: ['verified bot numeric ID and routing', 'exact grants and schema', 'reviewed QUEUED and DEAD backlog',
+    requiredEvidence: ['verified bot numeric ID and routing', 'exact grants and schema', 'fixed activation boundary excludes legacy QUEUED/SENDING/DEAD without changing rows',
       'single poller and fenced lease ownership', 'restorable code/config/grant-compatible backup', 'verified frontend build'],
     automaticApplySupported: false
   };

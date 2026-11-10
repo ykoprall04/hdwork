@@ -11,9 +11,10 @@ function git(repo,args){return cp.execFileSync('git',args,{cwd:repo,encoding:nul
 async function regular(file,max=2*1024*1024){if(pathKey(await fs.realpath(file))!==pathKey(path.resolve(file)))throw Error('PREPARATION_LINK_REJECTED');const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink>1||stat.size>max)throw Error('UNSAFE_PREPARATION_INPUT');return fs.readFile(file);}
 async function directory(value){const resolved=path.resolve(value);if(pathKey(await fs.realpath(resolved))!==pathKey(resolved))throw Error('PREPARATION_LINK_REJECTED');return resolved;}
 const overlaps=(a,b)=>{a=pathKey(a);b=pathKey(b);return a===b||a.startsWith(b+path.sep)||b.startsWith(a+path.sep);};
-async function dependencyGraph(repo,commit){
- const files=new Map(),pending=[...roots];
- while(pending.length){const file=pending.pop();if(files.has(file))continue;if(!/^(src|contracts)\/[A-Za-z0-9_./-]+\.(js|json)$/.test(file)||file.split('/').includes('..'))throw Error('DEPENDENCY_REQUIRES_MANUAL_REVIEW');
+async function dependencyGraph(repo,commit,{production=false}={}){
+ const launchers=['courier-b2c-server.js','local-web-server.js','api-only-server.js','scripts/run-production-live-chat-courier.js','scripts/protected-web-service.js','scripts/office-web-service.js'];
+ const files=new Map(),pending=[...roots,...(production?launchers:[])];
+ while(pending.length){const file=pending.pop();if(files.has(file))continue;if((!/^(src|contracts)\/[A-Za-z0-9_./-]+\.(js|json)$/.test(file)&&!(production&&launchers.includes(file)))||file.split('/').includes('..'))throw Error('DEPENDENCY_REQUIRES_MANUAL_REVIEW');
   const bytes=git(repo,['show',commit+':'+file]);files.set(file,bytes);if(!file.endsWith('.js'))continue;
   for(const m of normalized(bytes).matchAll(/require\(\s*(['"])(\.[^'"]+)\1\s*\)/g)){
    const base=path.posix.normalize(path.posix.join(path.posix.dirname(file),m[2]));let found;
@@ -21,6 +22,8 @@ async function dependencyGraph(repo,commit){
    if(!found)throw Error('LOCAL_DEPENDENCY_NOT_RESOLVED');pending.push(found);
   }
  }
+ if(production)for(const file of git(repo,['ls-tree','-r','--name-only',commit,'--','courier_bot/courier']).toString('utf8').trim().split('\n').filter(f=>f.endsWith('.py')))files.set(file,git(repo,['show',commit+':'+file]));
+ if(production)files.set('scripts/read-dpapi-password.ps1',git(repo,['show',commit+':scripts/read-dpapi-password.ps1']));
  return files;
 }
 async function historical(repo,commit,file,bytes){
@@ -30,7 +33,7 @@ async function historical(repo,commit,file,bytes){
  }
  return null;
 }
-async function prepare({repo=path.resolve(__dirname,'..'),snapshot,reviewFile,output,routingFile}={}){
+async function prepare({repo=path.resolve(__dirname,'..'),snapshot,reviewFile,output,routingFile,disableCollidingTrial=false}={}){
  repo=await directory(repo);snapshot=await directory(snapshot);output=path.resolve(output);await directory(path.dirname(output));
  if(process.platform==='win32'&&path.resolve(process.env.HDWORK2_PRIVATE_PREPARATION_PARENT||'.').toLowerCase()!==path.dirname(output).toLowerCase())throw Error('USE_PRIVATE_ACL_POWERSHELL_PREPARATION_WRAPPER');
  if(overlaps(output,snapshot)||overlaps(output,repo)||overlaps(output,path.resolve(reviewFile)))throw Error('PREPARATION_OUTPUT_MUST_BE_OUTSIDE_RUNTIME_AND_REPOSITORY');
@@ -38,11 +41,11 @@ async function prepare({repo=path.resolve(__dirname,'..'),snapshot,reviewFile,ou
  const review=JSON.parse((await regular(path.resolve(reviewFile))).toString('utf8'));
  if(review.status!=='REVIEW_ONLY_NOT_ACTIVATED'||review.environmentSha256!==sha(rawEnv))throw Error('ENVIRONMENT_CHANGED_PREPARE_AGAIN');
  const env=JSON.parse(rawEnv.toString('utf8'));if(Object.keys(env).some(k=>/(PASSWORD|TOKEN|SECRET|SERVICE_KEY|IDENTITY_KEY)$/.test(k)&&!k.endsWith('_DPAPI_FILE')))throw Error('PLAINTEXT_SECRET_FIELDS_REJECTED');
- const activationPolicy=require('../src/config/live-chat-activation'),activation=activationPolicy.prepare(env);
+ const activationPolicy=require('../src/config/live-chat-activation');let activation=activationPolicy.prepare(env);
  const rollbackGrantAlignmentRequired=JSON.stringify(activationPolicy.profiles(env))!==JSON.stringify(activationPolicy.profiles(activation.candidate));if(JSON.stringify(activation.patch)!==JSON.stringify(review.patch))throw Error('REVIEWED_ACTIVATION_PATCH_MISMATCH');
- const trialScope=require('../src/operations/testing-solver-scope').configuration(env);
- const routeReview=routingFile?require('../src/config/live-chat-production').routing(operatorJson(await regular(path.resolve(routingFile))),{trialScope}):null;
- const files=await dependencyGraph(repo,commit),entries=[],active=new Map(),blockers=[];
+ activation=require('../src/config/live-chat-transition').transition(env,routingFile?operatorJson(await regular(path.resolve(routingFile))):null,{disableTrial:disableCollidingTrial});
+ const routeReview=activation.routing;
+ const files=await dependencyGraph(repo,commit,{production:disableCollidingTrial}),entries=[],active=new Map(),blockers=[];
  const desiredLock=git(repo,['show',commit+':package-lock.json']);let currentLock;
  try{currentLock=await regular(path.join(snapshot,'package-lock.json'),8*1024*1024);if(sha(normalized(currentLock))!==sha(normalized(desiredLock)))blockers.push({code:'BACKEND_DEPENDENCY_LOCK_DIFFERS'});}catch{blockers.push({code:'BACKEND_DEPENDENCY_LOCK_UNAVAILABLE'});}
  for(const [file,desired]of files){
@@ -56,13 +59,13 @@ async function prepare({repo=path.resolve(__dirname,'..'),snapshot,reviewFile,ou
   if(classification==='UNRECOGNIZED_RUNTIME_CHANGE')blockers.push({file,code:'RUNTIME_LOCAL_CHANGE_REQUIRES_REVIEW'});
  }
  await fs.mkdir(output,{mode:0o700});
- const plan={version:1,preparedAt:new Date().toISOString(),status:blockers.length?'BLOCKED_UNREVIEWED_SOURCE_OR_DEPENDENCY':'STAGED_NOT_ACTIVATED',commit,snapshot,environmentSha256:sha(rawEnv),entries,blockers,patch:activation.patch,frontend:{apiOrigin:env.HDWORK2_PUBLIC_ORIGIN,buildCommand:'npm run build:operational',requiredFlags:{VITE_HDWORK2_AUTH_COOKIE:'true',VITE_HDWORK2_OPERATIONS:'true',VITE_HDWORK2_LIVE_CHAT:'true'},verifiedBuildRequired:true},routing:routeReview||{status:'BLOCKED_VERIFIED_TARGETS_REQUIRED',sendEnabled:false},courier:require('../src/config/live-chat-production').courierPlan(routeReview),backupScope:'BACKEND_OVERLAY_ENVIRONMENT_ENCRYPTED_BUNDLE_ONLY',frontendBackupStatus:'PENDING_VERIFIED_FRONTEND_STAGE',backupComplete:false,requiredBeforeApply:['fresh schema/grant readiness and unchanged environment/source hashes','review all changed dependency files, not just the five roots','verified new-bot identity, target topics, task ownership and backlog','verified production frontend manifest and frontend backup','verified restartable rollback code/config/grant profile; never blindly revoke grants','explicit controlled activation/recovery window'],activationReady:false,databaseChanged:false,runtimeChanged:false,servicesRestarted:false,telegramAccessed:false};
+ const plan={version:1,preparedAt:new Date().toISOString(),status:blockers.length?'BLOCKED_UNREVIEWED_SOURCE_OR_DEPENDENCY':'STAGED_NOT_ACTIVATED',commit,snapshot,environmentSha256:sha(rawEnv),entries,blockers,patch:activation.patch,frontend:{apiOrigin:env.HDWORK2_PUBLIC_ORIGIN,buildCommand:'npm run build:operational',requiredFlags:{VITE_HDWORK2_AUTH_COOKIE:'true',VITE_HDWORK2_OPERATIONS:'true',VITE_HDWORK2_LIVE_CHAT:'true'},verifiedBuildRequired:true},routing:routeReview||{status:'BLOCKED_VERIFIED_TARGETS_REQUIRED',sendEnabled:false},courier:require('../src/config/live-chat-production').courierPlan(routeReview),backupScope:'BACKEND_OVERLAY_ENVIRONMENT_ENCRYPTED_BUNDLE_ONLY',frontendBackupStatus:'PENDING_VERIFIED_FRONTEND_STAGE',backupComplete:false,requiredBeforeApply:['fresh schema/grant readiness and unchanged environment/source hashes','review all changed dependency files, not just the five roots','verified existing-bot identity, routing, task ownership and fixed legacy isolation boundary','verified production frontend manifest and frontend backup','verified restartable rollback code/config/grant profile; never blindly revoke grants','explicit controlled activation/recovery window'],activationReady:false,databaseChanged:false,runtimeChanged:false,servicesRestarted:false,telegramAccessed:false};
  if(!blockers.length){
   const write=async(relative,bytes)=>{const file=path.join(output,relative);await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});await fs.writeFile(file,bytes,{flag:'wx',mode:0o600});};
   for(const entry of entries.filter(e=>e.classification!=='MATCH')){
    if(active.has(entry.file))await write('backup/'+entry.file,active.get(entry.file));
    await write('payload/'+entry.file,files.get(entry.file));
-   const staged=path.join(output,'payload',entry.file);if(entry.file.endsWith('.js')){try{cp.execFileSync(process.execPath,['--check',staged],{env:cleanEnv(),stdio:['ignore','pipe','pipe']});}catch{throw Error('STAGED_JAVASCRIPT_SYNTAX_CHECK_FAILED');}}else JSON.parse(files.get(entry.file));
+   const staged=path.join(output,'payload',entry.file);if(entry.file.endsWith('.js')){try{cp.execFileSync(process.execPath,['--check',staged],{env:cleanEnv(),stdio:['ignore','pipe','pipe']});}catch{throw Error('STAGED_JAVASCRIPT_SYNTAX_CHECK_FAILED');}}else if(entry.file.endsWith('.py')){try{cp.execFileSync('python',['-B','-c','import ast,sys;ast.parse(open(sys.argv[1],encoding="utf-8").read())',staged],{env:cleanEnv(),stdio:['ignore','pipe','pipe']});}catch{throw Error('STAGED_PYTHON_SYNTAX_CHECK_FAILED');}}else if(entry.file.endsWith('.json'))JSON.parse(files.get(entry.file));
   }
   await write('backup/service/environment.json',rawEnv);
   const encrypted=await regular(path.join(snapshot,'service/secrets.dpapi'),8*1024*1024);await write('backup/service/secrets.dpapi',encrypted);plan.encryptedBundleSha256=sha(encrypted);
@@ -82,9 +85,10 @@ async function prepare({repo=path.resolve(__dirname,'..'),snapshot,reviewFile,ou
  return {status:plan.status,output,commit,rootChanges:entries.filter(e=>e.root&&e.classification!=='MATCH').map(e=>e.file),dependencyChanges:entries.filter(e=>!e.root&&e.classification!=='MATCH').map(e=>e.file),blockers,rollbackGrantAlignmentRequired,backupComplete:plan.backupComplete,backupScope:plan.backupScope,frontendBackupStatus:plan.frontendBackupStatus,routingStatus:plan.routing.status,courierStatus:plan.courier.status,activationReady:false,runtimeChanged:false,servicesRestarted:false,telegramAccessed:false};
 }
 async function main(argv=process.argv.slice(2)){
- if(argv[0]!=='--prepare')throw Error('PREPARE_ONLY_NO_ACTIVATION_SUPPORTED');const args={};for(let i=1;i<argv.length;i+=2){if(!['--snapshot','--review','--output','--routing'].includes(argv[i])||Object.hasOwn(args,argv[i])||!argv[i+1])throw Error('INVALID_PREPARATION_ARGUMENTS');args[argv[i]]=argv[i+1];}
+ if(argv[0]!=='--prepare')throw Error('PREPARE_ONLY_NO_ACTIVATION_SUPPORTED');const args={};for(let i=1;i<argv.length;i+=2){if(!['--snapshot','--review','--output','--routing','--disable-colliding-trial-approved'].includes(argv[i])||Object.hasOwn(args,argv[i])||!argv[i+1])throw Error('INVALID_PREPARATION_ARGUMENTS');args[argv[i]]=argv[i+1];}
+ if(args['--disable-colliding-trial-approved']!==undefined&&args['--disable-colliding-trial-approved']!=='yes')throw Error('EXPLICIT_TRIAL_DISABLE_APPROVAL_REQUIRED');
  for(const key of ['--snapshot','--review','--output'])if(!args[key])throw Error('SNAPSHOT_REVIEW_OUTPUT_REQUIRED');
- console.log(JSON.stringify(await prepare({snapshot:args['--snapshot'],reviewFile:args['--review'],output:args['--output'],routingFile:args['--routing']}),null,2));
+ console.log(JSON.stringify(await prepare({snapshot:args['--snapshot'],reviewFile:args['--review'],output:args['--output'],routingFile:args['--routing'],disableCollidingTrial:args['--disable-colliding-trial-approved']==='yes'}),null,2));
 }
 if(require.main===module)main().catch(e=>{const codes={EACCES:'PREPARATION_ACCESS_DENIED',EPERM:'PREPARATION_ACCESS_DENIED',ENOENT:'PREPARATION_INPUT_OR_PARENT_NOT_FOUND',EEXIST:'PREPARATION_OUTPUT_EXISTS_RETAINED'};console.error(/^[A-Z0-9_]+$/.test(e.message)?e.message:codes[e.code]||'PRODUCTION_PREPARATION_FAILED');process.exitCode=1;});
 module.exports={prepare,dependencyGraph,roots,sha};

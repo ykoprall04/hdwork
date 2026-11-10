@@ -2,7 +2,7 @@
 const { validateGroups } = require('./groups');
 function configuration(env) {
   const reject = () => { throw Error('Courier integration configuration rejected'); };
-  for (const flag of ['COURIER_RECEIVE_ENABLED', 'COURIER_OUTBOX_ENABLED', 'COURIER_WORKER_ENABLED','COURIER_DATABASE_ROUTING_ENABLED','HDWORK2_SYSTEM_ALERTS_APPROVED','COURIER_CHAT_ENABLED']) {
+  for (const flag of ['COURIER_RECEIVE_ENABLED', 'COURIER_OUTBOX_ENABLED', 'COURIER_WORKER_ENABLED','COURIER_DATABASE_ROUTING_ENABLED','HDWORK2_SYSTEM_ALERTS_APPROVED','COURIER_CHAT_ENABLED','COURIER_PRODUCTION_MODE']) {
     if (env[flag] !== undefined && !['true', 'false'].includes(env[flag])) reject();
   }
   if (env.HDWORK2_LOCAL_READ_ONLY !== 'false' || env.COURIER_ENABLED !== 'true' || env.COURIER_INTEGRATION_ENABLED !== 'true' ||
@@ -19,12 +19,14 @@ function configuration(env) {
       !/^[A-Za-z0-9_]{5,32}$/.test(env.COURIER_BOT_USERNAME || '') ||
       Number(env.WEB_CONCURRENCY || 1) !== 1 || Number(env.NODE_APP_INSTANCE || 0) !== 0) reject();
   if(env.COURIER_CHAT_ENABLED==='true'&&env.COURIER_DATABASE_ROUTING_ENABLED!=='true')reject();
+  const activationBoundary=require('./activation-boundary').boundary(env.COURIER_ACTIVATION_NOT_BEFORE);
+  if(env.COURIER_PRODUCTION_MODE==='true'&&(!activationBoundary||env.COURIER_CHAT_ENABLED!=='true'))reject();
   const port = env.COURIER_PORT || '3091', dbPort = env.COURIER_DB_PORT || '3306';
   if (![port, dbPort].every(p => /^[1-9]\d{0,4}$/.test(p) && Number(p) <= 65535) || Number(port) === Number(env.PORT || 3090) || Number(port) === Number(dbPort)) reject();
   let groups;
   try { groups = validateGroups(JSON.parse(env.COURIER_COMMAND_GROUPS_JSON)); } catch { reject(); }
   return {
-    port: Number(port), botId: env.COURIER_BOT_ID, key: env.COURIER_SERVICE_KEY,
+    port: Number(port), botId: env.COURIER_BOT_ID, key: env.COURIER_SERVICE_KEY, activationBoundary: activationBoundary?.iso,
     database: { host: '127.0.0.1', port: Number(dbPort), user: env.COURIER_DB_USER,
       password: env.COURIER_DB_PASSWORD, database: 'hdwork2', connectionLimit: 2, connectTimeout: 5000,
       multipleStatements: false, timezone: 'Z', supportBigNumbers: true, bigNumberStrings: true },

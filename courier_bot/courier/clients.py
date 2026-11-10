@@ -37,6 +37,15 @@ class TelegramClient:
     def __init__(self, token, transport):
         self._base, self.transport = 'https://api.telegram.org/bot' + token + '/', transport
 
+    def verify_identity(self, expected_id, username):
+        me = self.transport.post(self._base + 'getMe', {})['result']
+        if (me.get('is_bot') is not True or str(me.get('id')) != expected_id or
+                str(me.get('username', '')).lower() != username.lower()):
+            raise ValueError('production_bot_identity_mismatch')
+        webhook = self.transport.post(self._base + 'getWebhookInfo', {})['result']
+        if webhook.get('url'):
+            raise ValueError('production_webhook_already_configured')
+
     def updates(self, offset):
         payload = {'timeout': 0, 'limit': 10, 'allowed_updates': ['message', 'edited_message']}
         if offset is not None:

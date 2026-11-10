@@ -18,7 +18,12 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           const inbox = sql.includes('inbox'), table = inbox ? state.inbox : state.outbox, key = inbox ? 'update_id' : 'idem_key';
           if (!table.some(r => r.bot_id === p[1] && r[key] === p[2])) table.push({ id: p[0], bot_id: p[1], [key]: p[2], payload_hash: p[3], payload: p[4], due_ms: p[5], state: inbox ? 'PENDING' : 'QUEUED', attempts: 0 });
         } else if (sql.startsWith('SELECT') && sql.includes('hd2_courier_')) {
-          const table = sql.includes('hd2_courier_inbox') ? state.inbox : state.outbox;
+          let table = sql.includes('hd2_courier_inbox') ? state.inbox : state.outbox;
+          if(sql.includes('created_at>?')){
+            const index=(sql.slice(0,sql.indexOf('created_at>?')).match(/\?/g)||[]).length;
+            table=table.filter(r=>r.created_at>p[index]);
+            p=[...p.slice(0,index),...p.slice(index+1)];
+          }
           if (sql.includes('update_id=?')) rows = table.filter(r => r.bot_id === p[0] && r.update_id === p[1]);
           else if (sql.includes('idem_key=?')) rows = table.filter(r => r.bot_id === p[0] && r.idem_key === p[1]);
           else if (sql.includes('WHERE id=?')) rows = table.filter(r => r.id === p[0] && r.bot_id === p[1]);

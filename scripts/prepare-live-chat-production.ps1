@@ -1,6 +1,6 @@
 # Preparation only: preserve active runtime and credentials; no service or network action.
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$Review,[string]$Routing)
+param([Parameter(Mandatory=$true)][string]$Review,[string]$Routing,[switch]$DisableCollidingTrial)
 $ErrorActionPreference='Stop'
 $principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'ADMINISTRATOR_REQUIRED_OPEN_ELEVATED_POWERSHELL'}
@@ -25,6 +25,7 @@ foreach($sid in @('S-1-5-18','S-1-5-32-544')){if(-not($rules|Where-Object{$_.Ide
 $output=Join-Path $parent 'prepared'
 $arguments=@((Join-Path $root 'scripts/prepare-live-chat-production.js'),'--prepare','--snapshot',$snapshot,'--review',$reviewPath,'--output',$output)
 if($Routing){$arguments+=@('--routing',(Resolve-Path -LiteralPath $Routing).Path)}
+if($DisableCollidingTrial){$arguments+=@('--disable-colliding-trial-approved','yes')}
 $priorParent=$env:HDWORK2_PRIVATE_PREPARATION_PARENT
 try{
  $env:HDWORK2_PRIVATE_PREPARATION_PARENT=$parent

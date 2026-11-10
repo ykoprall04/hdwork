@@ -38,9 +38,13 @@ async function loadPrivatePassword(env=process.env,{read=decrypt}={}){
   // Runtime process memory only; never writes plaintext to disk or child args.
   env.DB_PASSWORD=password;
 }
-async function readPrivateDpapi(file,{read=decrypt}={}){
- const resolved=path.resolve(root,file);
- if(!resolved.startsWith(path.join(root,'.local')+path.sep)||!resolved.endsWith('.dpapi'))throw reject();
+async function readPrivateDpapi(file,{read=decrypt,allowedRoot=root}={}){
+ if(typeof allowedRoot!=='string'||!path.isAbsolute(allowedRoot))throw reject();
+ const scope=path.resolve(allowedRoot);
+ const actualScope=fs.realpathSync(scope),sameScope=process.platform==='win32'?actualScope.toLowerCase()===scope.toLowerCase():actualScope===scope;
+ if(!fs.lstatSync(scope).isDirectory()||!sameScope)throw reject();
+ const resolved=path.resolve(scope,file);
+ if(!resolved.startsWith(path.join(scope,'.local')+path.sep)||!resolved.endsWith('.dpapi'))throw reject();
  const stat=fs.lstatSync(resolved);if(!stat.isFile()||stat.isSymbolicLink()||!stat.size||stat.size>65536||fs.realpathSync(resolved).toLowerCase()!==resolved.toLowerCase())throw reject();
  const value=await read(resolved);if(typeof value!=='string'||!value.length)throw reject();return value;
 }

@@ -1,9 +1,9 @@
 // Opt-in composition root. Never imported by api-only-server.js or server.js.
-async function startIntegration({ env = process.env,testWindow,testingRead,report=code=>console.error(code) } = {}) {
+async function startIntegration({ env = process.env,testWindow,testingRead,report=code=>console.error(code),deferInboxWorker=false } = {}) {
   const config = require('./src/courier/integration-config').configuration(env);
   if (require('node:cluster').isWorker) throw Error('Courier integration requires one fork');
   const pool = require('mysql2/promise').createPool(config.database);
-  let server, worker;
+  let server, worker,trafficReady=!deferInboxWorker;
   try {
     // Readiness is read-only. No automatic schema creation or provisioning.
     const [[target]]=await pool.query('SELECT DATABASE() AS db,CURRENT_USER() AS account');
@@ -17,29 +17,31 @@ async function startIntegration({ env = process.env,testWindow,testingRead,repor
     if(env.COURIER_DATABASE_ROUTING_ENABLED==='true'&&env.COURIER_OUTBOX_ENABLED==='true')await pool.execute('SELECT delivered_at FROM hd2_courier_outbox LIMIT 0');
     if(env.COURIER_CHAT_ENABLED==='true')await pool.execute('SELECT id,order_id FROM hd2_chat_messages LIMIT 0');
     const { MysqlStore } = require('./src/courier/mysql-store');
-    const store = new MysqlStore({ pool, botId: config.botId, orderedInbox: true,recordDeliveryTime:env.COURIER_DATABASE_ROUTING_ENABLED==='true' });
+    const store = new MysqlStore({ pool, botId: config.botId, orderedInbox: true,recordDeliveryTime:env.COURIER_DATABASE_ROUTING_ENABLED==='true', activationBoundary:config.activationBoundary,chatDeliveryEvents:env.COURIER_CHAT_ENABLED==='true' });
     const { RuntimeStore } = require('./src/courier/runtime-store');
     const basePolicy = require('./src/courier/groups').createGroupPolicy({ botId: config.botId, botUsername: env.COURIER_BOT_USERNAME, groups: config.groups });
-    const databasePolicy=env.COURIER_DATABASE_ROUTING_ENABLED==='true'?require('./src/system/routing').databasePolicy({system:require('./src/system/store').createSystem({readPool:pool,writePool:pool}),botId:config.botId,botUsername:env.COURIER_BOT_USERNAME,alertsApproved:env.HDWORK2_SYSTEM_ALERTS_APPROVED==='true',chatEnabled:env.COURIER_CHAT_ENABLED==='true'}):null;
+    const databasePolicy=env.COURIER_DATABASE_ROUTING_ENABLED==='true'?require('./src/system/routing').databasePolicy({system:require('./src/system/store').createSystem({readPool:pool,writePool:pool}),botId:config.botId,botUsername:env.COURIER_BOT_USERNAME,alertsApproved:env.HDWORK2_SYSTEM_ALERTS_APPROVED==='true',chatEnabled:env.COURIER_CHAT_ENABLED==='true',expectedGroups:env.COURIER_PRODUCTION_MODE==='true'?config.groups:undefined}):null;
     if(databasePolicy)await databasePolicy.configuration();
     const policy=testWindow?require('./src/courier/single-order-window').singleOrderWindow(basePolicy,testWindow):(databasePolicy||basePolicy);
     const app = require('./src/courier/integration-app').createIntegrationApp({ store,
       runtime: new RuntimeStore(store), policy, botId: config.botId, key: config.key,
-      receive: env.COURIER_RECEIVE_ENABLED === 'true', send: env.COURIER_OUTBOX_ENABLED === 'true',testingRead:testWindow?testingRead:undefined,onFailure:testWindow?report:undefined });
+      receive: env.COURIER_RECEIVE_ENABLED === 'true', send: env.COURIER_OUTBOX_ENABLED === 'true',testingRead:testWindow?testingRead:undefined,onFailure:testWindow?report:undefined,ready:()=>trafficReady });
     server = require('node:http').createServer(app);
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, '127.0.0.1', resolve); });
-    if (env.COURIER_WORKER_ENABLED === 'true') worker = require('./src/courier/inbox-worker').startInboxWorker(
+    let closing;
+    const startWorker=()=>{if(closing)throw Error('Courier already closing');if(worker||env.COURIER_WORKER_ENABLED!=='true')return;worker = require('./src/courier/inbox-worker').startInboxWorker(
       {async processNext(){const workflow=databasePolicy?await databasePolicy.workflow(config.workflow):config.workflow;return require('./src/b2c-workflow/workflow').createB2CProcessor({store,config:workflow}).processNext();}},
       { report }
-    );
-    let closing;
+    );trafficReady=true;};
+    if(!deferInboxWorker)startWorker();
     const close = () => closing ||= (async () => {
+      trafficReady=false;
       const closed = new Promise(resolve => server.close(resolve));
       await worker?.close();
       await closed;
       await pool.end();
     })();
-    return { server, close };
+    return { server, close, startWorker };
   } catch (error) { server?.close(); await worker?.close(); await pool.end(); throw error; }
 }
 

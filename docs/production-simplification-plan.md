@@ -1,5 +1,10 @@
 # HD Work 2.0: satu jalur operasional produksi
 
+Pembaruan keputusan Live Chat: review manual antrean lama diganti isolasi tanpa
+modifikasi data dan tanpa replay. Prosedur spesifik terbaru ada di
+[live-chat-real-cutover.md](live-chat-real-cutover.md); persyaratan review manual
+backlog pada dokumen historis di bawah tidak lagi menjadi gate aktivasi.
+
 Status: arah penyederhanaan serta commit/push disetujui; deployment dan restart
 produksi tidak diizinkan pada tahap ini. Database, task Windows, credentials,
 Telegram dan runtime produksi tidak diubah oleh perubahan kode ini. Manifest

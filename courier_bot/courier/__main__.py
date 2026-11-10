@@ -3,6 +3,7 @@ import sys
 import signal
 import threading
 import json
+from pathlib import Path
 from urllib.request import build_opener, HTTPRedirectHandler, ProxyHandler
 from .runtime_config import RuntimeConfig, private_directory
 from .http import JsonTransport, TransportError
@@ -46,8 +47,16 @@ def main():
         if journal_path.is_symlink():
             raise ValueError('journal_path_rejected')
         journal = Journal(str(journal_path), config.base.bot_id, config.fingerprint)
+        if config.production_bot_id:
+            from .cutover import seed_offset
+            source = os.environ.get('COURIER_SOURCE_JOURNAL_FILE', '')
+            if not source or Path(source).resolve() == journal_path.resolve():
+                raise ValueError('separate_source_journal_required')
+            seed_offset(journal, source, config.base.bot_id, config.fingerprint, os.environ['COURIER_ACTIVATION_NOT_BEFORE'])
         internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open))
         telegram = TelegramClient(config.base.token, JsonTransport(build_opener(NoRedirect()).open))
+        if config.production_bot_id:
+            telegram.verify_identity(config.production_bot_id, config.username)
         lease = WorkerLease(internal)
         stop = threading.Event()
         if os.environ.get('COURIER_PRIVATE_CONTROL_STDIN') == 'true':
@@ -78,6 +87,9 @@ def main():
         if window:
             lease.ensure()
             print(json.dumps({'event': 'READY', 'send': False}), flush=True)
+        elif config.production_bot_id:
+            lease.ensure()
+            print(json.dumps({'event': 'READY', 'send': config.send, 'productionIdentityVerified': True}), flush=True)
         serve(courier, stop, report=report)
         return 0
     except KeyboardInterrupt:
