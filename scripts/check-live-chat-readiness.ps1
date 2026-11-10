@@ -3,6 +3,8 @@
 param([Parameter(Mandatory=$true)][string]$Review,[switch]$ApprovedReadOnly)
 $ErrorActionPreference='Stop'
 if(-not $ApprovedReadOnly){throw 'EXPLICIT_READ_ONLY_APPROVAL_REQUIRED'}
+$principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'ADMINISTRATOR_REQUIRED_OPEN_ELEVATED_POWERSHELL'}
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $deployment=Get-Content -LiteralPath (Join-Path $root '.local/protected-web-deployment.json') -Raw|ConvertFrom-Json
 $snapshot=[IO.Path]::GetFullPath($deployment.snapshot)
@@ -10,7 +12,22 @@ $reviewPath=(Resolve-Path -LiteralPath $Review).Path
 # Confirm the review still corresponds to the active environment before consuming protected credentials.
 $expected=Get-Content -LiteralPath $reviewPath -Raw|ConvertFrom-Json
 if($expected.status -ne 'REVIEW_ONLY_NOT_ACTIVATED'){throw 'REVIEW_REQUIRED'}
-if((Get-FileHash -LiteralPath (Join-Path $snapshot 'service/environment.json') -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected.environmentSha256){throw 'ENVIRONMENT_CHANGED_PREPARE_AGAIN'}
+if($expected.environmentSha256 -notmatch '^[a-f0-9]{64}$'){throw 'INVALID_REVIEW_ENVIRONMENT_HASH'}
+$environmentBytes=$null;$hasher=$null
+try{
+ $environmentBytes=[IO.File]::ReadAllBytes((Join-Path $snapshot 'service/environment.json'))
+ $hasher=[Security.Cryptography.SHA256]::Create()
+ $actualHash=[BitConverter]::ToString($hasher.ComputeHash($environmentBytes)).Replace('-','').ToLowerInvariant()
+}catch{
+ $failure=$_.Exception.GetBaseException()
+ if($failure -is [UnauthorizedAccessException] -or $failure -is [Security.SecurityException]){throw 'ENVIRONMENT_ACCESS_DENIED_USE_AUTHORIZED_ADMIN_CONTEXT'}
+ if($failure -is [IO.FileNotFoundException] -or $failure -is [IO.DirectoryNotFoundException]){throw 'ENVIRONMENT_PATH_NOT_FOUND'}
+ throw 'ENVIRONMENT_HASH_CHECK_FAILED'
+}finally{
+ if($hasher){$hasher.Dispose()}
+ if($environmentBytes){[Array]::Clear($environmentBytes,0,$environmentBytes.Length)}
+}
+if($actualHash -ne $expected.environmentSha256){throw 'ENVIRONMENT_CHANGED_PREPARE_AGAIN'}
 $plain=$null;$bundle=$null;$transfer=$null;$child=$null
 try{
  Add-Type -AssemblyName System.Security

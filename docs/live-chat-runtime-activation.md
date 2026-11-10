@@ -154,3 +154,11 @@ connections and private temporary configuration files, not the office database.
 
 Host-probe verification: 350 backend tests PASS, including 7 metadata/credential-
 transport fixture tests. No host-side probe was executed from the cloud.
+
+Host feedback correction: the readiness wrapper now checks the current token's
+Administrator elevation before reading protected deployment metadata. Hashing uses
+direct .NET file access and disposes its SHA-256 instance; access denial is
+reported distinctly from an absent path. It does not continue with a null hash
+or infer that a protected file is missing from Resolve-Path failures. Even an
+elevated token can be denied by ACL; that requires an existing authorized admin
+context, never automatic ACL/ownership changes by the diagnostic script.
