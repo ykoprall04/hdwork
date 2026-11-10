@@ -39,6 +39,7 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
     });
     res.json({ ok: true, messages });
   });
+  if(store.routeFence)app.post('/internal/courier/v1/outbox/:id/authorize',async(req,res)=>{if(!send||!ready())throw fail(503);if(typeof req.body.lease_token!=='string')throw fail();const allowed=await store.authorizeDelivery(req.params.id,req.body,{before:c=>runtime.assertWorker(req.body.worker,c),authorize:(payload,c)=>policy.outgoing(payload,c)});res.json({ok:true,allowed});});
   app.post('/internal/courier/v1/outbox/:id/result', async (req, res) => {
     if (!send||!ready()) throw fail(503);
     await runtime.assertWorker(req.body.worker);

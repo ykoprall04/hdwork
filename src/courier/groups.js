@@ -5,10 +5,10 @@ function validateGroups(groups) {
   if (!Array.isArray(groups) || !groups.length || groups.length > 20) throw fail();
   const seen = new Set();
   return groups.map(group => {
-    if (!group || !['TIAL1', 'TIAL2', 'SOLVER1','ASSUREN','B2B','REPLACEMENT'].includes(group.profile) ||
+    if (!group || !['ALL','TIAL1', 'TIAL2', 'SOLVER1','ASSUREN','B2B','REPLACEMENT'].includes(group.profile) ||
         !['thread','non_topic'].includes(group.threadMode) ||
         !Array.isArray(group.commands) || !group.commands.length ||
-        group.commands.some(c => !(['ASSUREN','B2B','REPLACEMENT'].includes(group.profile)?[group.profile.toLowerCase()]:['order', 'req', 'config_psb', 'mo']).includes(c)) ||
+        group.commands.some(c => !(group.profile==='ALL'?require('./shared-group').commands:['ASSUREN','B2B','REPLACEMENT'].includes(group.profile)?[group.profile.toLowerCase()]:['order', 'req', 'config_psb', 'mo']).includes(c)) ||
         new Set(group.commands).size !== group.commands.length ||
         (group.profile === 'SOLVER1' && group.commands.includes('order'))) throw fail();
     const chatId = id(group.chatId, true);

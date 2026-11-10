@@ -15,9 +15,9 @@ def validate_groups(groups):
         if (not isinstance(chat, str) or not re.fullmatch(r'-[1-9]\d{0,15}', chat) or
                 abs(int(chat)) > 4503599627370495 or
                 group.get('threadMode') not in ('thread', 'non_topic') or 'threadId' not in group or
-                group.get('profile') not in ('TIAL1', 'TIAL2', 'SOLVER1', 'ASSUREN', 'B2B', 'REPLACEMENT') or
+                group.get('profile') not in ('ALL', 'TIAL1', 'TIAL2', 'SOLVER1', 'ASSUREN', 'B2B', 'REPLACEMENT') or
                 not isinstance(commands, list) or not commands or
-                any(not isinstance(c, str) or c not in ((group['profile'].lower(),) if group['profile'] in ('ASSUREN', 'B2B', 'REPLACEMENT') else ('order', 'req', 'config_psb', 'mo')) for c in commands) or
+                any(not isinstance(c, str) or c not in (('order', 'req', 'config_psb', 'mo', 'assuren', 'b2b', 'replacement') if group['profile'] == 'ALL' else (group['profile'].lower(),) if group['profile'] in ('ASSUREN', 'B2B', 'REPLACEMENT') else ('order', 'req', 'config_psb', 'mo')) for c in commands) or
                 len(set(commands)) != len(commands) or (group['profile'] == 'SOLVER1' and 'order' in commands)):
             raise ValueError('group_invalid')
         thread = group['threadId']
@@ -43,7 +43,7 @@ class IngressPolicy:
         self.test_window, self.selected_message = test_window, None
 
     def refresh(self, configuration):
-        groups = validate_groups(configuration.get('groups'))
+        groups = [] if configuration.get('groups') == [] else validate_groups(configuration.get('groups'))
         targets = configuration.get('alertTargets', [])
         if not isinstance(targets, list) or len(targets) > 20:
             raise ValueError('alert_targets_invalid')
@@ -55,6 +55,7 @@ class IngressPolicy:
                     (target['threadId'] is not None and (not re.fullmatch(r'[1-9]\d{0,9}', str(target['threadId'])) or int(target['threadId']) > 2147483647))):
                 raise ValueError('alert_targets_invalid')
         self.groups, self.alert_targets = groups, targets
+        self.dispatch_authorization_required = configuration.get('dispatchAuthorizationRequired') is True
 
     def _group_for_message(self, message):
         chat, thread = message['chat'].get('id'), message.get('message_thread_id')

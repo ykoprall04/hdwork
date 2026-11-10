@@ -2,7 +2,7 @@ const {randomUUID}=require('node:crypto');
 const p=require('./policy');
 const {MysqlStore}=require('../courier/mysql-store');
 const timestamp="DATE_FORMAT(checked_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS checkedAt";
-function createSystem({readPool,writePool,now=Date.now}){
+function createSystem({readPool,writePool,now=Date.now,sharedGroups=process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true'}){
  const tx=fn=>new MysqlStore({pool:writePool,botId:'unused'}).transaction(fn);
  async function once(user,input,body,superOnly=true){return tx(async c=>{
   const [[actor]]=await c.execute('SELECT id,role,is_active FROM users WHERE id=? FOR SHARE',[user.id]);if(!actor||(superOnly?actor.role!=='SUPER_ADMIN':!['SUPER_ADMIN','ADMIN'].includes(actor.role))||![1,true].includes(actor.is_active)||!user.sessionToken)throw p.fail(403);const [[session]]=await c.execute('SELECT token_hash FROM hd2_sessions WHERE token_hash=? AND user_id=? AND revoked=FALSE AND expires_at>UTC_TIMESTAMP(3) FOR SHARE',[require('../access/service').digest(user.sessionToken),user.id]);if(!session)throw p.fail(401);
@@ -10,15 +10,20 @@ function createSystem({readPool,writePool,now=Date.now}){
   const [[r]]=await c.execute('SELECT payload_hash,result FROM hd2_system_requests WHERE actor_id=? AND request_id=? FOR UPDATE',[user.id,input.requestId]);if(r.payload_hash!==digest)throw p.fail(409);if(r.result)return typeof r.result==='string'?JSON.parse(r.result):r.result;
   const result=await body(c);await c.execute('UPDATE hd2_system_requests SET result=? WHERE actor_id=? AND request_id=?',[JSON.stringify(result),user.id,input.requestId]);return result;
  });}
+ async function acceptsEvent(botId,event,c=readPool){if(!sharedGroups)return true;const [[row]]=await c.execute('SELECT id FROM hd2_system_mappings WHERE bot_id=? AND chat_id=? AND thread_id<=>? AND enabled=TRUE AND verified=TRUE AND (blocked_before IS NULL OR UNIX_TIMESTAMP(blocked_before)<?)'+(c===readPool?'':' FOR SHARE'),[botId,event.chat_id,event.telegram_thread_id,event.timestamp]);return !!row;}
  async function routing(botId,c=readPool){p.bot(botId);const [rows]=await c.execute(`SELECT id,category,profile,chat_id,thread_id,version FROM hd2_system_mappings WHERE bot_id=? AND enabled=TRUE AND verified=TRUE ORDER BY id${c===readPool?'':' FOR SHARE'}`,[botId]);return rows.map(r=>({chatId:r.chat_id,threadId:r.thread_id,threadMode:r.thread_id===null?'non_topic':'thread',profile:r.profile,commands:p.categories[r.category].commands}));}
  return {
- routing,
- async mappings(user){p.admin(user);const [data]=await readPool.execute('SELECT id,bot_id AS botId,category,profile,chat_id AS chatId,thread_id AS threadId,enabled,verified,version FROM hd2_system_mappings ORDER BY id LIMIT 100');return {data};},
- async saveMapping(user,input){p.admin(user);const m=p.mapping(input);return once(user,m,async c=>{
-  const [[old]]=await c.execute('SELECT version FROM hd2_system_mappings WHERE id=? FOR UPDATE',[m.id]);if(old?Number(old.version)!==m.version:m.version!==0)throw p.fail(409);
+ routing,acceptsEvent,
+ async mappings(user){p.admin(user);const [data]=await readPool.execute(`SELECT id,bot_id AS botId,category,profile,chat_id AS chatId,thread_id AS threadId,enabled,verified,version${sharedGroups?',group_name AS name':''} FROM hd2_system_mappings ORDER BY id LIMIT 100`);return {data,sharedGroups};},
+ async saveMapping(user,input){p.admin(user);const m=p.mapping(input);if(m.category==='ALL'&&!sharedGroups)throw p.fail(503,'Grup bersama belum diaktifkan pada runtime');return once(user,m,async c=>{
+  const [[old]]=await c.execute(`SELECT version${sharedGroups?',bot_id,chat_id,thread_id,enabled,verified':''} FROM hd2_system_mappings WHERE id=? FOR UPDATE`,[m.id]);if(old?Number(old.version)!==m.version:m.version!==0)throw p.fail(409);
+  if(sharedGroups&&!old){const [[knownBot]]=await c.execute('SELECT bot_id FROM hd2_courier_workers WHERE bot_id=? FOR SHARE',[m.botId]);if(!knownBot)throw p.fail(409,'Gunakan bot Courier yang sudah terdaftar');}
+  if(sharedGroups&&old&&(old.bot_id!==m.botId||old.chat_id!==m.chatId||old.thread_id!==m.threadId))throw p.fail(409,'Tujuan grup tersimpan tidak dapat diganti. Nonaktifkan grup lalu tambahkan grup baru.');
+  if(sharedGroups&&m.enabled){const [active]=await c.execute('SELECT id FROM hd2_system_mappings WHERE bot_id=? AND enabled=TRUE AND verified=TRUE FOR UPDATE',[m.botId]);if(active.filter(r=>r.id!==m.id).length>=20)throw p.fail(409,'Maksimal 20 grup aktif per bot');}
   const fields=[m.botId,m.category,m.profile,m.chatId,m.threadId,m.chatId+':'+(m.threadId||'none'),m.enabled,m.verified];
   if(old)await c.execute('UPDATE hd2_system_mappings SET bot_id=?,category=?,profile=?,chat_id=?,thread_id=?,route_key=?,enabled=?,verified=?,version=version+1,updated_at=UTC_TIMESTAMP(3) WHERE id=?',[...fields,m.id]);
   else await c.execute('INSERT INTO hd2_system_mappings(bot_id,category,profile,chat_id,thread_id,route_key,enabled,verified,id) VALUES (?,?,?,?,?,?,?,?,?)',[...fields,m.id]);
+  if(sharedGroups){await c.execute('UPDATE hd2_system_mappings SET group_name=? WHERE id=?',[m.name?.trim()||'',m.id]);if((!old&&m.enabled&&m.verified)||(old&&(([1,true].includes(old.enabled)&&[1,true].includes(old.verified))!==(m.enabled&&m.verified))))await c.execute('UPDATE hd2_system_mappings SET blocked_before=UTC_TIMESTAMP(3) WHERE id=?',[m.id]);}
   await c.execute('INSERT INTO hd2_audit(id,order_id,action,user_id,detail) VALUES (?,NULL,?,?,?)',[randomUUID(),'SYSTEM_MAPPING_SAVED',user.id,JSON.stringify({mappingId:m.id,requestId:m.requestId,category:m.category,enabled:m.enabled,verified:m.verified})]);return {success:true,id:m.id,version:old?m.version+1:0};
  },false);},
  async history(user){p.admin(user);const [data]=await readPool.execute("SELECT id,action,user_id,detail,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS at FROM hd2_audit WHERE action='SYSTEM_MAPPING_SAVED' ORDER BY created_at DESC,id DESC LIMIT 100");return {data};},

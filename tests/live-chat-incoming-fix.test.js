@@ -8,7 +8,7 @@ function fixture(run){
  const write=(file,bytes)=>{fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,bytes);};
  try{
   cp.execFileSync('git',['clone','--shared','--no-checkout','-q',path.resolve(__dirname,'..'),repo],{stdio:'pipe'});git(['checkout','-q',base]);git(['config','user.name','Fixture']);git(['config','user.email','fixture@example.invalid']);
-  for(const file of files){write(path.join(snapshot,file),fs.readFileSync(path.join(repo,file)));write(path.join(repo,file),fs.readFileSync(path.resolve(__dirname,'..',file)));}
+  for(const file of files){write(path.join(snapshot,file),fs.readFileSync(path.join(repo,file)));write(path.join(repo,file),cp.execFileSync('git',['show','f6ec0be361e7847138a29f9af88b7803516e40d9:'+file],{cwd:path.resolve(__dirname,'..')}));}
   git(['add','--',...files]);git(['commit','-qm','incoming fix']);const patchCommit=git(['rev-parse','HEAD']).toString().trim();
   const env=Buffer.from(JSON.stringify({HDWORK2_SYSTEM_MONITORING_ENABLED:'true',HDWORK2_LIVE_CHAT_ENABLED:'true',HDWORK2_TESTING_SOLVER_ENABLED:'false',OP_WRITE_ENABLED:'true',OTHER_MODULE:'preserve'},null,2)+'\n'),cipher=Buffer.from('synthetic-encrypted-bundle');
   write(path.join(snapshot,'service/environment.json'),env);write(path.join(snapshot,'service/secrets.dpapi'),cipher);
@@ -30,4 +30,9 @@ test('Courier-only approval cannot apply a general web overlay; runtime drift bl
  const result=prepare(f.options),file=path.join(result.output,'production-plan.review.json'),plan=JSON.parse(fs.readFileSync(file));delete plan.kind;const bytes=JSON.stringify(plan);fs.writeFileSync(file,bytes);
  assert.throws(()=>execute({prepared:result.output,planSha256:hash(bytes),mode:'apply',approved:true,courierStopped:true}),/COURIER_ONLY_SCOPE_REQUIRED/);
  f.write(path.join(f.snapshot,files[0]),'independent runtime edits');assert.throws(()=>prepare(f.options),/RUNTIME_SOURCE_DRIFT/);assert.deepEqual(fs.readFileSync(path.join(f.snapshot,'service/environment.json')),f.env);
+}));
+test('shared-group expansion cannot be deployed using the narrow incoming-only approval',()=>fixture(f=>{
+ for(const file of files)f.write(path.join(f.repo,file),fs.readFileSync(path.resolve(__dirname,'..',file)));
+ const git=args=>cp.execFileSync('git',args,{cwd:f.repo,stdio:['ignore','pipe','pipe']});git(['add','--',...files]);git(['commit','-qm','broader shared groups change']);
+ assert.throws(()=>prepare({...f.options,patchCommit:git(['rev-parse','HEAD']).toString().trim()}),/OUTGOING_CHAT_OR_AUTH_CHANGE_REJECTED/);
 }));

@@ -27,6 +27,9 @@ class InternalClient:
     def claim(self):
         return self.post('/internal/courier/v1/outbox/claim', {'limit': 1, **({'worker': self.worker} if self.worker else {})})['messages']
 
+    def authorize_delivery(self, delivery):
+        return self.post('/internal/courier/v1/outbox/' + delivery['delivery_id'] + '/authorize', {'lease_token': delivery['lease_token'], 'worker': self.worker}).get('allowed') is True
+
     def settle(self, delivery, result):
         return self.post('/internal/courier/v1/outbox/' + delivery['delivery_id'] + '/result', {'lease_token': delivery['lease_token'], **result, **({'worker': self.worker} if self.worker else {})})
 

@@ -5,6 +5,13 @@ from pathlib import Path
 SPEC = json.loads((Path(__file__).resolve().parents[2] / 'contracts' / 'b2c-commands.json').read_text())
 
 def parse_command(text, profile, bot_username=None):
+    if profile == 'ALL' and not isinstance(text, str):
+        return {'valid': False, 'errors': ['format']}
+    if profile == 'ALL':
+        head = re.match(r'^\s*/(assuren|b2b|replacement)(?:@|\s|$)', text or '', re.I)
+        if head:
+            return parse_command(text, head[1].upper(), bot_username)
+        profile = 'TIAL1'
     if profile in ('ASSUREN', 'B2B', 'REPLACEMENT'):
         from .workspace_command import parse_workspace_command
         return parse_workspace_command(text, profile, bot_username)

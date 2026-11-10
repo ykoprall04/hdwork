@@ -22,7 +22,7 @@ function createB2CProcessor({ store, config }) {
       const parsed=require('./commands').parseCommand(e.text,group.commandProfile,settings.botUsername);
       if (!parsed.valid) return ignore('COMMAND_VALIDATION_REJECTED');
       if(group.allowedCommands&&!group.allowedCommands.includes(parsed.command))return ignore('COMMAND_NOT_ALLOWED_IN_GROUP');
-      return require('./command-storage').saveCommand({e,parsed,settings,group,tx,audit});
+      return require('./command-storage').saveCommand({e,parsed,settings,group:group.commandProfile==='ALL'?{...group,module:require('../courier/shared-group').moduleFor(parsed.command)}:group,tx,audit});
     }
     if(settings.webOnly)return ignore('TELEGRAM_STATUS_NOT_AUTHORIZED');
     if (e.reply_to_message_id !== null && process.env.HDWORK2_OPERATIONS_ENABLED==='true') return ignore('TELEGRAM_STATUS_DEFERRED_BATCH12');

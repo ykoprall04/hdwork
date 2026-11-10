@@ -1,5 +1,7 @@
 const spec=require('../../contracts/b2c-commands.json');
 function parseCommand(text,profile,botUsername) {
+  if(profile==='ALL'&&typeof text!=='string')return {valid:false,errors:['format']};
+  if(profile==='ALL'){const head=/^\s*\/(assuren|b2b|replacement)(?:@|\s|$)/i.exec(text||'');if(head)return parseCommand(text,head[1].toUpperCase(),botUsername);profile='TIAL1';}
   if(['ASSUREN','B2B','REPLACEMENT'].includes(profile))return require('../courier/workspace-command').parseWorkspaceCommand(text,profile,botUsername);
   const reject=fields=>({valid:false,errors:fields});
   if(typeof text!=='string'||text.length>16384)return reject(['format']);

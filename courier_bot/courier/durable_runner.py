@@ -127,7 +127,10 @@ class DurableCourier:
             self.lease.ensure()
             cached = self.journal.begin_delivery(delivery)
             try:
-                self.policy.outgoing(delivery['payload'])
+                if not cached:
+                    self.policy.outgoing(delivery['payload'])
+                if not cached and getattr(self.policy, 'dispatch_authorization_required', False) and not self.internal.authorize_delivery(delivery):
+                    raise TransportError(403)
                 message_id = cached or str(self.telegram.send(delivery['payload']))
                 result = {'result': 'sent', 'telegram_message_id': message_id}
             except TransportError as error:

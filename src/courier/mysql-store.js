@@ -3,7 +3,10 @@ const { eventEnvelope, outbound, digest, fail, messageId } = require('./contract
 const json = value => typeof value === 'string' ? JSON.parse(value) : value;
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
 class MysqlStore {
-  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false, activationBoundary, chatDeliveryEvents = false }) {
+  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false, activationBoundary, chatDeliveryEvents = false, routeFence = process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true' }) {
+    this.routeFence=routeFence;
+    this.inboxFence=routeFence?require('./route-fence').eligible('hd2_courier_inbox',true):'';
+    this.outboxFence=routeFence?require('./route-fence').eligible('hd2_courier_outbox'):'';
     this.pool = pool; this.botId = botId; this.now = now; this.maxAttempts = maxAttempts;
     this.orderedInbox = orderedInbox; this.recordDeliveryTime = recordDeliveryTime;
     this.chatDeliveryEvents = chatDeliveryEvents;
@@ -30,6 +33,7 @@ class MysqlStore {
   async enqueueOn(c, key, body) {
     if (typeof key !== 'string' || !/^[\x21-\x7e]{1,200}$/.test(key)) throw fail();
     const payload = outbound(body), hash = digest(payload), id = randomUUID();
+    if(this.routeFence){const [[route]]=await c.execute('SELECT id FROM hd2_system_mappings WHERE bot_id=? AND chat_id=? AND thread_id<=>? AND enabled=TRUE AND verified=TRUE FOR SHARE',[this.botId,payload.chat_id,payload.telegram_thread_id]);if(!route)throw fail(403);}
     await c.execute('INSERT INTO hd2_courier_outbox (id,bot_id,idem_key,payload_hash,payload,due_ms) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE id=id', [id, this.botId, key, hash, JSON.stringify(payload), this.now()]);
     const [[row]] = await c.execute('SELECT id,payload_hash FROM hd2_courier_outbox WHERE bot_id=? AND idem_key=? FOR UPDATE', [this.botId, key]);
     if (!row || row.payload_hash !== hash) throw fail(409);
@@ -41,9 +45,9 @@ class MysqlStore {
     return this.transaction(async c => {
       if (options.before) await options.before(c);
       const now = this.now();
-      const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=?" + this.boundarySql + " ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now, ...this.boundaryParams]);
+      const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=?" + this.boundarySql + this.outboxFence + " ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now, ...this.boundaryParams]);
       for (const row of expired) await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);
-      const [rows] = await c.execute("SELECT id,payload,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?" + this.boundarySql + " ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, ...this.boundaryParams, limit]);
+      const [rows] = await c.execute("SELECT id,payload,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?" + this.boundarySql + this.outboxFence + " ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, ...this.boundaryParams, limit]);
       const messages = [];
       for (const row of rows) {
         if (options.authorize && !await options.authorize(json(row.payload), c)) {
@@ -55,6 +59,13 @@ class MysqlStore {
         messages.push({ delivery_id: row.id, lease_token: lease, attempt: row.attempts + 1, payload: json(row.payload) });
       }
       return messages;
+    });
+  }
+  async authorizeDelivery(id,body,options={}) {
+    return this.transaction(async c=>{
+      await options.before?.(c);
+      const [[row]]=await c.execute("SELECT id,payload FROM hd2_courier_outbox WHERE id=? AND bot_id=? AND state='SENDING' AND lease_token=? AND lease_until_ms>?"+this.boundarySql+this.outboxFence+' FOR SHARE',[id,this.botId,body.lease_token,this.now(),...this.boundaryParams]);
+      return !!row&&await options.authorize(json(row.payload),c);
     });
   }
   async settle(id, body) {
@@ -79,8 +90,8 @@ class MysqlStore {
     try {
       return await this.transaction(async c => {
         const [[row]] = this.orderedInbox
-          ? await c.execute("SELECT id,payload,attempts,due_ms FROM hd2_courier_inbox WHERE bot_id=? AND state='PENDING'" + this.boundarySql + " ORDER BY received_seq LIMIT 1 FOR UPDATE", [this.botId, ...this.boundaryParams])
-          : await c.execute("SELECT id,payload,attempts FROM hd2_courier_inbox WHERE bot_id=? AND state='PENDING' AND due_ms<=?" + this.boundarySql + " ORDER BY due_ms,id LIMIT 1 FOR UPDATE SKIP LOCKED", [this.botId, this.now(), ...this.boundaryParams]);
+          ? await c.execute("SELECT id,payload,attempts,due_ms FROM hd2_courier_inbox WHERE bot_id=? AND state='PENDING'" + this.boundarySql + this.inboxFence + " ORDER BY received_seq LIMIT 1 FOR UPDATE", [this.botId, ...this.boundaryParams])
+          : await c.execute("SELECT id,payload,attempts FROM hd2_courier_inbox WHERE bot_id=? AND state='PENDING' AND due_ms<=?" + this.boundarySql + this.inboxFence + " ORDER BY due_ms,id LIMIT 1 FOR UPDATE SKIP LOCKED", [this.botId, this.now(), ...this.boundaryParams]);
         if (!row) return false;
         if (this.orderedInbox && Number(row.due_ms) > this.now()) return false;
         selected = row.id;
