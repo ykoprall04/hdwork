@@ -207,6 +207,20 @@ rollback otomatis pesan yang sudah dikirim ke Telegram.
 
 ## Batas bukti
 
+Jika supervisor berhenti dengan kode startup umum, gunakan tool pendamping
+`diagnose-production-courier.js --snapshot <snapshot-aktif> --plan <plan-produksi>
+--plan-sha256 <hash-plan-yang-disetujui>`. Tool memuat konfigurasi melalui source
+snapshot yang aktual, membaca identity/grants/routing/lease MySQL, memeriksa metadata
+journal lama/baru melalui SQLite read-only dan memanggil getMe/getWebhookInfo.
+Tidak memanggil getUpdates/sendMessage, tidak mengakuisisi lease, tidak memulai
+listener/worker atau membaca payload/antrean. Secret refs tetap DPAPI; plaintext
+hanya diteruskan melalui stdin privat ke proses diagnostik Python dan tidak dicetak.
+Status mismatch namespace/fingerprint/boundary memerlukan koreksi spesifik; jangan
+menghapus journal, mengganti cutoff, atau mengubah token agar startup dipaksa lolos.
+Tool ini tersedia pada commit management sesudah release `4ef886e`, dan tidak
+mengubah source release yang sudah aktif. READ_ONLY_PROBES_PASS bukan bukti
+delivery/polling atau keberhasilan Live Chat dua arah.
+
 Tes Node membuktikan isolasi dan regresi via SQL contract fixtures; tes Python
 memakai SQLite disposable lokal dan transport fixture. Build hanya membuktikan
 artifact dapat dibuat. Semuanya BUKAN bukti integrasi Telegram produksi. Setelah
