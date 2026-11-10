@@ -43,7 +43,7 @@ async function run({argv=process.argv.slice(2),input=process.stdin,connect,boots
   }
   const result=await inspect({...pools});if(Object.keys(errors).length)result.connectionErrors=errors;
   // Presence/source hashes are reported as booleans/names only; no runtime configuration is printed.
-  const files=['src/chat/routes.js','src/chat/service.js','src/config/operational-pools.js','src/config/live-chat-activation.js','src/operations/routes.js','src/system/routes.js','src/system/store.js'];const mismatch=[];
+  const files=['src/chat/routes.js','src/chat/service.js','src/config/operational-pools.js','src/config/live-chat-activation.js','src/operations/routes.js','src/system/routes.js','src/system/store.js','src/system/policy.js','src/config/operational-grants.js'];const mismatch=[];
   for(const file of files){try{const [current,active]=await Promise.all([fs.readFile(path.resolve(__dirname,'..',file)),fs.readFile(path.join(path.resolve(argv[2]),file))]);if(!current.equals(active))mismatch.push(file);}catch{mismatch.push(file);}}
   result.backendSource={matchesRepository:mismatch.length===0,filesNeedingUpdate:mismatch};
   result.environmentUnchanged=createHash('sha256').update(await fs.readFile(path.join(path.resolve(argv[2]),'service/environment.json'))).digest('hex')===environmentSha256;
