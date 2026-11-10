@@ -44,8 +44,18 @@ if($config.Contains('"') -or $wrapper.Contains('"')){throw 'PATH_REJECTED'}
 $arguments='-NoProfile -NonInteractive -WindowStyle Hidden -File "'+$wrapper+'" -Config "'+$config+'" -ConfigSha256 '+$review.configSha256
 $powershell=Join-Path $PSHOME 'powershell.exe'
 $task=Get-ScheduledTask -TaskPath '\' -TaskName $taskName -ErrorAction SilentlyContinue
+function ResolveTaskOwnerSid([string]$UserId) {
+ if([string]::IsNullOrWhiteSpace($UserId)){throw 'TASK_OWNER_UNRESOLVED'}
+ try {
+  if($UserId -match '^S-1-'){
+   return (New-Object Security.Principal.SecurityIdentifier($UserId)).Value
+  }
+  $account=New-Object Security.Principal.NTAccount($UserId)
+  return $account.Translate([Security.Principal.SecurityIdentifier]).Value
+ }catch{throw 'TASK_OWNER_UNRESOLVED'}
+}
 function AssertOwnedTask {
- if(-not $task -or @($task.Actions).Count -ne 1 -or $task.Actions[0].Execute -ne $powershell -or $task.Actions[0].Arguments -cne $arguments -or $task.Principal.UserId -ne $identity.User.Value -or [string]$task.Principal.LogonType -ne 'Interactive'){throw 'TASK_IDENTITY_MISMATCH'}
+ if(-not $task -or @($task.Actions).Count -ne 1 -or $task.Actions[0].Execute -ne $powershell -or $task.Actions[0].Arguments -cne $arguments -or (ResolveTaskOwnerSid $task.Principal.UserId) -ne $identity.User.Value -or [string]$task.Principal.LogonType -ne 'Interactive' -or [string]$task.Principal.RunLevel -ne 'Highest'){throw 'TASK_IDENTITY_MISMATCH'}
 }
 function CurrentStatus {
  $stateFile=Join-Path $Directory 'state.json';$state=$null
