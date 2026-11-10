@@ -1,0 +1,18 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
+const {policies,privileges,reviewOperationalGrants}=require('../src/config/operational-grants');
+// Independent privilege-atom simulation: no driver, database, credential or SQL execution.
+const accounts={hdwork_ops_read:{base:'read',target:'chatRead'},hdwork_ops_write:{base:'write',target:'chatWrite'}};
+function atoms(table,permission){const m=/^([A-Z]+)(?: \(([^)]+)\))?$/.exec(permission);assert.ok(m);return (m[2]?m[2].split(',').map(s=>s.trim()):['*']).map(column=>[table,m[1],column].join('|'));}
+function baseline(role){return new Set(Object.entries(policies[role]).flatMap(([table,ps])=>ps.flatMap(p=>atoms(table,p))));}
+function parse(file,verb){return fs.readFileSync(file,'utf8').replace(/^\s*--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean).map(s=>{const m=new RegExp(`^${verb} (.+) ON hdwork2\\.([a-z0-9_]+) ${verb==='GRANT'?'TO':'FROM'} '(hdwork_ops_read|hdwork_ops_write)'@'localhost'$`).exec(s);assert.ok(m,'Only exact approved web account/table statements allowed');return {account:m[3],atoms:privileges(m[1]).flatMap(p=>atoms(m[2],p))};});}
+function grants(set){const groups={};for(const atom of set){const [table,privilege,column]=atom.split('|'),key=table+'|'+privilege;(groups[key]??=[]).push(column);}return Object.entries(groups).map(([key,columns])=>{const [table,privilege]=key.split('|');return {g:`GRANT ${privilege}${columns.includes('*')?'':' ('+columns.sort().join(', ')+')'} ON hdwork2.${table} TO 'fixture'@'localhost'`};});}
+const additions=parse('ops/examples/hdwork2-live-chat-web-delta.review.sql','GRANT'),removals=parse('ops/examples/hdwork2-live-chat-web-delta.rollback.review.sql','REVOKE');
+test('minimum web delta adds no existing privilege and reaches the exact two chat profiles',()=>{
+ assert.equal(additions.length,18);for(const [account,{base,target}]of Object.entries(accounts)){const before=baseline(base),after=new Set(before);for(const row of additions.filter(r=>r.account===account))for(const atom of row.atoms){assert.equal(before.has(atom),false,'Do not repeat already approved privileges');assert.ok(!atom.startsWith('hd2_orders|'),'No new order mutation permissions');after.add(atom);}assert.equal(reviewOperationalGrants(grants(after),target).ok,true);}
+});
+test('rollback removes only applied additions and restores every original privilege',()=>{
+ assert.equal(removals.length,18);for(const [account,{base}]of Object.entries(accounts)){const before=baseline(base),after=new Set(before);for(const row of additions.filter(r=>r.account===account))for(const atom of row.atoms)after.add(atom);for(const row of removals.filter(r=>r.account===account))for(const atom of row.atoms){assert.equal(before.has(atom),false,'Rollback must not revoke original access');assert.equal(after.delete(atom),true);}assert.deepEqual([...after].sort(),[...before].sort());assert.equal(reviewOperationalGrants(grants(after),base).ok,true);}
+});
+test('outbox and username deltas are column-only; reader gains no payload, token or password access',()=>{
+ const readAtoms=additions.filter(r=>r.account==='hdwork_ops_read').flatMap(r=>r.atoms);assert.deepEqual(readAtoms.filter(a=>a.startsWith('hd2_courier_outbox|')).sort(),['attempts','delivered_at','due_ms'].map(c=>'hd2_courier_outbox|SELECT|'+c).sort());const writeAtoms=additions.filter(r=>r.account==='hdwork_ops_write').flatMap(r=>r.atoms);assert.deepEqual(writeAtoms.filter(a=>a.startsWith('users|')),['users|SELECT|username']);assert.ok(!readAtoms.some(a=>/\|(payload|lease_token|password_hash)$/.test(a)));
+});
