@@ -117,3 +117,40 @@ trial behavior, instead of rejecting the entire approved general writer. It does
 not turn off the trial flag: that could also break the protected bundle's expected
 key set. A malformed trial scope or a deployment without the previously approved
 general writer still fails closed. Runtime/schema/Courier checks remain pending.
+
+## Approved host-side metadata preflight
+
+After preparation succeeds, use Administrator PowerShell on the office host:
+
+```powershell
+.\scripts\check-live-chat-readiness.ps1 -Review $review -ApprovedReadOnly
+```
+
+`$review` is the existing review JSON path printed by preparation. The wrapper
+verifies the environment hash before opening the unchanged LocalMachine DPAPI
+bundle, then supplies only the existing reader/writer passwords to an owned Node
+child through private stdin. Tokens and signing secrets are not forwarded. No
+secret is printed, passed in command-line arguments, written to a file, or sent
+to this chat. No ACL, bundle, environment, task or service is changed. The child
+gets only OS-essential environment variables, has a bounded lifetime, and closes
+its own DB connections. Do not paste a DPAPI bundle or credentials as input.
+
+The probe is restricted to loopback hdwork2, the existing hdwork_ops_read and
+hdwork_ops_write identities, SHOW GRANTS FOR CURRENT_USER, information_schema
+column metadata, verified mapping category/profile and Courier lease metadata.
+It never SELECTs order/user/message records and never executes database writes.
+Missing columns are labelled MISSING_OR_NOT_VISIBLE because insufficient grants
+can hide an existing table. Reports contain exact missing profile privileges,
+missing/not-visible column names, per-category coverage and lease evidence only;
+no raw grants, passwords, chat IDs, bot IDs or customer data are printed.
+
+The probe also compares selected active backend source files with the repository,
+without changing either. A mismatch requires a reviewed backend update, not just
+flag activation. WEB_SCHEMA_GRANTS_PASS is only a web schema/grant verdict: it
+never certifies Courier sending or real Telegram delivery. Actual flag application
+and restarts still follow the remaining host checks. The PowerShell wrapper is
+reviewed but not executed in the Linux cloud; the Node path is tested with fixture
+connections and private temporary configuration files, not the office database.
+
+Host-probe verification: 350 backend tests PASS, including 7 metadata/credential-
+transport fixture tests. No host-side probe was executed from the cloud.
