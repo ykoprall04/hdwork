@@ -155,6 +155,45 @@ operational-write lama. Source runtime tidak dikenal tetap harus ditinjau spesif
 
 ## Rollback
 
+### Kandidat kompatibel untuk baseline pool f875aed
+
+Baseline yang ditemukan operator memilih `read/write` karena flag chat belum ada,
+tetapi source pool f875aed sendiri sudah mendukung `chatRead/chatWrite` dan policy
+grant-nya sama. Karena grant produksi sudah diperluas, restore konfigurasi asli
+secara buta tidak dapat dipakai sebagai fallback restart.
+
+Tool pendamping `prepare-compatible-chat-rollback.js` membuat plan rollback BARU di
+dalam direktori preparation privat. Payload aplikasi tetap commit `4ef886e`; tool
+pendamping tidak melakukan restaging versi aplikasi atau mengubah manifest/backup
+asli. Kandidat mengembalikan source lama, dengan dua pengecualian eksplisit:
+launcher protected dan validator dormant bundle tetap dari release baru, sementara
+flag monitoring/chat tetap true dan trial false. Ini mempertahankan kompatibilitas
+grant/bundle tanpa mencabut privilege atau menghidupkan testing. Courier tetap OFF.
+
+```powershell
+node scripts/prepare-compatible-chat-rollback.js --prepared $preparedDirectory
+```
+
+Output berisi lokasi kandidat dan hash plan rollback. Jalankan `check-pools.ps1`
+di lokasi output, dengan `-Review` review flag asli dan `-ApprovedReadOnly`.
+Pemeriksaan memakai source pool HISTORIS dari backup, reader/writer asli melalui
+stdin privat, serta SQL allowlist SELECT/SHOW/LIMIT 0. Tidak membaca order/pesan,
+memulai web, mengubah grant atau mengakses Telegram. Status
+`ROLLBACK_POOLS_SCHEMA_GRANTS_PASS` membuktikan kompatibilitas pool/schema/grants,
+bukan keberhasilan full web boot atau Live Chat produksi.
+
+Untuk rollback sesudah apply selesai, gunakan executor file-only dengan lokasi
+kandidat dan `rollbackPlanSha256` tersebut, mode rollback, serta web/Courier OFF.
+Ini bukan restore byte-exact environment lama: profile chat dipertahankan secara
+sengaja. Jika apply gagal parsial sebelum dua validator terpasang, jangan memaksa
+plan kompatibel; pertahankan layanan OFF dan lakukan recovery file dari backup
+asli lalu pasang dua validator/config kompatibel dengan pemeriksaan hash. Restore
+parsial tidak boleh diikuti start service sampai keseluruhan fallback konsisten.
+
+Tool pendamping tersedia pada commit tooling sesudah `4ef886e`; versi payload yang
+di-deploy tetap ditentukan oleh manifest preparation commit `4ef886e`, bukan HEAD
+checkout tooling. Jangan menjalankan preparation release ulang dari HEAD tooling.
+
 Hentikan supervisor BARU (Ctrl+C mematikan anak miliknya dan melepaskan lease).
 Pertahankan plan, cutoff tetap, journal baru dan semua baris database. Pulihkan
 frontend dari backup lewat tooling frontend-only. Pulihkan source/config web hanya
