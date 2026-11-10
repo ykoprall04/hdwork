@@ -1,0 +1,46 @@
+// Private Scheduled Task child. Its owner's stdin is a lifetime lease, never a secret channel.
+const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
+const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
+function regular(file){const p=path.resolve(file),s=fs.lstatSync(p),real=fs.realpathSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>16*1024*1024||(process.platform==='win32'?real.toLowerCase()!==p.toLowerCase():real!==p))throw Error('TASK_INPUT_REJECTED');return fs.readFileSync(p);}
+function verify(file,expected){if(hash(regular(file))!==expected)throw Error('TASK_VERSION_DRIFT');}
+function configuration(file,expected){
+ verify(file,expected);const value=JSON.parse(regular(file));
+ if(value.version!==1||value.kind!=='HDWORK2_COURIER_AUTOSTART'||!path.isAbsolute(value.snapshot)||!path.isAbsolute(value.productionPlan)||!path.isAbsolute(value.pythonExecutable)||!path.isAbsolute(value.nodeExecutable)||!/^S-1-[0-9-]+$/.test(value.ownerSid)||!value.sourceHashes||Object.keys(value.sourceHashes).some(name=>name.split('/').includes('..')||path.isAbsolute(name)))throw Error('TASK_CONFIG_REJECTED');
+ verify(value.productionPlan,value.productionPlanSha256);
+ for(const [name,digest]of Object.entries(value.sourceHashes))verify(path.join(value.snapshot,name),digest);
+ verify(path.join(value.snapshot,'service/environment.json'),value.environmentSha256);
+ verify(path.join(value.snapshot,'service/secrets.dpapi'),value.encryptedBundleSha256);
+ return value;
+}
+function stateWriter(file){return value=>{const temp=file+'.'+crypto.randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(value,null,2)+'\n',{flag:'wx',mode:0o600});fs.renameSync(temp,file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}};}
+async function run(argv=process.argv.slice(2)){
+ if(argv.length!==4||argv[0]!=='--config'||argv[2]!=='--config-sha256')throw Error('TASK_CONFIG_ARGUMENTS_REQUIRED');
+ const configFile=path.resolve(argv[1]),config=configuration(configFile,argv[3]),save=stateWriter(path.join(path.dirname(configFile),'state.json'));
+ const originalSpawn=cp.spawn,originalLog=console.log;
+ let python,ready=false,ownerGone=false,forceTimer,heartbeat;
+ const startedAt=new Date().toISOString();let status='STARTING';
+ const record=code=>save({status,code,nodePid:process.pid,pythonPid:python?.pid||null,startedAt,updatedAt:new Date().toISOString(),ownerSid:config.ownerSid,botId:config.botId,telegramBotId:config.telegramBotId,baseCommit:config.baseCommit,patchCommit:config.patchCommit,configSha256:argv[3],productionPlanSha256:config.productionPlanSha256,liveChatEndToEndVerified:false});
+ const stop=()=>{
+  if(ownerGone)return;ownerGone=true;status='STOPPING';record('OWNER_STOP');
+  if(python&&python.exitCode===null){python.stdin.end('STOP\n');forceTimer=setTimeout(()=>{if(python.exitCode===null)python.kill();},15000);}
+  if(ready)setImmediate(()=>process.emit('SIGTERM'));
+ };
+ process.stdin.once('end',stop);process.stdin.on('data',data=>{if(data.toString('utf8').includes('STOP'))stop();});process.stdin.resume();
+ cp.spawn=(exe,args,options)=>{
+  if(ownerGone)throw Error('TASK_OWNER_STOPPED');
+  const target=exe==='python'&&args?.join(' ')==='-B -m courier --run';
+  const child=originalSpawn(target?config.pythonExecutable:exe,args,options);
+  if(target){python=child;child.stdin.on('error',()=>{});}return child;
+ };
+ console.log=value=>{
+  try{const event=JSON.parse(value);if(event.status==='COURIER_STARTED_IDENTITY_AND_LEASE_VERIFIED'&&event.botId===config.botId&&event.telegramBotId===config.telegramBotId){ready=true;status=ownerGone?'STOPPING':'READY';record('IDENTITY_AND_LEASE_VERIFIED');if(ownerGone)setImmediate(()=>process.emit('SIGTERM'));}}catch{}
+  // Output is drained by the owner; no raw output is persisted to disk.
+  originalLog(value);
+ };
+ record('START_REQUESTED');heartbeat=setInterval(()=>record(ready?'IDENTITY_AND_LEASE_VERIFIED':'STARTING'),5000);heartbeat.unref();
+ try{await require(path.join(config.snapshot,'scripts/run-production-live-chat-courier.js')).run(['--run-production-approved','--plan',config.productionPlan]);status='STOPPED';record('COURIER_STOPPED');}
+ catch(error){status=ownerGone?'STOPPED':'FAILED';const code=/^(ER_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT|ECONNREFUSED|ETIMEDOUT|PRIVATE_DB_CONFIG_REJECTED|DPAPI_[A-Z_]+)$/.test(error.code||'')?error.code:'COURIER_TASK_FAILED';record(code);if(!ownerGone)process.exitCode=1;}
+ finally{clearInterval(heartbeat);clearTimeout(forceTimer);cp.spawn=originalSpawn;console.log=originalLog;process.stdin.destroy();}
+}
+if(require.main===module)run().catch(()=>{console.error('COURIER_TASK_BOOTSTRAP_REJECTED');process.exitCode=1;});
+module.exports={configuration,verify,hash,run};
