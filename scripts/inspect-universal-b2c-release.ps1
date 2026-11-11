@@ -1,6 +1,6 @@
 # Read-only runtime inspection. Optional native-reader metadata via existing protected bundle/stdin.
 [CmdletBinding()]
-param([string]$CandidateRoot = (Join-Path $PSScriptRoot '..'), [switch]$ReadDatabaseMetadata)
+param([string]$CandidateRoot = (Join-Path $PSScriptRoot '..'), [switch]$ReadDatabaseMetadata, [switch]$ReturnReport, [switch]$ExpectCourierStopped)
 $ErrorActionPreference = 'Stop'
 if ([Environment]::OSVersion.Platform -ne 'Win32NT') { throw 'WINDOWS_INSPECTION_REQUIRED' }
 $CandidateRoot = (Resolve-Path -LiteralPath $CandidateRoot).Path
@@ -33,16 +33,24 @@ $inputMetadata = @{
     webProcessVerified = $true
 }
 $engine = Join-Path $PSScriptRoot 'inspect-universal-b2c-release.js'
-$inputMetadata | ConvertTo-Json -Compress | & $node $engine --runtime
-if ($LASTEXITCODE -ne 0) { throw 'UNIVERSAL_RUNTIME_INSPECTION_FAILED_NO_CHANGES' }
-if (-not $ReadDatabaseMetadata) { return }
+$runtimeText=$inputMetadata | ConvertTo-Json -Compress | & $node $engine --runtime | Out-String
+if ($LASTEXITCODE -ne 0) { Write-Host $runtimeText;throw 'UNIVERSAL_RUNTIME_INSPECTION_FAILED_NO_CHANGES' }
+if (-not $ReturnReport) { Write-Output $runtimeText }
+if (-not $ReadDatabaseMetadata) { if($ReturnReport){return ($runtimeText|ConvertFrom-Json)};return }
 $courierState=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $inputMetadata.courierConfig) 'state.json') -Raw|ConvertFrom-Json
 $courierNode=Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$courierState.nodePid)"
 $courierPython=Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$courierState.pythonPid)"
-if ([string]$courier.State -ne 'Running' -or $courierState.status -ne 'READY' -or [DateTimeOffset]::Parse($courierState.updatedAt) -lt [DateTimeOffset]::UtcNow.AddSeconds(-30) -or -not $courierNode -or -not $courierPython -or $courierNode.Name -ne 'node.exe' -or $courierPython.ParentProcessId -ne $courierNode.ProcessId -or -not $courierNode.CommandLine -or -not $courierNode.CommandLine.Contains([string]$inputMetadata.courierConfig)) { throw 'COURIER_PROCESS_NOT_READY' }
-$courierOwner=Invoke-CimMethod -InputObject $courierNode -MethodName GetOwnerSid
-if ($courierOwner.ReturnValue -ne 0 -or $courierOwner.Sid -ne $identity.User.Value) { throw 'COURIER_PROCESS_OWNER_CHANGED' }
-$inputMetadata.courierProcess=@{nodePid=[int]$courierNode.ProcessId;pythonPid=[int]$courierPython.ProcessId;nodeStarted=[string]$courierNode.CreationDate;pythonStarted=[string]$courierPython.CreationDate;ready=$true}
+if ($ExpectCourierStopped) {
+ if ([string]$courier.State -eq 'Running' -or $courierNode -or $courierPython) { throw 'COURIER_SHUTDOWN_NOT_CONFIRMED' }
+ $extra=@(Get-CimInstance Win32_Process -Filter "Name='node.exe'"|Where-Object {$_.CommandLine -and $_.CommandLine.Contains([string]$inputMetadata.courierConfig)})
+ if($extra.Count){throw 'UNEXPECTED_COURIER_PROCESS_PRESENT'}
+ $inputMetadata.courierProcess=@{stopped=$true;ready=$false}
+} else {
+ if ([string]$courier.State -ne 'Running' -or $courierState.status -ne 'READY' -or [DateTimeOffset]::Parse($courierState.updatedAt) -lt [DateTimeOffset]::UtcNow.AddSeconds(-30) -or -not $courierNode -or -not $courierPython -or $courierNode.Name -ne 'node.exe' -or $courierPython.ParentProcessId -ne $courierNode.ProcessId -or -not $courierNode.CommandLine -or -not $courierNode.CommandLine.Contains([string]$inputMetadata.courierConfig)) { throw 'COURIER_PROCESS_NOT_READY' }
+ $courierOwner=Invoke-CimMethod -InputObject $courierNode -MethodName GetOwnerSid
+ if ($courierOwner.ReturnValue -ne 0 -or $courierOwner.Sid -ne $identity.User.Value) { throw 'COURIER_PROCESS_OWNER_CHANGED' }
+ $inputMetadata.courierProcess=@{nodePid=[int]$courierNode.ProcessId;pythonPid=[int]$courierPython.ProcessId;nodeStarted=[string]$courierNode.CreationDate;pythonStarted=[string]$courierPython.CreationDate;ready=$true}
+}
 # Same existing machine-DPAPI bundle and owned-stdin transfer as the read-only backup helper.
 $plain=$null;$bundle=$null;$transfer=$null;$child=$null
 try {
@@ -65,7 +73,7 @@ try {
  $child.StandardInput.WriteLine($transfer);$child.StandardInput.Close();$transfer=$null
  if (-not $child.WaitForExit(55000)) { $child.Kill();throw 'OWNED_INSPECTION_TIMEOUT' }
  if ($child.ExitCode -ne 0) { Write-Output $stderr.Result;throw 'NATIVE_READ_ONLY_COMPATIBILITY_FAILED' }
- Write-Output $stdout.Result
+ if($ReturnReport){Write-Output ($stdout.Result|ConvertFrom-Json)}else{Write-Output $stdout.Result}
 } finally {
  $inputMetadata.Remove('readPassword');$transfer=$null;$bundle=$null
  if($plain){[Array]::Clear($plain,0,$plain.Length)}
