@@ -8,7 +8,7 @@ const { operatorJson } = require('../src/config/operator-json');
 const TARGET = 'ccc646a649ed2bd6a9e138f27a43efe96a536edd';
 const BASELINE = '090aa82643a46856d8963909b3ecbb2d8c9d95bf';
 const BACKEND = ['src/operations/b2c-readiness.js', 'src/operations/policy.js', 'src/operations/read.js'];
-const PREPARATION = new Set(['scripts/inspect-b2c-windows-release.js', 'scripts/inspect-b2c-windows-release.ps1', 'tests/b2c-windows-preparation.test.js', 'docs/b2c-windows-release.md']);
+const PREPARATION = new Set(['scripts/inspect-b2c-windows-release.js', 'scripts/inspect-b2c-windows-release.ps1', 'tests/b2c-windows-preparation.test.js', 'docs/b2c-windows-release.md', 'scripts/stage-b2c-isolated-web.js', 'scripts/stage-b2c-isolated-web.ps1', 'tests/b2c-isolated-web-stage.test.js']);
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const normalized = bytes => Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'));
 function read(file) {
@@ -79,7 +79,7 @@ async function inspect(input, { gitCommand = git, probeFrontend = probe } = {}) 
   const pinnedChanges = rows.filter(row => row.pinnedByCourier && row.runtimeState !== 'TARGET_MATCH').map(row => row.file);
   if (sameSnapshot && pinnedChanges.length) blockers.push('IN_PLACE_WEB_UPDATE_WOULD_BREAK_COURIER_PINS');
   return { status: 'B2C_WINDOWS_READ_ONLY_INSPECTION', applicationCommit: TARGET, checkoutCommit, runtimeRoot, activeDist,
-    courierSnapshot: cfg.snapshot, sameWebAndCourierSnapshot: sameSnapshot, courierConfigSha256: configSha256,
+    courierConfig, courierSnapshot: cfg.snapshot, sameWebAndCourierSnapshot: sameSnapshot, courierConfigSha256: configSha256,
     changedBackendFiles: rows, pinnedChangedFiles: pinnedChanges, frontend, blockers,
     nextStep: blockers.length ? 'REVIEW_BLOCKERS_AND_PREPARE_COMPATIBLE_ISOLATED_WEB_RELEASE' : 'PREPARE_BACKUP_AND_COORDINATED_WEB_FRONTEND_RELEASE',
     deploymentReady: false, runtimeChanged: false, credentialsAccessed: false, databaseAccessed: false, telegramAccessed: false };

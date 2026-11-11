@@ -113,3 +113,28 @@ Cutover web membutuhkan restart proses web untuk memuat JavaScript backend baru.
 ## Bukti cloud
 
 Aplikasi ccc646a: 431 tes backend, 75 unit frontend, build/lint dan tiga browser suite pada build produksi lokal lolos. Tambahan helper persiapan diuji dengan filesystem fixture dan probe/Git yang diinjeksi. Helper PowerShell belum dijalankan di Windows dari cloud. Tidak ada hasil cloud yang dianggap sebagai bukti deployment atau Telegram/MySQL produksi.
+
+## Tahap staging terisolasi setelah build Windows
+
+Helper `stage-b2c-isolated-web.ps1` menyiapkan kandidat **tanpa aktivasi**. Ia menerima tiga hash eksplisit: manifest Windows, index baseline aktif, serta config Courier dari inspeksi. Helper mengulangi inspeksi dan menghentikan proses jika ada drift selain keterkaitan pin snapshot bersama yang sudah diketahui.
+
+Wrapper membuat direktori baru `C:\ProgramData\HDWork2WebB2C-<GUID>` dengan inheritance ACL dimatikan: operator, Administrators dan SYSTEM memiliki FullControl; LocalService hanya ReadAndExecute. Subfolder service/state baru memberi LocalService Modify. File baru ditulis sebagai byte pada target sehingga mewarisi ACL privat; security descriptor/alternate streams source tidak disalin. Direktori bukan salinan direktori state aktif; tidak ada PID/state READY lama yang dipakai sebagai bukti sehat.
+
+Engine menyalin source web dan node_modules dari runtime existing, lalu mengganti hanya tiga source backend dengan blob Git immutable ccc646a. Environment dan encrypted bundle disalin byte-identik, tanpa unwrap, perubahan flags atau penulisan ulang path. Referensi absolut existing tetap menunjuk lokasi existing yang harus dipertahankan. Sertifikat/key server yang dibutuhkan disalin ke root privat; issuer private key ca.key tidak disalin. Target default TLS yang tidak tersedia/di luar kontrak harus diperiksa, bukan ditebak atau di-bypass.
+
+Frontend baseline disalin untuk mempertahankan aset immutable bagi tab lama. Aset kandidat ditambahkan, collision nama dengan byte berbeda ditolak, lalu index kandidat dipasang hanya pada snapshot baru. Runtime web/Courier lama tidak disentuh. Bukti rollback mencakup snapshot lama yang tetap ada, inventori/hash baseline, salinan XML task web existing dan hash-nya. Plan memuat inventori hasil staging dan tidak mengubah task Courier maupun hash config-nya.
+
+Hasil sukses: `STAGED_NOT_STARTED`, `activated=false`, `servicesChanged=false`. Catat `stagedRuntime` dan `planSha256`. Ini bukan bukti proses baru bisa boot atau rilis sudah dilayani web. Stage yang gagal dipertahankan sebagai `STAGING_FAILED_NOT_ACTIVATED`; jangan timpa atau hapus direktori untuk mencoba lagi tanpa diagnosis.
+
+Contoh parameter harus diisi dari hasil Windows aktual:
+
+```powershell
+.\scripts\stage-b2c-isolated-web.ps1 `
+  -ManifestSha256 '<hash-build-Windows>' `
+  -ExpectedBaselineIndexSha256 '<hash-index-inspeksi-terbaru>' `
+  -ExpectedCourierConfigSha256 '<hash-config-task-Courier>'
+```
+
+Belum ada mode Apply pada helper staging. Cutover/rollback eksekutabel akan disiapkan dari bukti hasil staging dan identitas task/proses yang masih berlaku, dengan hanya proses web yang berpindah. Courier harus terus memakai snapshot lama dan satu controller yang sama.
+
+Tes staging memakai fixture filesystem: overlay tepat tiga file, preservation environment/ciphertext, task XML rollback, aset tab lama, penolakan collision/build/baseline/direktori existing dan ketiadaan operasi aktivasi. Windows ACL, copy aktual node_modules, boot LocalService dan integrasi produksi belum diverifikasi dari cloud.
