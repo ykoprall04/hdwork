@@ -1,14 +1,14 @@
 import { ChartNoAxesCombined, LayoutGrid, MessagesSquare, ShieldCheck, Users } from 'lucide-react';
 import type { User } from '@/contexts/auth-context';
-import { canOpenWorkspace } from '../workflow/workspace-access';
+import { canOpenWorkspace, visibleWorkspaces } from '../workflow/workspace-access';
 import { workspaces } from './workspaces';
 
 export function operationalNavigation(user: User, cookie: boolean, operations: boolean, chat: boolean) {
   const operator = ['HD', 'ADMIN', 'SUPER_ADMIN'].includes(user.role);
   return [
     { label: 'Utama', items: [{ to: '/jobs', label: 'Pilih pekerjaan', icon: LayoutGrid }] },
-    { label: 'Ruang kerja', items: workspaces.filter(area => !cookie || canOpenWorkspace(area, user.modules)).map(area => ({
-      to: `/work/${area}`, label: area === 'REPLACEMENT' ? 'Replacement' : area, icon: LayoutGrid,
+    { label: 'Ruang kerja', items: workspaces.filter(area => visibleWorkspaces(user).includes(area)).map(area => ({
+      to: `/work/${area}`, label: area === 'B2C' ? 'HD B2C' : area === 'REPLACEMENT' ? 'Replacement' : area, icon: LayoutGrid,
       children: area === 'B2C' ? [
         { to: '/work/B2C', label: 'Ringkasan B2C' },
         ...(!cookie || canOpenWorkspace('TIAL', user.modules) ? [{ to: '/work/B2C/TIAL', label: 'TIAL / REQ' }] : []),

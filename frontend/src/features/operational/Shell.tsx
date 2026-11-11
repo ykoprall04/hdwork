@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Section } from '../operations/components';
 import OperationalLayout from './OperationalLayout';
-import { accessibleWorkspaces } from '../workflow/workspace-access';
+import { visibleWorkspaces } from '../workflow/workspace-access';
 import JobSelection from '../workspace-ui/JobSelection';
 import B2cSummary from '../workspace-ui/B2cSummary';
 import { useLocalCheckIn } from './local-status';
@@ -17,7 +17,7 @@ export function Unavailable({ title = 'Fitur operasional' }: { title?: string })
 }
 export function Jobs() {
   const { user } = useAuth();
-  return <JobSelection base="" allowedCategories={cookieMode ? accessibleWorkspaces(user?.modules) : undefined} description="Pilih ruang kerja sesuai akses modul Anda untuk membuka antrean dan memulai pekerjaan." />;
+  return <JobSelection base="" allowedCategories={user ? visibleWorkspaces(user) : []} description="Pilih ruang kerja sesuai akses modul Anda untuk membuka antrean dan memulai pekerjaan." />;
 }
 export function B2cHome() {
   const { user } = useAuth();

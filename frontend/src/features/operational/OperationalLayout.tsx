@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu } from '@base-ui/react/menu';
 import { ChevronDown, ChevronRight, LogOut, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Settings2, X } from 'lucide-react';
@@ -9,10 +9,16 @@ import ThemeToggle from '@/components/ThemeToggle';
 import { cookieMode } from './cookie-http';
 import { operationsEnabled } from '../workflow/api';
 import { operationalNavigation, pageContext } from './navigation';
+import { confirmChatNavigation } from '../workflow/unsent-chat';
 
 type Props = { user: User; local: { status: string; select: (value: 'ONLINE' | 'SIBUK' | 'OFFLINE') => void }; onLogout: () => Promise<void>; children: ReactNode };
 export default function OperationalLayout({ user, local, onLogout, children }: Props) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  function selectStatus(status: 'ONLINE' | 'SIBUK' | 'OFFLINE') {
+    if (!confirmChatNavigation()) return;
+    local.select(status); navigate('/jobs');
+  }
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('hdwork2:sidebar-collapsed') === 'true'; } catch { return false; } });
   const groups = operationalNavigation(user, cookieMode, operationsEnabled, import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true');
@@ -51,16 +57,17 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
           <Menu.Root><Menu.Trigger render={<Button variant="ghost" className="min-h-11 gap-2" aria-label="Menu akun" />}><span className="op-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span className="hidden max-w-36 truncate text-left text-xs sm:block">{user.name}<small className="block text-muted-foreground">{user.role === 'SUPER_ADMIN' ? 'Super Admin' : user.role === 'SHOW_ONLY' ? 'View Only' : user.role}</small></span><ChevronDown /></Menu.Trigger>
             <Menu.Portal><Menu.Positioner align="end" sideOffset={8} collisionPadding={12} className="z-[90]"><Menu.Popup className="op-account-menu">
               <p className="break-words border-b px-3 py-3 text-sm font-medium">{user.name}</p>
-              <label className="block px-3 py-3 text-xs">Status kerja lokal<select aria-label="Status kerja" className="op-field mt-2" value={local.status} onChange={event => local.select(event.target.value as 'ONLINE' | 'SIBUK' | 'OFFLINE')}>{['ONLINE', 'SIBUK', 'OFFLINE'].map(status => <option key={status}>{status}</option>)}</select><span className="mt-2 block text-muted-foreground">Preferensi tab · belum tersinkronisasi</span></label>
+              <label className="block px-3 py-3 text-xs">Status kerja lokal<select aria-label="Status kerja" className="op-field mt-2" value={local.status} onChange={event => selectStatus(event.target.value as 'ONLINE' | 'SIBUK' | 'OFFLINE')}>{['ONLINE', 'SIBUK', 'OFFLINE'].map(status => <option key={status}>{status}</option>)}</select><span className="mt-2 block text-muted-foreground">Preferensi tab · belum tersinkronisasi</span></label>
               <Menu.Item render={<Link to="/check-in" />} className="op-menu-item"><Settings2 />Ubah check-in</Menu.Item>
               {cookieMode && <Menu.Item render={<Link to="/change-password" />} className="op-menu-item"><Settings2 />Ganti Password</Menu.Item>}
-              <Menu.Separator className="my-1 border-t" /><Menu.Item onClick={() => void onLogout()} className="op-menu-item text-destructive"><LogOut />Logout</Menu.Item>
+              <Menu.Separator className="my-1 border-t" /><Menu.Item onClick={() => { if (confirmChatNavigation()) void onLogout(); }} className="op-menu-item text-destructive"><LogOut />Logout</Menu.Item>
             </Menu.Popup></Menu.Positioner></Menu.Portal>
           </Menu.Root>
         </div>
       </header>
       <main id="operational-main" tabIndex={-1} className="op-main">
-        {!checkIn && <p className="op-local-status"><span aria-hidden="true" className={local.status === 'ONLINE' ? 'bg-emerald-600' : local.status === 'SIBUK' ? 'bg-amber-600' : 'bg-slate-400'} />{local.status} · status lokal{!operationsEnabled && ' · tindakan order nonaktif'}</p>}
+        {!checkIn && <div className="op-status-bar"><div role="group" aria-label="Pilihan status kerja" className="flex flex-wrap gap-1">{(['ONLINE', 'SIBUK', 'OFFLINE'] as const).map(status => <Button key={status} variant={local.status === status ? 'secondary' : 'ghost'} size="sm" aria-pressed={local.status === status} onClick={() => selectStatus(status)}>{status}</Button>)}</div><p className="text-[10px] text-muted-foreground">{local.status} · status lokal{!operationsEnabled && ' · tindakan order nonaktif'}</p></div>}
+
         <div className="op-page space-y-5">{children}</div>
       </main>
     </div>

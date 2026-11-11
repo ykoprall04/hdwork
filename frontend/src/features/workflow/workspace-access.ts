@@ -9,3 +9,9 @@ export function canOpenWorkspace(workspace: string, modules: readonly string[] =
 export function accessibleWorkspaces(modules: readonly string[] = []) {
   return Object.keys(workspaceModules).filter(workspace => canOpenWorkspace(workspace, modules));
 }
+
+// Navigation visibility never grants data access; WorkspaceBoundary and the API
+// continue to enforce module grants, including for Super Admin.
+export function visibleWorkspaces(user: {role: string; modules?: readonly string[]}) {
+  return user.role === 'SUPER_ADMIN' ? Object.keys(workspaceModules) : accessibleWorkspaces(user.modules).filter(area => area === 'B2C');
+}
