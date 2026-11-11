@@ -1,4 +1,5 @@
-import {useState} from 'react';
+import {useState, type MouseEvent} from 'react';
+import OrderWorkPanel from './OrderWorkPanel';
 import {Link,useLocation} from 'react-router-dom';
 import {useAuth} from '@/contexts/AuthContext';
 import {Button} from '@/components/ui/button';
@@ -18,12 +19,18 @@ import {useEffect} from 'react';
 import WorkspaceCounts from './WorkspaceCounts';
 const field='mt-1 block w-full rounded-lg border bg-background p-2 text-sm';
 export default function WorkList(){
+ const [selectedOrder,setSelectedOrder]=useState<string|null>(null);
  const {user}=useAuth();const location=useLocation();const workspace=location.pathname.split('/')[2]||'B2C';const area=workspace==='B2C'?(location.pathname.includes('LOGIC')?'LOGIC':'TIAL'):workspace;
  const [tab,setTab]=useState('incoming'),[command,setCommand]=useState(''),[mine,setMine]=useState(true),[from,setFrom]=useState(''),[to,setTo]=useState(''),[hd,setHd]=useState(''),[status,setStatus]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(1);
  const [debouncedSearch,setDebouncedSearch]=useState('');useEffect(()=>{if(search===debouncedSearch)return;const timer=setTimeout(()=>{setDebouncedSearch(search);setPage(1);},350);return()=>clearTimeout(timer);},[search,debouncedSearch]);
  const query={area,command,tab,mine:String(mine),from,to,hd,status,q:debouncedSearch.trim(),page:String(page)};const validDate=(!from&&!to)||(Boolean(from&&to)&&from<=to);
  const path='/orders?'+new URLSearchParams({...query,...(!validDate?{from:'',to:''}:{})});
  const {data,loading,error,arrival,refresh}=useWorkData<Data>(path,{area,page});const now=useServerClock(data?.serverNow);
+ function openOrder(event:MouseEvent<HTMLAnchorElement>,id:string){
+  if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+  event.preventDefault();setSelectedOrder(id);
+ }
+ function closePanel(){const id=selectedOrder;setSelectedOrder(null);requestAnimationFrame(()=>{const target=id?document.querySelector<HTMLAnchorElement>(`a[data-order-id="${CSS.escape(id)}"]`):null;(target||document.getElementById('operational-main'))?.focus();});}
  function change(fn:()=>void){setPage(1);fn();}
  return <>
  <PageHeader eyebrow={`Ruang kerja · ${workspace}`} title={`Daftar pekerjaan ${area==='LOGIC'?'LOGIC / SOLVER':area}`} actions={<OrderNotifications area={area}/>} />
@@ -47,8 +54,17 @@ export default function WorkList(){
  {tab==='finished'&&user?.role!=='SHOW_ONLY'&&validDate&&search===debouncedSearch&&<ExportButton key={user?.id} query={query}/>}
  <Section title={tab==='incoming'?'ORDER MASUK':tab==='duplicates'?'DUPLIKAT MENUNGGU':tab==='process'?'PROSES CEK':'SELESAI'} description="Data diperbarui otomatis · sesuai filter dan akses modul Anda.">
  {loading&&<p role="status" className="mb-2 text-xs text-muted-foreground">{data?'Memperbarui data…':'Memuat pekerjaan…'}</p>}{error&&<div role="alert" className="mb-3 text-sm"><p>{error}</p>{data&&<p>Data terakhir belum berhasil diperbarui.</p>}<Button variant="outline" onClick={()=>void refresh()}>Coba lagi</Button></div>}
- {data&&!data.data.length?<Empty text="Tidak ada pekerjaan sesuai filter."/>:data&&<div className="op-order-table-wrap"><table className="op-order-table w-full text-left text-sm"><caption className="sr-only">Daftar pekerjaan {area}</caption><thead className="border-b text-xs text-muted-foreground"><tr>{['Identifier order','Kategori','Status','Petugas','Waktu masuk','Pengerjaan'].map(s=><th key={s} scope="col" className="p-2 font-medium">{s}</th>)}</tr></thead><tbody>{data.data.map(o=><tr key={o.id} className="border-b last:border-0 hover:bg-muted/40"><td className="p-3"><div className="flex flex-wrap items-center justify-between gap-2"><Link className="font-medium text-primary underline" to={`/orders/${o.id}`}>{o.scIn||o.inetMasked||'Order /'+o.command}</Link>{validDate&&<Actions key={`${user?.id}:${o.id}`} compact order={o} refresh={refresh}/>}</div><p className="mt-1 text-[10px] text-muted-foreground">SC/IN: {o.scIn||'—'} · INET: {o.inetMasked||'—'}</p></td><td data-label="Kategori" className="p-3 text-xs">{o.module}<span className="block text-muted-foreground">/{o.command}</span></td><td data-label="Status" className="p-3"><WorkStatusBadge status={o.status} decision={o.decision}/></td><td data-label="Petugas" className="p-3 text-xs">{o.ownerName||'Belum PICK'}</td><td data-label="Waktu masuk" className="p-3 text-xs">{new Date(o.receivedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</td><td data-label="Pengerjaan" className="p-3 text-xs tabular-nums"><WorkTimer order={o} now={now}/><FeedbackStatus feedback={o.feedback}/></td></tr>)}</tbody></table></div>}
+ {data&&!data.data.length?<Empty text="Tidak ada pekerjaan sesuai filter."/>:data&&<div className="op-order-table-wrap"><table data-process={tab==='process'} className="op-order-table w-full text-left text-sm"><caption className="sr-only">Daftar pekerjaan {area}</caption>
+ <thead className="border-b text-xs text-muted-foreground"><tr>{(tab==='process'?['Order','Petugas','Durasi']:['Identifier order','Kategori','Status','Petugas','Waktu masuk','Pengerjaan']).map(label=><th key={label} scope="col" className="p-2 font-medium">{label}</th>)}</tr></thead>
+ <tbody>{data.data.map(order=><tr key={order.id} data-selected={selectedOrder===order.id} className="border-b last:border-0 hover:bg-muted/40">
+ <td className="p-3"><div className="flex flex-wrap items-center justify-between gap-2"><Link data-order-id={order.id} aria-haspopup="dialog" className="font-medium text-primary underline" to={`/orders/${order.id}`} onClick={event=>openOrder(event,order.id)}>{order.scIn||order.inetMasked||'Order /'+order.command}</Link>{validDate&&tab!=='process'&&<Actions key={`${user?.id}:${order.id}`} compact order={order} refresh={refresh}/>}</div><p className="mt-1 text-[10px] text-muted-foreground">{tab==='process'?`${order.module} · /${order.command}`:`SC/IN: ${order.scIn||'—'} · INET: ${order.inetMasked||'—'}`}</p></td>
+ {tab!=='process'&&<><td data-label="Kategori" className="p-3 text-xs">{order.module}<span className="block text-muted-foreground">/{order.command}</span></td><td data-label="Status" className="p-3"><WorkStatusBadge status={order.status} decision={order.decision}/></td></>}
+ <td data-label="Petugas" className="p-3 text-xs">{order.ownerName||'Belum PICK'}</td>
+ {tab!=='process'&&<td data-label="Waktu masuk" className="p-3 text-xs">{new Date(order.receivedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</td>}
+ <td data-label="Pengerjaan" className="p-3 text-xs tabular-nums"><WorkTimer order={order} now={now}/>{tab!=='process'&&<FeedbackStatus feedback={order.feedback}/>}</td></tr>)}</tbody></table></div>}
  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><span className="text-xs text-muted-foreground">Halaman {page}</span><div className="flex gap-2"><Button variant="outline" disabled={loading||page<=1} onClick={()=>setPage(p=>p-1)}>Sebelumnya</Button><Button variant="outline" disabled={loading||!data?.hasMore||page>=10000} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div>
- </Section><Link className="text-sm text-primary underline" to="/recap">Dashboard Rekap</Link>
+ </Section>
+ {selectedOrder&&<OrderWorkPanel id={selectedOrder} orders={data?.data||[]} onSelect={setSelectedOrder} onClose={closePanel} onChange={refresh}/>}
+ <Link className="text-sm text-primary underline" to="/recap">Dashboard Rekap</Link>
  </>;
 }
