@@ -49,12 +49,12 @@ test('offline integrated HTTP rehearsal: pending approval, Telegram ingestion, d
   const {winner}=await pickRace((i,body)=>action([first,second][i],body)),owner=[first,second][winner],other=[first,second][1-winner];
   assert.equal(pool.state.outbox.length,1);assert.equal(pool.state.audit.filter(p=>p[2]==='PICK').length,1);assert.equal(pool.state.audit.filter(p=>p[2]==='ACTION_REJECTED').length,1);
   let detail=await (await send('/api/operations/orders/'+id,owner)).json();assert.equal(detail.data.status,'IN_PROGRESS');assert.equal(detail.data.feedback.status,'ANTRE');
-  assert.equal((await action(other,{requestId:randomUUID(),version:1,action:'DONE'})).status,409);
-  assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'FAILED',note:'  '})).status,400);
-  assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'DONE',note:'Checked'})).status,200);
+  assert.equal((await action(other,{requestId:randomUUID(),version:1,action:'DONE',confirm:true})).status,409);
+  assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'FAILED',confirm:true,note:'  '})).status,400);
+  assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'DONE',confirm:true,note:'Checked'})).status,200);
   detail=await (await send('/api/operations/orders/'+id,owner)).json();assert.equal(detail.data.status,'DONE');assert.ok(detail.data.finishedAt);
   assert.equal((await action(owner,{requestId:randomUUID(),version:2,action:'REOPEN',confirm:true})).status,200);
-  assert.equal((await action(owner,{requestId:randomUUID(),version:3,action:'FAILED',note:'  Port unavailable  '})).status,200);
+  assert.equal((await action(owner,{requestId:randomUUID(),version:3,action:'FAILED',confirm:true,note:'  Port unavailable  '})).status,200);
   const audit=JSON.parse(pool.state.audit.at(-1)[6]),outbox=pool.state.outbox.at(-1);
   assert.equal(audit.outboxId,outbox.id);assert.ok(outbox.idem_key.endsWith(':'+audit.requestId));assert.equal(audit.note,'Port unavailable');
   assert.ok(JSON.parse(outbox.payload).text.includes('Port unavailable'));

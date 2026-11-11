@@ -44,7 +44,7 @@ test('health check is loopback HTTPS frontend only, validates content and assets
  const html='<script src="/assets/test-abcdefgh.js"></script>',asset='fixture',files={'assets/test-abcdefgh.js':release.digest(asset)};const urls=[];await release.healthCheck('https://localhost:8443/login',async(url,options)=>{urls.push(String(url));assert.equal(options.redirect,'error');return new Response(url.pathname==='/login'?html:asset);})({indexHash:release.digest(html),files});assert.equal(urls.length,2);await assert.rejects(release.healthCheck('https://localhost/login',async()=>new Response('wrong build'))({indexHash:release.digest(html),files}),/HEALTH_FAILED/);
 });
 test('operational-write deployment remains unchanged and frontend wrapper has no runtime/service/secret commands',async()=>{
- const {execFileSync}=require('node:child_process');const baseline=execFileSync('git',['show','61d360a:scripts/deploy-hdwork2-operational.ps1'],{encoding:'utf8'});assert.equal(await fs.readFile('scripts/deploy-hdwork2-operational.ps1','utf8'),baseline);
+ const {execFileSync}=require('node:child_process');const baseline=execFileSync('git',['show','61d360a:scripts/deploy-hdwork2-operational.ps1'],{encoding:'utf8'});assert.equal((await fs.readFile('scripts/deploy-hdwork2-operational.ps1','utf8')).replace(/\r\n/g,'\n'),baseline.replace(/\r\n/g,'\n'));
  const script=await fs.readFile('scripts/deploy-hdwork2-frontend-only.ps1','utf8');assert.doesNotMatch(script,/Set-ScheduledTask|Start-ScheduledTask|Stop-ScheduledTask|Restart-Service|ProtectedData|OP_WRITE_ENABLED|HDWORK2_LOCAL_READ_ONLY|HDWORK2_OPERATIONAL_WRITE_APPROVED/);assert.match(script,/\$Mode='Stage'/);
 });
 

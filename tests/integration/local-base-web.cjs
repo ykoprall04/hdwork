@@ -75,12 +75,12 @@ async function exercise(pool) {
       let detail=await send('/api/operations/orders/'+id,{session:owner});
       assert.equal(detail.data.data.status,'IN_PROGRESS');assert.ok(detail.data.data.startedAt);assert.equal(detail.data.data.feedback.status,'ANTRE');
       assert.equal(detail.data.history.filter(e=>e.action==='PICK').length,1);
-      assert.equal((await action(owner,{requestId:randomUUID(),version:0,action:'DONE'})).status,409);
-      assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'FAILED',note:'  '})).status,400);
-      assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'DONE',note:'Checked'})).status,200);
+      assert.equal((await action(owner,{requestId:randomUUID(),version:0,action:'DONE',confirm:true})).status,409);
+      assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'FAILED',confirm:true,note:'  '})).status,400);
+      assert.equal((await action(owner,{requestId:randomUUID(),version:1,action:'DONE',confirm:true,note:'Checked'})).status,200);
       detail=await send('/api/operations/orders/'+id,{session:owner});assert.equal(detail.data.data.status,'DONE');assert.ok(detail.data.data.finishedAt);
       assert.equal((await action(owner,{requestId:randomUUID(),version:2,action:'REOPEN',confirm:true})).status,200);
-      assert.equal((await action(owner,{requestId:randomUUID(),version:3,action:'FAILED',note:'  Synthetic failure  '})).status,200);
+      assert.equal((await action(owner,{requestId:randomUUID(),version:3,action:'FAILED',confirm:true,note:'  Synthetic failure  '})).status,200);
       // Deterministic cross-day duration in this verified disposable schema only.
       await pool.execute("UPDATE hd2_orders SET started_at='2026-11-01 00:00:00',finished_at='2026-11-02 11:15:00' WHERE id=?",[id]);
       detail=await send('/api/operations/orders/'+id,{session:owner});assert.equal(detail.data.data.status,'FAILED');assert.equal(detail.data.data.note,'Synthetic failure');

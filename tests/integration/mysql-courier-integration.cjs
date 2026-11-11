@@ -104,7 +104,7 @@ async function run({ env = process.env, argv = process.argv.slice(2), driverFact
     const other=1-winner;await action(canonical.id,accounts[other],'TAKEOVER');
     const stale=await (await web('/orders/'+canonical.id,accounts[winner])).json();
     assert.equal(stale.data.status,'IN_PROGRESS');assert.equal(stale.data.feedback.status,'ANTRE');
-    assert.equal((await web('/orders/'+canonical.id+'/actions',accounts[winner],{requestId:randomUUID(),version:stale.data.version,action:'DONE'})).status,409);
+    assert.equal((await web('/orders/'+canonical.id+'/actions',accounts[winner],{requestId:randomUUID(),version:stale.data.version,action:'DONE',confirm:true})).status,409);
     await action(canonical.id,accounts[other],'DONE','checked');
     const before=Number((await pool.query('SELECT COUNT(*) AS n FROM hd2_courier_outbox'))[0][0].n);
     await action(canonical.id,accounts[0],'REOPEN',undefined,true);

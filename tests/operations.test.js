@@ -7,12 +7,12 @@ const base={id:'x',command:'order',status:'WAITING',owner_user_id:null,final_use
 test('PICK/takeover/done/failure/reopen policy, exact Telegram contracts and role ownership guards',()=>{
  assert.equal(transition(base,hd,{action:'PICK'}).text,'🟡 Data di cek Ermas Putri');
  const active={...base,status:'IN_PROGRESS',owner_user_id:1};
- assert.equal(transition(active,hd,{action:'DONE'}).text,'✅ Done (ACTCOMP)\nJgn lupa VALINS after PS. Salam, Ermas Putri!');
- assert.equal(transition(active,hd,{action:'DONE',note:' checked '}).text,'✅ Done (ACTCOMP)\nchecked\nJgn lupa VALINS after PS. Salam, Ermas Putri!');
- for(const command of ['config_psb','mo','req']){assert.equal(transition({...active,command},hd,{action:'DONE'}).text,'✅ Done');assert.equal(transition({...active,command},hd,{action:'DONE',note:'note'}).text,'✅ Done\nnote');}
- assert.equal(transition(active,hd,{action:'FAILED',note:' failed reason '}).text,'❌ failed reason');
- for(const note of ['', '   '])assert.throws(()=>transition(active,hd,{action:'FAILED',note}));
- assert.throws(()=>transition(active,{...hd,id:2},{action:'DONE'}));
+ assert.equal(transition(active,hd,{action:'DONE',confirm:true}).text,'✅ Done (ACTCOMP)\nJgn lupa VALINS after PS. Salam, Ermas Putri!');
+ assert.equal(transition(active,hd,{action:'DONE',confirm:true,note:' checked '}).text,'✅ Done (ACTCOMP)\nchecked\nJgn lupa VALINS after PS. Salam, Ermas Putri!');
+ for(const command of ['config_psb','mo','req']){assert.equal(transition({...active,command},hd,{action:'DONE',confirm:true}).text,'✅ Done');assert.equal(transition({...active,command},hd,{action:'DONE',confirm:true,note:'note'}).text,'✅ Done\nnote');}
+ assert.equal(transition(active,hd,{action:'FAILED',confirm:true,note:' failed reason '}).text,'❌ failed reason');
+ for(const note of ['', '   '])assert.throws(()=>transition(active,hd,{action:'FAILED',confirm:true,note}));
+ assert.throws(()=>transition(active,{...hd,id:2},{action:'DONE',confirm:true}));
  const takeover=transition(active,{...hd,id:2,name:'New HD'},{action:'TAKEOVER'});assert.equal(takeover.next.owner_user_id,2);assert.equal(takeover.next.status,'IN_PROGRESS');assert.equal(takeover.text,'🟡 Data di cek New HD');assert.equal(takeover.next.resetStart,true);
  for(const role of ['ADMIN','SUPER_ADMIN','SHOW_ONLY'])assert.throws(()=>transition(base,{...hd,role},{action:'PICK'}),{statusCode:403});
  assert.throws(()=>transition(base,{...hd,is_active:0},{action:'PICK'}));assert.throws(()=>transition(base,{...hd,modules:['REQ']},{action:'PICK'}));
