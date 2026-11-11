@@ -1,7 +1,7 @@
 // Serialized SQL fixture; no driver or external service.
 const {randomUUID}=require('node:crypto');
-function fixture(){
- const id=randomUUID();let state={order:{id,bot_id:'synthetic-four',chat_id:'-1007002',message_id:'102',thread_id:'11',command:'b2b',module:'B2B',status:'WAITING',version:0,telegram_timestamp:1700000000,owner_user_id:null,final_user_id:null,duplicate_of:null,duplicate_decision:null},requests:[],outbox:[],audit:[]},tail=Promise.resolve();
+function fixture({module='B2B',command='b2b'}={}){
+ const id=randomUUID();let state={order:{id,bot_id:'synthetic-four',chat_id:'-1007002',message_id:'102',thread_id:'11',command,module,status:'WAITING',version:0,telegram_timestamp:1700000000,owner_user_id:null,final_user_id:null,duplicate_of:null,duplicate_decision:null},requests:[],outbox:[],audit:[]},tail=Promise.resolve();
  const pool={async execute(sql,p){const c=await pool.getConnection();try{return await c.execute(sql,p);}finally{c.release();}},get state(){return state;},async getConnection(){const previous=tail;let unlock;tail=new Promise(r=>unlock=r);await previous;let saved;return {
   async query(){return [[]];},async beginTransaction(){saved=structuredClone(state);},async commit(){},async rollback(){state=saved;},release(){unlock();},
   async execute(sql,p=[]){
@@ -12,7 +12,7 @@ function fixture(){
    if(sql.includes('FROM hd2_audit'))return [state.audit.slice().reverse().map(p=>({id:p[0],action:p[2],from_status:p[4],to_status:p[5],detail:p[6],at:'2026-11-09T00:00:00Z'}))];
 
    if(sql.includes('FROM users'))return [[{id:p[0],name:'Synthetic',role:'HD',is_active:1}]];
-   if(sql.includes('FROM hd2_user_modules'))return [[{module:'B2B'}]];
+   if(sql.includes('FROM hd2_user_modules'))return [[{module}]];
    if(sql.includes('FROM hd2_sessions'))return [[{token_hash:'synthetic'}]];
    if(sql.startsWith('SELECT * FROM hd2_orders'))return [[state.order]];
    if(sql.startsWith('INSERT INTO hd2_web_requests')){if(!state.requests.some(r=>r.user_id===p[0]&&r.request_id===p[1]))state.requests.push({user_id:p[0],request_id:p[1],payload_hash:p[3],result:null});return [{}];}

@@ -29,3 +29,25 @@ test('production database routing is explicit and preserves pinned legacy valida
  const {validate}=require('../src/config/production-courier'),path=require('node:path');const root=path.resolve('/tmp/synthetic-secret-root');const plan={version:1,environment:'production',telegramBotId:'9133904377',botId:'synthetic-all',botUsername:'SyntheticAllBot',port:3091,groups:[group],secretRoot:root,tokenDpapiFile:'.local/courier-secrets/token.dpapi',serviceKeyDpapiFile:'.local/courier-secrets/service.dpapi',identityKeyDpapiFile:'.local/courier-secrets/identity.dpapi',dbPasswordDpapiFile:'.local/courier-secrets/database.dpapi',journalDirectory:path.resolve('/tmp/synthetic-new-journal'),sourceJournalDirectory:path.resolve('/tmp/synthetic-source-journal'),lockDirectory:path.resolve('/tmp/synthetic-lock'),activationNotBefore:'2026-11-10T13:20:35.278Z'};
  assert.throws(()=>validate(plan),/THREE_NON_TOPIC/);assert.equal(validate({...plan,routingMode:'database'}).groups[0].profile,'ALL');assert.throws(()=>validate({...plan,routingMode:'anything'}),/PRODUCTION_ROUTING_MODE_REJECTED/);
 });
+
+test('every shared ALL group accepts PSB and uppercase MO into the correct module without a separate SOLVER group',async()=>{
+ const groups=[group,{chatId:'-1002',threadId:'12',threadMode:'thread',profile:'ALL',commands}];
+ const pool=mockPool(),store=new MysqlStore({pool,botId:'synthetic-all',orderedInbox:true});
+ const policy=createGroupPolicy({botId:store.botId,botUsername:'SyntheticAllBot',groups});
+ const config=await require('../src/system/routing').databasePolicy({system:{async routing(){return groups;}},botId:store.botId,botUsername:'SyntheticAllBot'}).workflow({enabled:true,webOnly:true,botId:store.botId,botUsername:'SyntheticAllBot',identityKey:'synthetic-shared-identity-key-000000',dedupeBy:'sc_in',actors:[]});
+ const processor=require('../src/b2c-workflow/workflow').createB2CProcessor({store,config});
+ let index=0;
+ for(const target of groups){
+  assert.equal(require('../src/operations/b2c-readiness').routes([target]).configured,true);
+  for(const text of ['/config_psb\nORDER ID:X-AO2\nSTO:ABC','/MO\nSC/IN:X-MO3\nSTO:ABC']){
+   const body=envelope(text,index++);body.event.chat_id=target.chatId;body.event.telegram_thread_id=target.threadId;
+   await store.accept(policy.ingress(body));assert.equal(await processor.processNext(),true);
+  }
+ }
+ const rows=[...pool.state.orders.values()];assert.equal(rows.length,4);
+ for(const target of groups){
+  const actual=rows.filter(row=>row.chat_id===target.chatId);
+  assert.deepEqual(actual.map(row=>row.module).sort(),['LOGIC_MO','LOGIC_PSB']);
+  for(const row of actual)assert.equal(row.thread_id,target.threadId);
+ }
+});

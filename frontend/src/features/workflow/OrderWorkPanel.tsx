@@ -35,11 +35,13 @@ export default function OrderWorkPanel({ id, orders, onSelect, onClose, onChange
     <div className="op-work-panel-content">
       {detail.loading && !order && <p role="status">Memuat detail pekerjaan…</p>}
       {detail.error && <div role="alert"><p>{detail.error}</p><Button variant="outline" onClick={() => void detail.refresh()}>Coba muat detail</Button></div>}
-      {order && <><div className="flex flex-wrap items-center gap-3"><WorkStatusBadge status={order.status} decision={order.decision} /><span className="text-xs text-muted-foreground">Petugas: {order.ownerName || 'Belum PICK'}</span></div>
+      {order && <><div className="op-panel-summary"><div className="flex flex-wrap items-center gap-3"><WorkStatusBadge status={order.status} decision={order.decision} /><span className="text-xs text-muted-foreground">Petugas: {order.ownerName || 'Belum PICK'}</span></div>
         <section aria-label="Pesan asli Telegram" className="op-original-message"><h3 className="mb-3 font-semibold">Pesan asli Telegram</h3><p className="whitespace-pre-wrap break-words text-sm">{detail.data?.originalMessage || detail.data?.requestText || 'Pesan asli belum tersedia dari API.'}</p></section>
-        <section aria-label="Tindakan pekerjaan" className="op-panel-actions"><h3 className="mb-3 font-semibold">Tindakan pekerjaan</h3>{detail.error ? <p className="text-sm">Detail belum terverifikasi. Muat ulang sebelum melakukan tindakan.</p> : <Actions key={`${user?.id}:${id}`} order={order} refresh={refresh} escalationEnabled={detail.data?.capabilities?.escalate===true} />}<FeedbackStatus feedback={order.feedback} /></section>
-        {import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true' ? <OrderChat key={`${user?.id}:${id}`} id={id} order={detail.error ? undefined : order} onChange={refresh} /> : <p>Live chat belum diaktifkan pada build ini.</p>}
+        <FeedbackStatus feedback={order.feedback} />
         <Link className="text-sm text-primary underline" to={`/orders/${id}`}>Buka halaman detail lengkap</Link>
+        </div>
+        {import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true' ? <OrderChat key={`${user?.id}:${id}`} id={id} order={detail.error ? undefined : order} onChange={refresh} actions={detail.error ? <p>Detail belum terverifikasi. Muat ulang sebelum melakukan tindakan.</p> : <Actions key={`${user?.id}:${id}`} order={order} refresh={refresh} escalationEnabled={detail.data?.capabilities?.escalate===true} />} /> : <><p>Live chat belum diaktifkan pada build ini.</p>{!detail.error && <Actions key={`${user?.id}:${id}`} order={order} refresh={refresh} escalationEnabled={detail.data?.capabilities?.escalate===true}/>}</>}
+
       </>}
     </div>
   </aside>;
