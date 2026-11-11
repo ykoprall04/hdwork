@@ -89,3 +89,20 @@ The web starts first. A new READY state with both native operational pools is re
 For a failure before any service start attempt, the script restores pre-start source/config/frontend and original Courier action and attempts to resume only those two original tasks, retaining additive migration 014. After the durable start-attempt marker, backend downgrade is prohibited because mapping/disable boundaries might already have been used. It requests Courier stop, restores the previous frontend, retains the fence-capable backend/config, and reports the actual error for recovery. It never restores old database rows, removes migration columns, resets journal/offset/cutoff or enables testing services. A previous failed apply is not blindly retried over an ambiguous state.
 
 After successful host status, confirm a new incoming Telegram reply appears in the web and a new authorized web reply is received in Telegram. Add/convert groups through the web and test the supported routes; do not report real delivery based only on mock/native test fixtures or task readiness.
+
+### Resume after local TLS issuer verification failure
+
+Observed Windows state: native migration 014 PASS, approved files applied and existing Courier action repinned; web boot reached READY but Node health failed with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. The script restored the previous frontend, kept the new fencing backend/config and requested Courier stop. The durable marker remains `START_ATTEMPTED`. Do not rerun Apply over this state or restore the old backend.
+
+The health checker had supplied the leaf certificate as its CA. The existing protected runtime installation already copies `localhost.crt`, `localhost.key` and public `ca.crt`; verification now uses that existing public issuer CA (or an existing explicit `LOCAL_TLS_CA` path). It cryptographically verifies issuer/root signatures and validity, retains `rejectUnauthorized: true` and hostname verification, and pins the served leaf to the configured runtime certificate. No key is read by health, no certificate/store/tunnel configuration is changed, and no TLS bypass is enabled. A real local CA-signed HTTPS regression reproduces the old error and checks both successful verification and rejection of an unrelated CA.
+
+```powershell
+cd D:\HDWork2-New
+git pull --ff-only origin chore/remove-cacti-hdwork2
+if ($LASTEXITCODE -ne 0) { throw 'Synchronization failed.' }
+.\scripts\deploy-shared-groups-release.ps1 -Mode Resume
+```
+
+Resume validates the already deployed backend/config/autostart pins and expected task identity, checks TLS plus the currently served known frontend before modifying anything, and re-verifies migration 014 read-only with the existing reader account. It reinstalls only the approved static frontend, validates served hashes over trusted TLS, and starts the existing repinned Courier task only if needed after its prior lease expires. An already healthy controller is reused; an unverified running/listening controller blocks the operation. The web is not restarted, backend/config/credentials are not rewritten, and migration/journal/offset/cutoff/old queue rows remain untouched. Failure after a frontend change restores only the previous frontend and retains fencing. The same deployment mutex prevents concurrent Apply/Resume operations.
+
+Expected host result remains `SHARED_GROUPS_RUNTIME_READY`. This does not replace the required new Telegram→web and web→Telegram delivery tests.

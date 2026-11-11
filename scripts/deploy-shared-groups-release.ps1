@@ -1,7 +1,7 @@
 # Approved deployment for app 827bb86. No migrations, credentials changes or Telegram test sends.
 [CmdletBinding()]
 param(
- [ValidateSet('Apply','Status')][string]$Mode='Status',
+ [ValidateSet('Apply','Status','Resume')][string]$Mode='Status',
  [string]$Directory='C:\ProgramData\HDWork2SharedGroups-d9252dccb37d4cc383a644c3b1ba44f0',
  [string]$ReleasePlanSha256='17c858079bb10c54bff4474a3bf5bc437f5e013fb06b7b5357b512eadd729674'
 )
@@ -64,6 +64,44 @@ $mutexOwned=$false
 try{
  try{$mutexOwned=$deploymentMutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$mutexOwned=$true}
  if(-not $mutexOwned){throw 'ANOTHER_SHARED_GROUP_DEPLOYMENT_IS_RUNNING'}
+if($Mode -eq 'Resume'){
+ Engine 'verify-runtime'
+ $null=OwnedWeb
+ if(-not (WebReady)){throw 'FENCING_WEB_NOT_READY_NO_RESUME_CHANGES'}
+ $state=Get-Content -LiteralPath (Join-Path $Directory 'apply-state.json') -Raw|ConvertFrom-Json
+ if($state.state -notin @('START_ATTEMPTED','ACTIVE_HOST_CHECKS_PENDING_REAL_CHAT')){throw 'EXPECTED_POSTSTART_RECOVERY_STATE_REQUIRED'}
+ $courier=& $installer -Mode Status -Directory $auto|ConvertFrom-Json
+ $cfg=Get-Content -LiteralPath (Join-Path $auto 'config.json') -Raw|ConvertFrom-Json
+ foreach($name in @('HDWork2-Telegram-Service','HDWork2-Telegram-Testing')){$legacy=Get-ScheduledTask -TaskPath '\' -TaskName $name -ErrorAction SilentlyContinue;if($legacy -and [string]$legacy.State -ne 'Disabled'){throw 'OLD_TELEGRAM_TASK_MUST_REMAIN_DISABLED'}}
+ if(-not $courier.Healthy -and ([string]$courier.TaskState -eq 'Running' -or @(Get-NetTCPConnection -LocalPort $cfg.port -State Listen -ErrorAction SilentlyContinue).Count)){throw 'UNVERIFIED_RUNNING_COURIER_RESUME_STOPPED'}
+ # First prove trust and current served files without changing the frontend/task.
+ Engine 'health-current'
+ & (Join-Path $PSScriptRoot 'resume-shared-group-backup.ps1') -Directory $Directory -ReleasePlanSha256 $ReleasePlanSha256 -VerifyMigrationOnly
+ $frontTouched=$false;$courierStartIssued=$false
+ try{
+  $frontTouched=$true;Engine 'resume-frontend';Engine 'health'
+  if(-not $courier.Healthy){
+   $proof=Get-Content -LiteralPath (Join-Path $Directory 'migration014.verify.json') -Raw|ConvertFrom-Json
+   $remaining=[double]$proof.workerLeaseExpiresMs-[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+   if($remaining -gt 65000){throw 'UNEXPECTED_COURIER_LEASE_EXPIRY'}
+   if($remaining -gt 0){Write-Output 'WAITING_FOR_EXISTING_LEASE_NO_SECOND_POLLER';while([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() -le [double]$proof.workerLeaseExpiresMs){Start-Sleep -Seconds 1}}
+   Enable-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier'|Out-Null
+   $courierStartIssued=$true;& $installer -Mode Start -Directory $auto
+  }
+  $courier=& $installer -Mode Status -Directory $auto|ConvertFrom-Json
+  if(-not $courier.Healthy){throw 'COURIER_NOT_READY_AFTER_RESUME'}
+  if(-not (WebReady)){throw 'WEB_NOT_READY_AFTER_COURIER_RESUME'}
+  if($state.state -eq 'START_ATTEMPTED'){Engine 'mark-active'}
+  [pscustomobject]@{Status='SHARED_GROUPS_RUNTIME_READY';Release=$p.release;WebReady=(WebReady);Courier=$courier.Status;TLS='VERIFIED_WITH_EXISTING_CA_AND_LEAF_PIN';Autostart='EXISTING_TASK_REUSED';WebRestarted=$false;ManagementSqlWrites=$false;RealTwoWayTest='PENDING_OPERATOR_CONFIRMATION'}|ConvertTo-Json
+ }catch{
+  $failure=$_;Write-Output ('RESUME_ERROR: '+$failure.Exception.Message)
+  if($courierStartIssued){Disable-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier'|Out-Null;Stop-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier'}
+  if($frontTouched){Engine 'restore-frontend'}
+  Write-Output 'FENCING_BACKEND_RETAINED_NO_DOWNGRADE_NO_QUEUE_REPLAY'
+  throw $failure
+ }
+ return
+}
 if(Test-Path -LiteralPath (Join-Path $Directory 'apply-state.json')){throw 'DEPLOYMENT_ALREADY_ATTEMPTED_USE_STATUS_OR_RECOVERY'}
 foreach($name in @('HDWork2-Telegram-Service','HDWork2-Telegram-Testing')){$old=Get-ScheduledTask -TaskPath '\' -TaskName $name -ErrorAction SilentlyContinue;if($old -and [string]$old.State -ne 'Disabled'){throw 'OLD_TELEGRAM_TASK_MUST_STAY_DISABLED'}}
 $oldCourier=Get-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier'

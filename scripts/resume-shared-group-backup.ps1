@@ -15,11 +15,18 @@ $plan=Get-Content -LiteralPath $planFile -Raw|ConvertFrom-Json
 if($plan.ownerSid -ne $identity.User.Value -or $plan.release -ne '827bb86c83ae5b6edd8f0e8f601df2e4cd00207a' -or -not $plan.backupComplete){throw 'APPROVED_RELEASE_AND_OWNER_REQUIRED'}
 if(-not $VerifyMigrationOnly){foreach($file in @('mapping-backup.json','mapping-backup.report.json','migration-014.native.review.sql')){if(Test-Path -LiteralPath (Join-Path $Directory $file)){throw 'MAPPING_BACKUP_ARTIFACT_ALREADY_EXISTS_DO_NOT_OVERWRITE'}}}
 # Revalidate all pinned active runtime/configuration bytes before reading the existing credential.
-Push-Location $root
-try{
- & $node -e "const fs=require('node:fs'),path=require('node:path');const p=JSON.parse(fs.readFileSync(path.join(process.argv[1],'release.review.json')));require('./scripts/courier-task-runner').configuration(path.join(p.autostart,'config.json'),p.configSha256);" $Directory
- if($LASTEXITCODE -ne 0){throw 'PINNED_RUNTIME_CHANGED_STOPPED'}
-}finally{Pop-Location}
+$activeEnvironment=Join-Path $plan.snapshot 'service/environment.json'
+$activeEnvironmentHash=(Get-FileHash -LiteralPath $activeEnvironment -Algorithm SHA256).Hash.ToLowerInvariant()
+if($VerifyMigrationOnly -and $activeEnvironmentHash -eq $plan.candidateEnvironmentSha256){
+ & $node (Join-Path $PSScriptRoot 'apply-shared-groups-release.js') verify-runtime --directory $Directory --plan-sha256 $ReleasePlanSha256
+ if($LASTEXITCODE -ne 0){throw 'DEPLOYED_FENCING_RUNTIME_CHANGED'}
+}else{
+ Push-Location $root
+ try{
+  & $node -e "const fs=require('node:fs'),path=require('node:path');const p=JSON.parse(fs.readFileSync(path.join(process.argv[1],'release.review.json')));require('./scripts/courier-task-runner').configuration(path.join(p.autostart,'config.json'),p.configSha256);" $Directory
+  if($LASTEXITCODE -ne 0){throw 'PINNED_RUNTIME_CHANGED_STOPPED'}
+ }finally{Pop-Location}
+}
 $plain=$null;$bundle=$null;$transfer=$null;$child=$null
 try{
  Add-Type -AssemblyName System.Security
