@@ -8,7 +8,7 @@ const { operatorJson } = require('../src/config/operator-json');
 const TARGET = 'ccc646a649ed2bd6a9e138f27a43efe96a536edd';
 const BASELINE = '090aa82643a46856d8963909b3ecbb2d8c9d95bf';
 const BACKEND = ['src/operations/b2c-readiness.js', 'src/operations/policy.js', 'src/operations/read.js'];
-const PREPARATION = new Set(['scripts/inspect-b2c-windows-release.js', 'scripts/inspect-b2c-windows-release.ps1', 'tests/b2c-windows-preparation.test.js', 'docs/b2c-windows-release.md', 'scripts/stage-b2c-isolated-web.js', 'scripts/stage-b2c-isolated-web.ps1', 'tests/b2c-isolated-web-stage.test.js']);
+const PREPARATION = new Set(['scripts/inspect-b2c-windows-release.js', 'scripts/inspect-b2c-windows-release.ps1', 'tests/b2c-windows-preparation.test.js', 'docs/b2c-windows-release.md', 'scripts/stage-b2c-isolated-web.js', 'scripts/stage-b2c-isolated-web.ps1', 'tests/b2c-isolated-web-stage.test.js', 'scripts/verify-b2c-isolated-web.js', 'scripts/activate-b2c-isolated-web.ps1', 'tests/b2c-isolated-web-activation.test.js']);
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const normalized = bytes => Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'));
 function read(file) {

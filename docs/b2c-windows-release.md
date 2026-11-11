@@ -138,3 +138,15 @@ Contoh parameter harus diisi dari hasil Windows aktual:
 Belum ada mode Apply pada helper staging. Cutover/rollback eksekutabel akan disiapkan dari bukti hasil staging dan identitas task/proses yang masih berlaku, dengan hanya proses web yang berpindah. Courier harus terus memakai snapshot lama dan satu controller yang sama.
 
 Tes staging memakai fixture filesystem: overlay tepat tiga file, preservation environment/ciphertext, task XML rollback, aset tab lama, penolakan collision/build/baseline/direktori existing dan ketiadaan operasi aktivasi. Windows ACL, copy aktual node_modules, boot LocalService dan integrasi produksi belum diverifikasi dari cloud.
+
+## Aktivasi web terisolasi dan rollback
+
+Setelah staging berhasil, gunakan `scripts/activate-b2c-isolated-web.ps1` dari checkout helper terbaru. Tidak perlu membangun ulang atau melakukan staging ulang. Wajib memasukkan `-StagedRuntime` dan `-PlanSha256` dari hasil Windows; jangan mengganti plan. Default `-Mode Verify` hanya memeriksa baseline, seluruh file staging, dependency native/policy secara offline, backup task, identitas proses dan pin Courier serta TLS/aset baseline.
+
+`-Mode Apply -ApproveWebCutover` melakukan preflight tersebut lalu menghentikan hanya task `HDWork2-Web`, menunggu proses web lama berhenti, mengganti hanya action task ke snapshot baru dan memulai web baru. Principal, trigger dan settings task dipertahankan. Mutex deployment bersama dan lock frontend mencegah deployment bersamaan; lock existing ditolak tanpa dihapus. Periksa output `B2C_WEB_ACTIVE`, READY read/write proses LocalService baru, TLS dan index/aset kandidat. Courier harus tetap READY dengan PID/start time yang sama pada snapshot lama. Tidak ada migrasi, replay antrean, perubahan autostart Courier atau konfigurasi/kredensial. Saat boot normal, web tetap membuka pool database melalui mekanisme protected service existing.
+
+Kegagalan setelah cutover memicu pemulihan action task lama dan verifikasi TLS/aset baseline. Hasil pemulihan `B2C_WEB_ROLLED_BACK_COURIER_PRESERVED`; kegagalan pemulihan dilaporkan `B2C_ROLLBACK_FAILED_PRESERVE_ALL_RUNTIME_AND_STATE`. Jangan menghapus direktori, journal atau lock untuk memaksa retry. Mode `Status` memeriksa runtime task aktif dan health terkait. Pemulihan manual menggunakan parameter stage/hash yang sama dengan `-Mode Rollback -ApproveWebCutover`.
+
+Plan immutable tetap menyatakan `STAGED_NOT_STARTED` dan hash-nya tidak berubah setelah aktivasi. Status aktivasi disimpan terpisah di `.b2c-release/activation.json`; gunakan mode Status untuk bukti proses/web aktual. Apply menolak journal yang sudah ada agar pengulangan tidak memicu restart tak sengaja.
+
+Tes fixture memeriksa drift plan, payload, backup rollback, baseline source/aset dan pin Courier; smoke offline memuat bcrypt/mysql2 dan menguji konfirmasi/eskalasi tanpa SQL/Telegram. Pemeriksaan statis memastikan operasi task controller hanya menargetkan web. Eksekusi PowerShell/ACL/task Windows belum diuji dari cloud. Verifikasi UI berizin dan live chat/order uji tetap diperlukan setelah health lulus; output helper mencatat `RealOrderAndChatTest=PENDING_OPERATOR_CHECK`.
