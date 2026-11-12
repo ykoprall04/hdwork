@@ -26,7 +26,7 @@ foreach($folder in @($Root,(Join-Path $Root 'Logs'),(Join-Path $Root 'Tools'))){
  Set-Acl -LiteralPath $folder -AclObject $acl
 }
 $tools=Join-Path $Root 'Tools'
-foreach($name in @('courier-log.js','courier-log.ps1')){
+foreach($name in @('courier-log.js','courier-log.ps1','courier-log-view.js')){
  $target=Join-Path $tools $name
  if(Test-Path -LiteralPath $target){
   if((Get-FileHash -LiteralPath $target).Hash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name)).Hash){throw 'EXISTING_VIEWER_DIFFERS_USE_NEW_ROOT'}

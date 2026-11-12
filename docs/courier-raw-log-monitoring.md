@@ -236,3 +236,17 @@ Viewer, documentation and validation:
 - `tests/courier-raw-log.test.js` (new)
 - `courier_bot/tests/test_raw_log.py` (new)
 - `docs/courier-raw-log-monitoring.md` (new)
+
+## Viewer modes (Stage 1)
+
+`courier-log` shows incoming/outgoing activity, queue changes, ACK, retry/errors and lifecycle
+changes. Healthy idle polls/SQL/cycles/empty claims and routine READY heartbeats are hidden.
+`courier-log -Raw` displays all technical events; `courier-log -Errors` displays failures,
+retry, uncertainty and diagnostic loss. Modes are mutually exclusive. Both human/default
+and raw views include WIB time with milliseconds and available per-stage duration.
+The raw view is still sanitized: unknown fields/free-text errors/chat/credentials are excluded.
+The default history searches backwards for up to 100 matching records, not just 100 idle lines.
+Viewer changes do not alter persisted log generation, daily rotation or 7-day retention.
+The viewer now ships with courier-log-view.js; install the three viewer files together through
+an approved tools update. Do not copy application files into pinned production snapshots.
+Ctrl+C still controls only the viewer process. No production install is performed in this commit.
