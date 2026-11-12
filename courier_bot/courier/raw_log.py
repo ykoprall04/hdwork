@@ -133,3 +133,6 @@ def observe(event, run, **values):
         raise
     finally:
         _context.reset(token)
+
+def current_trace_id():
+    return (_context.get() or {}).get('traceId')

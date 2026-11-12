@@ -59,4 +59,5 @@ function captureOutput(log=logger()){
  }
  return ()=>restore.forEach(fn=>fn());
 }
-module.exports={createLogger,logger,observe,errorInfo,fields,day,captureOutput};
+function withTrace(traceId,run){return context.run({traceId:typeof traceId==='string'&&UUID.test(traceId)?traceId:randomUUID()},run);}
+module.exports={createLogger,logger,observe,errorInfo,fields,day,captureOutput,withTrace};

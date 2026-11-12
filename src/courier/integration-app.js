@@ -6,6 +6,7 @@ const { fail } = require('./contract');
 function createIntegrationApp({ store, runtime, policy, botId, key, receive = false, send = false, now,testingRead,onFailure,ready=()=>true }) {
   const app = express(), verify = createServiceAuth({ botId, key, now });
   app.disable('x-powered-by');
+  app.use((req,_res,next)=>require('../observability/raw-log').withTrace(req.get('X-Courier-Trace'),next));
   app.use(createRateLimit({ limit: 300, windowMs: 60000 }));
   app.use(express.raw({ type: 'application/json', limit: '64kb' }));
   app.use(async (req, res, next) => {

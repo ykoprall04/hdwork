@@ -86,6 +86,8 @@ class DurableCourier:
                 return
 
     def flush_ack(self):
+        for row in self.journal.overdue_acks():
+            logger().emit('ACK_STALLED',correlationId=row['delivery_id'],queueAgeMs=row['age_ms'],status='ERROR',reason='ACK_OVERDUE')
         if self.fifo_ack:
             return self.flush_ack_independent()
         row = self.journal.next_ack()

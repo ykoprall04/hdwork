@@ -5,6 +5,7 @@ import re
 import time
 import uuid
 from .http import TransportError
+from .raw_log import current_trace_id
 
 class InternalClient:
     def __init__(self, config, transport, clock=time.time, nonce=lambda: uuid.uuid4().hex, fifo_ack=False):
@@ -18,7 +19,7 @@ class InternalClient:
         stamp, nonce = str(int(self.clock())), self.nonce()
         content = '\n'.join([self.config.bot_id, stamp, nonce, 'POST', path, hashlib.sha256(raw).hexdigest()])
         signature = hmac.new(self.config.service_key.encode(), content.encode(), hashlib.sha256).hexdigest()
-        return self.transport.post(self.config.server + path, raw, {'X-Courier-Id': self.config.bot_id, 'X-Courier-Time': stamp, 'X-Courier-Nonce': nonce, 'X-Courier-Signature': signature})
+        return self.transport.post(self.config.server + path, raw, {**({'X-Courier-Trace': current_trace_id()} if current_trace_id() else {}), 'X-Courier-Id': self.config.bot_id, 'X-Courier-Time': stamp, 'X-Courier-Nonce': nonce, 'X-Courier-Signature': signature})
 
     def event(self, event):
         return self.post('/internal/courier/v1/events', {**event, **({'worker': self.worker} if self.worker else {})})

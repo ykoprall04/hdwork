@@ -40,6 +40,10 @@ class Journal:
         for name in ('last_result', 'last_lease_token'):
             if name not in columns:
                 self.db.execute('ALTER TABLE deliveries ADD COLUMN '+name+' TEXT')
+        for name in ('ack_since', 'ack_alert_at'):
+            if name not in columns:
+                self.db.execute('ALTER TABLE deliveries ADD COLUMN '+name+' REAL')
+        self.db.execute("UPDATE deliveries SET ack_since=? WHERE ack IS NOT NULL AND ack_since IS NULL", (self.clock(),))
         self.db.execute('CREATE INDEX IF NOT EXISTS ack_due ON deliveries(state,due,seq)')
         self.db.commit()
         try:
@@ -141,8 +145,8 @@ class Journal:
     def delivery_result(self, delivery, result):
         ack = {'delivery_id': delivery['delivery_id'], 'lease_token': delivery['lease_token'], 'result': result}
         with self.db:
-            self.db.execute("UPDATE deliveries SET success_id=COALESCE(?,success_id),ack=?,last_result=?,last_lease_token=?,due=0,attempts=0,state='ACK_PENDING' WHERE delivery_id=?",
-                            (result.get('telegram_message_id') if result['result'] == 'sent' else None, encoded(ack), encoded(result), delivery['lease_token'], delivery['delivery_id']))
+            self.db.execute("UPDATE deliveries SET success_id=COALESCE(?,success_id),ack=?,last_result=?,last_lease_token=?,ack_since=?,ack_alert_at=NULL,due=0,attempts=0,state='ACK_PENDING' WHERE delivery_id=?",
+                            (result.get('telegram_message_id') if result['result'] == 'sent' else None, encoded(ack), encoded(result), delivery['lease_token'], self.clock(), delivery['delivery_id']))
 
     def next_ack(self, independent=False):
         if independent:
@@ -165,6 +169,13 @@ class Journal:
 
     def has_ack(self):
         return self.db.execute('SELECT 1 FROM deliveries WHERE ack IS NOT NULL LIMIT 1').fetchone() is not None
+
+    def overdue_acks(self, age=60, interval=60):
+        with self.db:
+            rows = self.db.execute("SELECT delivery_id,ack_since FROM deliveries WHERE state IN ('ACK_PENDING','ACK_REVIEW') AND ack IS NOT NULL AND ack_since<=? AND (ack_alert_at IS NULL OR ack_alert_at<=?) ORDER BY ack_since LIMIT 10", (self.clock()-age, self.clock()-interval)).fetchall()
+            for row in rows:
+                self.db.execute('UPDATE deliveries SET ack_alert_at=? WHERE delivery_id=?', (self.clock(), row['delivery_id']))
+            return [{'delivery_id':row['delivery_id'], 'age_ms':max(0,(self.clock()-row['ack_since'])*1000)} for row in rows]
 
     def reconciliation_items(self):
         return [dict(row) for row in self.db.execute("SELECT delivery_id,hash,state,attempts FROM deliveries WHERE state IN ('ACK_REVIEW','SENDING') ORDER BY seq")]
