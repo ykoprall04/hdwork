@@ -2,6 +2,7 @@ const {reviewOperationalGrants}=require('./operational-grants');
 const roles={read:{prefix:'OP_READ',user:'hdwork_ops_read'},write:{prefix:'OP_WRITE',user:'hdwork_ops_write'}};
 const rejected=()=>Object.assign(Error('Operational pool unavailable'),{code:'OPERATIONAL_POOL_REJECTED'});
 function options(role,env){
+ if(env.HDWORK2_COURIER_FIFO_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_COURIER_FIFO_ENABLED)||env.HDWORK2_COURIER_FIFO_ENABLED==='true'&&env.HDWORK2_LIVE_CHAT_ENABLED!=='true')throw rejected();
  if(env.HDWORK2_SHARED_GROUPS_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_SHARED_GROUPS_ENABLED)||env.HDWORK2_SHARED_GROUPS_ENABLED==='true'&&(env.HDWORK2_LIVE_CHAT_ENABLED!=='true'||env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true'))throw rejected();
  if(env.HDWORK2_LIVE_CHAT_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_LIVE_CHAT_ENABLED)||env.HDWORK2_LIVE_CHAT_ENABLED==='true'&&env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true')throw rejected();
  if(env.HDWORK2_SYSTEM_MONITORING_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_SYSTEM_MONITORING_ENABLED))throw rejected();
@@ -40,6 +41,7 @@ function createManager({env=process.env,readSecret=file=>require('./private-data
     if(env.HDWORK2_SYSTEM_MONITORING_ENABLED==='true'){await raw.execute('SELECT component,status,checked_at FROM hd2_system_state LIMIT 0');if(role==='read')await raw.execute('SELECT delivered_at FROM hd2_courier_outbox LIMIT 0');}
     if(env.HDWORK2_SHARED_GROUPS_ENABLED==='true')await raw.execute('SELECT group_name,blocked_before FROM hd2_system_mappings LIMIT 0');
     if(env.HDWORK2_LIVE_CHAT_ENABLED==='true')await raw.execute('SELECT id,order_id FROM hd2_chat_messages LIMIT 0');
+    if(env.HDWORK2_COURIER_FIFO_ENABLED==='true'&&role==='write'){await raw.execute('SELECT conversation_key,conversation_seq FROM hd2_courier_outbox LIMIT 0');await raw.execute('SELECT bot_id,conversation_key,next_seq FROM hd2_courier_lanes LIMIT 0');}
     pools.set(role,role==='read'?guardedRead(raw):writeGuard(raw));
    }
   }catch{await close();throw rejected();}})();

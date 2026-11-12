@@ -39,7 +39,7 @@ def main():
     if sys.argv[1:] != ['--run']:
         print('Courier disabled; explicit --run required', file=sys.stderr)
         return 1
-    journal = lock = lease = None
+    journal = lock = lease = courier = None
     try:
         config = RuntimeConfig.from_env(os.environ)
         private_directory(config.lock_dir)
@@ -55,7 +55,8 @@ def main():
             if not source or Path(source).resolve() == journal_path.resolve():
                 raise ValueError('separate_source_journal_required')
             seed_offset(journal, source, config.base.bot_id, config.fingerprint, os.environ['COURIER_ACTIVATION_NOT_BEFORE'])
-        internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open))
+        internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open), fifo_ack=config.fifo_ack)
+        ack_internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open)) if config.fifo_ack else None
         telegram = TelegramClient(config.base.token, JsonTransport(build_opener(NoRedirect()).open))
         if config.production_bot_id:
             telegram.verify_identity(config.production_bot_id, config.username)
@@ -82,10 +83,13 @@ def main():
         courier = DurableCourier(telegram, internal, journal,
                                  IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window, chat_enabled=config.chat_enabled), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,
-                                 report=report, database_routing=config.database_routing)
+                                 report=report, database_routing=config.database_routing, fifo_ack=config.fifo_ack, ack_internal=ack_internal)
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), lambda *_args: stop.set())
+        if config.fifo_ack:
+            lease.ensure()
+            internal.ensure_protocol()
         if window:
             lease.ensure()
             print(json.dumps({'event': 'READY', 'send': False}), flush=True)
@@ -101,6 +105,8 @@ def main():
         print('Courier configuration or journal rejected', file=sys.stderr)
         return 1
     finally:
+        if courier:
+            courier.close()
         if lease:
             lease.close()
         if journal:

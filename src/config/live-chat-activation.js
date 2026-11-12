@@ -11,9 +11,10 @@ function prepare(env){
  return {patch,changes:Object.keys(patch).filter(k=>env[k]!==patch[k]).map(key=>({key,before:env[key]??null,after:patch[key]})),candidate};
 }
 function profiles(env){
- for(const key of ['HDWORK2_LIVE_CHAT_ENABLED','HDWORK2_SYSTEM_MONITORING_ENABLED'])if(env[key]!==undefined&&!['true','false'].includes(env[key]))throw Error('LIVE_CHAT_INVALID_FLAG');
+ for(const key of ['HDWORK2_LIVE_CHAT_ENABLED','HDWORK2_SYSTEM_MONITORING_ENABLED','HDWORK2_COURIER_FIFO_ENABLED'])if(env[key]!==undefined&&!['true','false'].includes(env[key]))throw Error('LIVE_CHAT_INVALID_FLAG');
  if(env.HDWORK2_LIVE_CHAT_ENABLED==='true'&&env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true')throw Error('LIVE_CHAT_REQUIRES_SYSTEM_MONITORING');
- return env.HDWORK2_LIVE_CHAT_ENABLED==='true'?{read:'chatRead',write:'chatWrite'}:env.HDWORK2_SYSTEM_MONITORING_ENABLED==='true'?{read:'systemRead',write:'systemWrite'}:{read:'read',write:'write'};
+ if(env.HDWORK2_COURIER_FIFO_ENABLED==='true'&&env.HDWORK2_LIVE_CHAT_ENABLED!=='true')throw Error('FIFO_REQUIRES_LIVE_CHAT');
+ return env.HDWORK2_LIVE_CHAT_ENABLED==='true'?{read:'chatRead',write:env.HDWORK2_COURIER_FIFO_ENABLED==='true'?'chatWriteFifo':'chatWrite'}:env.HDWORK2_SYSTEM_MONITORING_ENABLED==='true'?{read:'systemRead',write:'systemWrite'}:{read:'read',write:'write'};
 }
 async function preflight({reader,writer,env}){
  const selected=profiles(env),review=require('./operational-grants').reviewOperationalGrants;

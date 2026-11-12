@@ -5,6 +5,6 @@ function createStore(env = process.env) {
   const port = env.COURIER_DB_PORT || '3306';
   if (!/^[1-9]\d{0,4}$/.test(port) || Number(port) > 65535) throw Error('Courier database configuration rejected');
   const pool = require('mysql2/promise').createPool({ host: env.COURIER_DB_HOST, port: Number(port), user: env.COURIER_DB_USER, password: env.COURIER_DB_PASSWORD, database: 'hdwork2', connectionLimit: 2, connectTimeout: 5000, multipleStatements: false, timezone: 'Z', supportBigNumbers: true, bigNumberStrings: true });
-  return new (require('./mysql-store').MysqlStore)({ pool, botId: env.COURIER_BOT_ID });
+  return new (require('./mysql-store').MysqlStore)({ pool, botId: env.COURIER_BOT_ID,fifo:env.HDWORK2_COURIER_FIFO_ENABLED==='true' });
 }
 module.exports = { createStore };

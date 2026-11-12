@@ -30,14 +30,16 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
     // The ACK is emitted only after the inbox transaction has committed.
     res.json({ ok: true, ...await store.accept(payload) });
   });
+  app.post('/internal/courier/v1/capabilities',async(req,res)=>{await runtime.assertWorker(req.body.worker);res.json({ok:true,delivery_protocol:store.fifo?'fifo-ack-v2':'legacy'});});
   app.post('/internal/courier/v1/outbox/claim', async (req, res) => {
     if (!send||!ready()) throw fail(503);
     if (req.body.limit !== 1) throw fail();
+    if(req.body.delivery_protocol!==undefined&&(req.body.delivery_protocol!=='fifo-ack-v2'||!store.fifo))throw fail(409);
     const messages = await store.claim(1, {
       before: c => runtime.assertWorker(req.body.worker, c),
       authorize: (payload, c) => policy.outgoing(payload, c)
     });
-    res.json({ ok: true, messages });
+    res.json({ ok: true, messages,...(store.fifo?{delivery_protocol:'fifo-ack-v2'}:{}) });
   });
   if(store.routeFence)app.post('/internal/courier/v1/outbox/:id/authorize',async(req,res)=>{if(!send||!ready())throw fail(503);if(typeof req.body.lease_token!=='string')throw fail();const allowed=await store.authorizeDelivery(req.params.id,req.body,{before:c=>runtime.assertWorker(req.body.worker,c),authorize:(payload,c)=>policy.outgoing(payload,c)});res.json({ok:true,allowed});});
   app.post('/internal/courier/v1/outbox/:id/result', async (req, res) => {

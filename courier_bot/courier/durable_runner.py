@@ -47,10 +47,16 @@ class WorkerLease:
 
 class DurableCourier:
     def __init__(self, telegram, internal, journal, policy, lease, *, poll=False, send=False,
-                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False):
+                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False, fifo_ack=False, ack_internal=None):
         self.telegram, self.internal, self.journal, self.policy, self.lease = telegram, internal, journal, policy, lease
         self.poll, self.send, self.clock, self.stopped = poll, send, clock, stopped
         self.database_routing = database_routing
+        self.fifo_ack = fifo_ack
+        self.ack_internal = ack_internal
+        if fifo_ack and ack_internal is None:
+            raise ValueError('dedicated_ack_client_required')
+        from .ack_pump import AckPump
+        self.ack_pump = AckPump() if fifo_ack else None
         self.cooldown_until = 0
         def technical_report(code):
             reasons = {'inbox_quarantined_review_required', 'inbox_backend_unavailable', 'outbox_ack_stale_cached_result_retained', 'outbox_ack_pending'}
@@ -80,6 +86,8 @@ class DurableCourier:
                 return
 
     def flush_ack(self):
+        if self.fifo_ack:
+            return self.flush_ack_independent()
         row = self.journal.next_ack()
         if not row:
             return
@@ -98,10 +106,40 @@ class DurableCourier:
                 self.journal.defer_ack(row, retry_after=error.retry_after)
                 self.report('outbox_ack_pending')
 
+    def flush_ack_independent(self):
+        done = self.ack_pump.poll()
+        if done:
+            row, result, error = done
+            if error is None and (not isinstance(result, dict) or result.get('ok') is not True):
+                error = TransportError()
+            if error is None:
+                settled = self.journal.finish_ack(row)
+                logger().emit('ACK' if settled else 'ACK_SUPERSEDED', correlationId=row['delivery_id'], status='OK')
+            else:
+                state = self.journal.defer_ack(row, retry_after=getattr(error, 'retry_after', 0), max_attempts=8,
+                                               terminal=getattr(error, 'status', 0) in (400, 401, 403, 409, 413))
+                logger().emit('ACK_RECONCILIATION_REQUIRED' if state == 'ACK_REVIEW' else 'ACK_RETRY',
+                              error=error, correlationId=row['delivery_id'], status='ERROR', attempt=row['attempts']+1)
+        if self.ack_pump.pending is not None or self.stopped():
+            return
+        row = self.journal.next_ack(independent=True)
+        if row:
+            self.lease.ensure()
+            worker = getattr(self.internal, 'worker', None)
+            self.ack_internal.worker = dict(worker) if isinstance(worker, dict) else worker
+            ack = json.loads(row['ack'])
+            self.ack_pump.submit(row, lambda: observe('ACK_HTTP', lambda: self.ack_internal.settle(ack, ack['result']), correlationId=row['delivery_id']))
+
+    def close(self):
+        if self.ack_pump:
+            self.ack_pump.close()
+
     def run_once(self):
         if self.stopped():
             return
         self.lease.ensure()
+        if self.fifo_ack:
+            self.flush_ack()
         if self.database_routing:
             configuration = observe('ROUTING', self.internal.routing)
             if configuration.get('ok') is not True:
@@ -124,7 +162,7 @@ class DurableCourier:
             return
         self.flush_ack()
         ack_pending = self.journal.has_ack()
-        if ack_pending or self.stopped():
+        if (ack_pending and not self.fifo_ack) or self.stopped():
             logger().emit('OUTBOX_BLOCKED', reason='ACK_PENDING' if ack_pending else 'STOPPED')
             return
         self.lease.ensure()
@@ -138,8 +176,8 @@ class DurableCourier:
             self.lease.ensure()
             correlation = delivery.get('delivery_id')
             logger().emit('DELIVERY_START', correlationId=correlation, attempt=delivery.get('attempt', 0))
-            cached = observe('JOURNAL_BEGIN', lambda: self.journal.begin_delivery(delivery), correlationId=correlation)
             try:
+                cached = observe('JOURNAL_BEGIN', lambda: self.journal.begin_delivery(delivery, strict=True) if self.fifo_ack else self.journal.begin_delivery(delivery), correlationId=correlation)
                 if not cached:
                     self.policy.outgoing(delivery['payload'])
                 if not cached and getattr(self.policy, 'dispatch_authorization_required', False) and not observe('AUTHORIZE', lambda: self.internal.authorize_delivery(delivery), correlationId=correlation):

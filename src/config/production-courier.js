@@ -5,7 +5,9 @@ const {boundary}=require('../courier/activation-boundary');
 const {clearSecrets}=require('./private-courier-env');
 function validate(plan,{repo}={}){
  const keys=['version','environment','telegramBotId','botId','botUsername','port','groups','secretRoot','tokenDpapiFile','serviceKeyDpapiFile','identityKeyDpapiFile','dbPasswordDpapiFile','journalDirectory','sourceJournalDirectory','lockDirectory','activationNotBefore'];
+ if(plan&&Object.hasOwn(plan,'deliveryMode')){if(plan.deliveryMode!=='fifo-ack-v2')throw Error('DELIVERY_MODE_REJECTED');keys.push('deliveryMode');}
  if(plan&&Object.hasOwn(plan,'routingMode')){if(plan.routingMode!=='database')throw Error('PRODUCTION_ROUTING_MODE_REJECTED');keys.push('routingMode');}
+ if(plan?.deliveryMode==='fifo-ack-v2'&&plan.routingMode!=='database')throw Error('FIFO_REQUIRES_DATABASE_ROUTING');
  if(!plan||Object.keys(plan).sort().join(',')!==keys.sort().join(',')||plan.version!==1||plan.environment!=='production'||
    !/^[1-9]\d{5,11}$/.test(plan.telegramBotId||'')||typeof plan.telegramBotId!=='string'||
    !/^[a-z][a-z0-9_-]{1,63}$/.test(plan.botId||'')||! /^[A-Za-z0-9_]{5,32}$/.test(plan.botUsername||'')||
@@ -34,6 +36,7 @@ async function load(plan,{kind,repo,readSecret}={}){
  readSecret||=(file=>require('./private-database-env').readPrivateDpapi(file,{allowedRoot:repo}));
  const env={...(p.routingMode==='database'?{HDWORK2_SHARED_GROUPS_ENABLED:'true'}:{}),COURIER_ENABLED:'true',COURIER_INTEGRATION_ENABLED:'true',COURIER_PRODUCTION_MODE:'true',COURIER_BOT_ID:p.botId,COURIER_BOT_USERNAME:p.botUsername,COURIER_COMMAND_GROUPS_JSON:JSON.stringify(p.groups),COURIER_DATABASE_ROUTING_ENABLED:'true',COURIER_CHAT_ENABLED:'true',COURIER_ACTIVATION_NOT_BEFORE:p.activationNotBefore};
  try{
+  if(p.deliveryMode==='fifo-ack-v2'){if(p.routingMode!=='database')throw Error('FIFO_REQUIRES_DATABASE_ROUTING');if(kind==='backend')env.HDWORK2_COURIER_FIFO_ENABLED='true';else env.COURIER_FIFO_ACK_ENABLED='true';}
   env.COURIER_SERVICE_KEY=await readSecret(path.resolve(repo,p.serviceKeyDpapiFile));
   if(typeof env.COURIER_SERVICE_KEY!=='string'||Buffer.byteLength(env.COURIER_SERVICE_KEY)<32)throw Error('PROTECTED_SERVICE_KEY_REJECTED');
   if(kind==='backend'){

@@ -7,9 +7,11 @@ import uuid
 from .http import TransportError
 
 class InternalClient:
-    def __init__(self, config, transport, clock=time.time, nonce=lambda: uuid.uuid4().hex):
+    def __init__(self, config, transport, clock=time.time, nonce=lambda: uuid.uuid4().hex, fifo_ack=False):
         self.config, self.transport, self.clock, self.nonce = config, transport, clock, nonce
         self.worker = None
+        self.fifo_ack = fifo_ack
+        self.protocol_verified = False
 
     def post(self, path, body):
         raw = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()
@@ -24,8 +26,19 @@ class InternalClient:
     def routing(self):
         return self.post('/internal/courier/v1/routing', {'worker': self.worker})
 
+    def ensure_protocol(self):
+        if self.fifo_ack and not self.protocol_verified:
+            value = self.post('/internal/courier/v1/capabilities', {'worker': self.worker})
+            if value.get('delivery_protocol') != 'fifo-ack-v2':
+                raise TransportError(409)
+            self.protocol_verified = True
+
     def claim(self):
-        return self.post('/internal/courier/v1/outbox/claim', {'limit': 1, **({'worker': self.worker} if self.worker else {})})['messages']
+        self.ensure_protocol()
+        response = self.post('/internal/courier/v1/outbox/claim', {'limit': 1, **({'delivery_protocol':'fifo-ack-v2'} if self.fifo_ack else {}), **({'worker': self.worker} if self.worker else {})})
+        if self.fifo_ack and response.get('delivery_protocol') != 'fifo-ack-v2':
+            raise TransportError(409)
+        return response['messages']
 
     def authorize_delivery(self, delivery):
         return self.post('/internal/courier/v1/outbox/' + delivery['delivery_id'] + '/authorize', {'lease_token': delivery['lease_token'], 'worker': self.worker}).get('allowed') is True

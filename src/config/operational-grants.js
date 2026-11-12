@@ -11,6 +11,7 @@ const chatRead={...systemRead,hd2_chat_messages:['SELECT']};
 const chatWrite={...systemWrite,users:['SELECT (id, is_active, name, role, username)'],hd2_chat_messages:['SELECT','INSERT']};
 const chatCourier={...systemCourier,hd2_chat_messages:['SELECT','INSERT']};
 const policies={chatRead,chatWrite,courierChat:{...courier,...chatCourier,hd2_courier_outbox:['SELECT (id, telegram_message_id)']},courierSendChat:{...courierSend,...chatCourier},read,write,courier,courierSend,trialWrite,systemRead,systemWrite,courierSystem:{...courier,...systemCourier},courierSendSystem:{...courierSend,...systemCourier}};
+for(const name of ['chatWrite','courierSendChat'])policies[name+'Fifo']={...policies[name],hd2_courier_lanes:['SELECT','INSERT','UPDATE']};
 function privileges(text){
  const parts=text.match(/[A-Z_ ]+(?:\s*\([^)]*\))?(?=,|$)/gi)||[];
  return parts.map(p=>{const m=/^\s*([A-Z_ ]+?)(?:\s*\(([^)]*)\))?\s*$/i.exec(p);if(!m)throw Error('Grant rejected');return m[1].trim().toUpperCase()+(m[2]?' ('+m[2].replace(/`/g,'').split(',').map(v=>v.trim()).sort().join(', ')+')':'');});

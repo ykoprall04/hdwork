@@ -29,12 +29,19 @@ class Journal:
                 attempts INTEGER NOT NULL DEFAULT 0, due REAL NOT NULL DEFAULT 0, receipt TEXT
             );
             CREATE INDEX IF NOT EXISTS pending_updates ON updates(state,seq);
+            CREATE TABLE IF NOT EXISTS reconciliation_audit (seq INTEGER PRIMARY KEY AUTOINCREMENT, delivery_id TEXT NOT NULL, payload_hash TEXT NOT NULL, action TEXT NOT NULL, evidence_sha256 TEXT, at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
                 seq INTEGER PRIMARY KEY AUTOINCREMENT, delivery_id TEXT NOT NULL UNIQUE,
                 hash TEXT NOT NULL, success_id TEXT, ack TEXT, due REAL NOT NULL DEFAULT 0,
                 attempts INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL
             );
         ''')
+        columns = {row['name'] for row in self.db.execute('PRAGMA table_info(deliveries)')}
+        for name in ('last_result', 'last_lease_token'):
+            if name not in columns:
+                self.db.execute('ALTER TABLE deliveries ADD COLUMN '+name+' TEXT')
+        self.db.execute('CREATE INDEX IF NOT EXISTS ack_due ON deliveries(state,due,seq)')
+        self.db.commit()
         try:
             with self.db:
                 for key, value in [('bot_id', bot_id), ('token_fingerprint', token_fingerprint)]:
@@ -114,7 +121,7 @@ class Journal:
                             ('QUARANTINED' if terminal else 'PENDING', 'backend_rejected' if terminal else 'backend_unavailable',
                              attempts, self.clock() + min(300, max(retry_after, 2 ** min(attempts, 9))), row['seq']))
 
-    def begin_delivery(self, delivery):
+    def begin_delivery(self, delivery, strict=False):
         fingerprint = hashlib.sha256(encoded(delivery['payload']).encode()).hexdigest()
         with self.db:
             row = self.db.execute('SELECT * FROM deliveries WHERE delivery_id=?', (delivery['delivery_id'],)).fetchone()
@@ -122,30 +129,66 @@ class Journal:
                 raise ValueError('outbox_payload_conflict')
             if row and row['success_id']:
                 return row['success_id']
+            if strict and row:
+                previous = json.loads(row['last_result']) if row['last_result'] else {}
+                if not (previous.get('result') == 'retry' and previous.get('error_code') == 'RATE_LIMIT'):
+                    from .http import TransportError
+                    raise TransportError()  # Crash window/ambiguous history: never repeat Telegram send.
             self.db.execute("INSERT INTO deliveries(delivery_id,hash,state) VALUES (?,?,'SENDING') ON CONFLICT(delivery_id) DO UPDATE SET state='SENDING'", (delivery['delivery_id'], fingerprint))
+            self.db.execute('UPDATE deliveries SET last_lease_token=? WHERE delivery_id=?', (delivery['lease_token'], delivery['delivery_id']))
         return None
 
     def delivery_result(self, delivery, result):
         ack = {'delivery_id': delivery['delivery_id'], 'lease_token': delivery['lease_token'], 'result': result}
         with self.db:
-            self.db.execute("UPDATE deliveries SET success_id=COALESCE(?,success_id),ack=?,due=0,attempts=0,state='ACK_PENDING' WHERE delivery_id=?",
-                            (result.get('telegram_message_id') if result['result'] == 'sent' else None, encoded(ack), delivery['delivery_id']))
+            self.db.execute("UPDATE deliveries SET success_id=COALESCE(?,success_id),ack=?,last_result=?,last_lease_token=?,due=0,attempts=0,state='ACK_PENDING' WHERE delivery_id=?",
+                            (result.get('telegram_message_id') if result['result'] == 'sent' else None, encoded(ack), encoded(result), delivery['lease_token'], delivery['delivery_id']))
 
-    def next_ack(self):
+    def next_ack(self, independent=False):
+        if independent:
+            row = self.db.execute("SELECT * FROM deliveries WHERE ack IS NOT NULL AND state='ACK_PENDING' AND due<=? ORDER BY due,seq LIMIT 1", (self.clock(),)).fetchone()
+            return dict(row) if row else None
         row = self.db.execute("SELECT * FROM deliveries WHERE ack IS NOT NULL ORDER BY seq LIMIT 1").fetchone()
         return dict(row) if row and row['due'] <= self.clock() else None
 
     def finish_ack(self, row):
         with self.db:
-            self.db.execute("UPDATE deliveries SET ack=NULL,state='SETTLED' WHERE seq=?", (row['seq'],))
+            changed = self.db.execute("UPDATE deliveries SET ack=NULL,state='SETTLED' WHERE seq=? AND ack=?", (row['seq'], row['ack']))
+            return changed.rowcount == 1
 
-    def defer_ack(self, row, retry_after=0):
+    def defer_ack(self, row, retry_after=0, max_attempts=None, terminal=False):
         with self.db:
             attempts = row['attempts'] + 1
-            self.db.execute('UPDATE deliveries SET due=?,attempts=? WHERE seq=?', (self.clock() + min(300, max(retry_after, 2 ** min(attempts, 9))), attempts, row['seq']))
+            state = 'ACK_REVIEW' if terminal or max_attempts is not None and attempts >= max_attempts else 'ACK_PENDING'
+            changed = self.db.execute('UPDATE deliveries SET due=?,attempts=?,state=? WHERE seq=? AND ack=?', (self.clock() + min(300, max(retry_after, 2 ** min(attempts, 9))), attempts, state, row['seq'], row['ack']))
+            return state if changed.rowcount == 1 else 'SUPERSEDED'
 
     def has_ack(self):
         return self.db.execute('SELECT 1 FROM deliveries WHERE ack IS NOT NULL LIMIT 1').fetchone() is not None
+
+    def reconciliation_items(self):
+        return [dict(row) for row in self.db.execute("SELECT delivery_id,hash,state,attempts FROM deliveries WHERE state IN ('ACK_REVIEW','SENDING') ORDER BY seq")]
+
+    def retry_reviewed_ack(self, delivery_id, expected_hash):
+        with self.db:
+            row = self.db.execute("SELECT * FROM deliveries WHERE delivery_id=? AND hash=? AND state='ACK_REVIEW'", (delivery_id, expected_hash)).fetchone()
+            if not row or not row['ack']:
+                raise ValueError('reviewed_ack_required')
+            self.db.execute("UPDATE deliveries SET state='ACK_PENDING',attempts=0,due=0 WHERE delivery_id=?", (delivery_id,))
+            self.db.execute("INSERT INTO reconciliation_audit(delivery_id,payload_hash,action,at) VALUES (?,?,'RETRY_ACK',?)", (delivery_id, expected_hash, self.clock()))
+
+    def verified_receipt(self, delivery_id, expected_hash, telegram_message_id, evidence_sha256):
+        import re
+        if not re.fullmatch(r'[1-9]\d{0,9}', telegram_message_id) or int(telegram_message_id)>2147483647 or not re.fullmatch(r'[a-f0-9]{64}', evidence_sha256):
+            raise ValueError('verified_receipt_evidence_required')
+        with self.db:
+            row = self.db.execute('SELECT * FROM deliveries WHERE delivery_id=? AND hash=?', (delivery_id, expected_hash)).fetchone()
+            if not row or not row['last_lease_token'] or row['success_id'] and row['success_id'] != telegram_message_id:
+                raise ValueError('receipt_binding_rejected')
+            result = {'result':'sent', 'telegram_message_id':telegram_message_id, 'reconciliation':True, 'evidence_sha256':evidence_sha256}
+            ack = {'delivery_id':delivery_id, 'lease_token':row['last_lease_token'], 'result':result}
+            self.db.execute("UPDATE deliveries SET success_id=?,ack=?,last_result=?,state='ACK_PENDING',attempts=0,due=0 WHERE delivery_id=?", (telegram_message_id, encoded(ack), encoded(result), delivery_id))
+            self.db.execute("INSERT INTO reconciliation_audit(delivery_id,payload_hash,action,evidence_sha256,at) VALUES (?,?,'VERIFIED_RECEIPT',?,?)", (delivery_id, expected_hash, evidence_sha256, self.clock()))
 
     def close(self):
         self.db.close()

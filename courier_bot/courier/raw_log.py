@@ -107,13 +107,16 @@ class RawLog:
             self.queue.join()
 
 _log = None
+_log_lock = threading.Lock()
 
 def logger():
     global _log
     if _log is None:
-        directory = os.environ.get('HDWORK2_LOG_DIRECTORY') or str(Path(os.environ.get('ProgramData', r'C:\ProgramData'))/'HDWork2'/'Logs')
-        _log = RawLog(directory, enabled=os.environ.get('HDWORK2_RAW_LOG_ENABLED') == 'true')
-        atexit.register(_log.shutdown)
+        with _log_lock:
+            if _log is None:
+                directory = os.environ.get('HDWORK2_LOG_DIRECTORY') or str(Path(os.environ.get('ProgramData', r'C:\ProgramData'))/'HDWork2'/'Logs')
+                _log = RawLog(directory, enabled=os.environ.get('HDWORK2_RAW_LOG_ENABLED') == 'true')
+                atexit.register(_log.shutdown)
     return _log
 
 def observe(event, run, **values):

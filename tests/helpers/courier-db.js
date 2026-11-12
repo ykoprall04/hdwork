@@ -14,9 +14,17 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
         pool.calls.push(sql);
         if (pool.failAt && sql.includes(pool.failAt)) throw Error('Synthetic failure');
         let rows = [], row;
-        if (sql.startsWith('INSERT INTO hd2_courier_')) {
+        if(sql.startsWith('SELECT expires_ms FROM hd2_courier_workers')){rows=[{expires_ms:state.workerLease||0}];
+        }else if(sql.startsWith('SELECT id FROM hd2_courier_outbox')&&sql.includes('conversation_key IS NOT NULL LIMIT')){rows=state.outbox.filter(r=>r.bot_id===p[0]&&r.conversation_key!=null).slice(0,1);
+        }else if(sql.startsWith('UPDATE hd2_courier_outbox SET conversation_key')){const row=state.outbox.find(r=>r.id===p[2]&&r.bot_id===p[3]);Object.assign(row,{conversation_key:p[0],conversation_seq:p[1]});
+        }else if(sql.startsWith('INSERT INTO hd2_courier_lanes')){state.lanes ||= [];if(!state.lanes.some(r=>r.bot_id===p[0]&&r.conversation_key===p[1]))state.lanes.push({bot_id:p[0],conversation_key:p[1],next_seq:'1'});
+        }else if(sql.startsWith('SELECT next_seq FROM hd2_courier_lanes')){rows=(state.lanes||[]).filter(r=>r.bot_id===p[0]&&r.conversation_key===p[1]&&(!sql.includes('SKIP LOCKED')||!r.locked));
+        }else if(sql.startsWith('UPDATE hd2_courier_lanes')){const lane=state.lanes.find(r=>r.bot_id===p[0]&&r.conversation_key===p[1]);lane.next_seq=String(BigInt(lane.next_seq)+1n);
+        }else if(sql.startsWith('SELECT id FROM hd2_courier_outbox')&&sql.includes('conversation_key IS NULL')){rows=state.outbox.filter(r=>r.bot_id===p[0]&&r.state!=='SENT'&&(r.conversation_key==null||r.conversation_seq==null)).slice(0,1);
+        }else if(sql.startsWith('SELECT id FROM hd2_courier_outbox')&&sql.includes('conversation_seq<?')){rows=state.outbox.filter(r=>r.bot_id===p[0]&&r.conversation_key===p[1]&&BigInt(r.conversation_seq)<BigInt(p[2])&&r.state!=='SENT').slice(0,1);
+        }else if (sql.startsWith('INSERT INTO hd2_courier_')) {
           const inbox = sql.includes('inbox'), table = inbox ? state.inbox : state.outbox, key = inbox ? 'update_id' : 'idem_key';
-          if (!table.some(r => r.bot_id === p[1] && r[key] === p[2])) table.push({ id: p[0], bot_id: p[1], [key]: p[2], payload_hash: p[3], payload: p[4], due_ms: p[5], state: inbox ? 'PENDING' : 'QUEUED', attempts: 0 });
+          if (!table.some(r => r.bot_id === p[1] && r[key] === p[2])) table.push({ id: p[0], bot_id: p[1], [key]: p[2], payload_hash: p[3], payload: p[4], due_ms: p[5], state: inbox ? 'PENDING' : 'QUEUED', attempts: 0,...(!inbox&&p.length>6?{conversation_key:p[6],conversation_seq:p[7]}:{}) });
         } else if (sql.startsWith('SELECT') && sql.includes('hd2_courier_')) {
           let table = sql.includes('hd2_courier_inbox') ? state.inbox : state.outbox;
           if(sql.includes('created_at>?')){
@@ -28,7 +36,7 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           else if (sql.includes('idem_key=?')) rows = table.filter(r => r.bot_id === p[0] && r.idem_key === p[1]);
           else if (sql.includes('WHERE id=?')) rows = table.filter(r => r.id === p[0] && r.bot_id === p[1]);
           else if (sql.includes("state='SENDING'")) rows = table.filter(r => r.bot_id === p[0] && r.state === 'SENDING' && r.lease_until_ms <= p[1]).slice(0, 100);
-          else if (sql.includes("state='QUEUED'")) rows = table.filter(r => r.bot_id === p[0] && r.state === 'QUEUED' && r.due_ms <= p[1] && r.attempts < p[2]).sort((a,b) => a.due_ms-b.due_ms || a.id.localeCompare(b.id)).slice(0,p[3]);
+          else if (sql.includes("state='QUEUED'")) rows = table.filter(r => r.bot_id === p[0] && r.state === 'QUEUED' && r.due_ms <= p[1] && r.attempts < p[2] && (!sql.includes('NOT EXISTS')||r.conversation_key!=null&&!state.outbox.some(prior=>prior.bot_id===r.bot_id&&prior.conversation_key===r.conversation_key&&BigInt(prior.conversation_seq)<BigInt(r.conversation_seq)&&prior.state!=='SENT'))).sort((a,b) => a.due_ms-b.due_ms || a.id.localeCompare(b.id)).slice(0,p[3]);
           else if (sql.includes("state='PENDING'")) rows = table.filter(r => r.bot_id === p[0] && r.state === 'PENDING' && (sql.includes('received_seq') || r.due_ms <= p[1])).sort(sql.includes('received_seq')?((a,b)=>table.indexOf(a)-table.indexOf(b)):((a,b) => a.due_ms-b.due_ms || a.id.localeCompare(b.id))).slice(0,1);
           else throw Error('Unrecognized SELECT');
         } else if (sql.startsWith('UPDATE hd2_courier_outbox')) {
@@ -65,6 +73,7 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           if (p[0]==='IN_PROGRESS') row.started_at='mock-processing-time'; else row.finished_at='mock-processing-time';
         } else if (sql.startsWith('INSERT INTO hd2_live_events')) {
           state.liveEvents ||= [];state.liveEvents.push({module:p[0],kind:p[1]||'arrival'});
+        } else if (sql.startsWith('INSERT INTO hd2_audit')&&(sql.includes("'COURIER_DELIVERY_ACK'")||sql.includes("'COURIER_FIFO_SEQUENCED'"))){state.audit.push({id:p[0],action:sql.includes('COURIER_FIFO_SEQUENCED')?'COURIER_FIFO_SEQUENCED':'COURIER_DELIVERY_ACK',detail:p[1]});
         } else if (sql.startsWith('INSERT INTO hd2_audit')) {
           const names=['id','inbox_id','order_id','action','actor_id','from_status','to_status','detail'];
           state.audit.push(Object.fromEntries(names.map((name,i)=>[name,p[i]])));
