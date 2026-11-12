@@ -35,7 +35,7 @@ export default function OrderChat({ id, order, onChange, actions }: { id: string
   }
   return <section aria-label="Live chat order" className="op-order-chat">
     <div className="op-chat-history">
-    <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-semibold">Live chat order</h3><p className="mt-1 text-xs text-muted-foreground">Balasan menuju pesan dan topic Telegram asli. ANTRE belum berarti terkirim.</p></div></div>
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-semibold">Live chat order</h3><p className="mt-1 text-xs text-muted-foreground">Balasan menuju pesan dan topic Telegram asli. ANTRE menunggu giliran; MENGIRIM mencakup proses kirim atau menunggu ACK. TERKIRIM setelah backend mengonfirmasi.</p></div></div>
     {messages.loading && <p role="status" className="text-xs text-muted-foreground">{messages.data ? 'Memperbarui percakapan…' : 'Memuat percakapan…'}</p>}
     {messages.error && <div role="alert"><p>{messages.error}</p><Button variant="outline" onClick={() => void messages.refresh()}>Coba muat percakapan</Button></div>}
     <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={messages.loading || !messages.data?.hasMore} onClick={() => setPage(value => value + 1)}>Pesan lebih lama</Button><Button variant="outline" disabled={messages.loading || page <= 1} onClick={() => setPage(value => value - 1)}>Pesan lebih baru</Button></div>

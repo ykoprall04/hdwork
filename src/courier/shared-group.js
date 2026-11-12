@@ -12,4 +12,4 @@ function universalB2CGroups(groups) {
       ? { ...group, profile: 'ALL', commands: [...b2cCommands] }
       : group);
 }
-module.exports = { commands, moduleFor, universalB2CGroups };
+module.exports = { commands, moduleFor, b2cCommands, universalB2CGroups };

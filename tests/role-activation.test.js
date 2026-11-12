@@ -19,26 +19,7 @@ test('HD actual status service is read only, masks worker routing identity, reta
  const system=createSystem({readPool,writePool:{getConnection(){assert.fail('HD must never write');}},now:()=>1800000000000});const status=await system.status({role:'HD'});assert.equal(status.components.frontend,'UNKNOWN');assert.equal(status.components.tunnel,'UNKNOWN');assert.equal(status.components.mysql,'ONLINE');assert.deepEqual(status.workers,[]);assert.ok(sql.every(q=>q.startsWith('SELECT ')));
  await assert.rejects(system.status({role:'SHOW_ONLY'}),{statusCode:403});await assert.rejects(system.saveMapping({role:'HD'},{}),{statusCode:403});await assert.rejects(system.recipient({role:'ADMIN'},{}),{statusCode:403});
 });
-function chatFixture(role,patch={}){
- const id=randomUUID(),actor={id:7,name:'Fixture',username:'fixture',role,is_active:1},order={id,access_module:'TIAL',module:'TIAL',command:'order',status:'IN_PROGRESS',owner_user_id:7,version:2,bot_id:'fixture-bot',chat_id:'-100123',thread_id:'42',message_id:'101'};
- let state={requests:[],outbox:[],messages:[],audit:[]};const options={actor,order,modules:['TIAL'],session:true,route:true,...patch};
- const pool={async getConnection(){let snapshot;return {async beginTransaction(){snapshot=structuredClone(state);},async commit(){},async rollback(){state=snapshot;},release(){},async execute(sql,p=[]){
-  if(sql.includes('FROM users'))return [[options.actor]];
-  if(sql.includes('FROM hd2_user_modules'))return [options.modules.map(module=>({module}))];
-  if(sql.includes('FROM hd2_sessions'))return [options.session?[{token_hash:'fixture'}]:[]];
-  if(sql.startsWith('SELECT * FROM hd2_orders'))return [[options.order]];
-  if(sql.startsWith('INSERT INTO hd2_web_requests')){if(!state.requests.some(r=>r.requestId===p[1]))state.requests.push({requestId:p[1],payload_hash:p[3],result:null});return [{}];}
-  if(sql.includes('FROM hd2_web_requests'))return [state.requests.filter(r=>r.requestId===p[1])];
-  if(sql.startsWith('UPDATE hd2_web_requests')){state.requests.find(r=>r.requestId===p[2]).result=p[0];return [{}];}
-  if(sql.includes('FROM hd2_system_mappings')){assert.deepEqual(p,['fixture-bot','-100123','42','TIAL']);return [options.route?[{id:'fixture-route'}]:[]];}
-  if(sql.startsWith('INSERT INTO hd2_courier_outbox')){state.outbox.push({id:p[0],bot_id:p[1],idem_key:p[2],payload_hash:p[3],payload:JSON.parse(p[4])});return [{}];}
-  if(sql.includes('FROM hd2_courier_outbox'))return [state.outbox.filter(r=>r.bot_id===p[0]&&r.idem_key===p[1])];
-  if(sql.startsWith('INSERT INTO hd2_chat_messages')){state.messages.push(p);return [{}];}
-  if(sql.startsWith('INSERT INTO hd2_audit')){state.audit.push(p);return [{}];}
-  if(sql.startsWith('INSERT INTO hd2_live_events'))return [{}];
-  throw Error('Unexpected chat fixture SQL: '+sql);
- }};}};return {id,options,get state(){return state;},chat:createChat({readPool:pool,writePool:pool})};
-}
+const {chatFixture}=require('./helpers/chat-transaction');
 for(const role of roles)test(`${role} chat requires current ownership, module, session and verified original topic; replay stays unique`,async()=>{
  const f=chatFixture(role),body={requestId:randomUUID(),version:2,text:'Synthetic reply'};const result=await f.chat.send(f.id,'fixture',7,body);assert.equal(result.status,'ANTRE');assert.deepEqual(await f.chat.send(f.id,'fixture',7,body),result);assert.equal(f.state.outbox.length,1);assert.equal(f.state.messages.length,1);assert.equal(f.state.audit.length,1);
  const payload=f.state.outbox[0].payload;assert.equal(payload.chat_id,'-100123');assert.equal(payload.telegram_thread_id,'42');assert.equal(payload.reply_to_message_id,'101');assert.equal(f.options.order.status,'IN_PROGRESS');assert.equal(f.options.order.version,2);
