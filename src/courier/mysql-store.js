@@ -95,6 +95,7 @@ class MysqlStore {
     return this.transaction(async c => {
       const [[row]] = await c.execute('SELECT * FROM hd2_courier_outbox WHERE id=? AND bot_id=?' + this.boundarySql + ' FOR UPDATE', [id, this.botId, ...this.boundaryParams]);
       if (!row) throw fail(409);
+      if(row.administrative_closure)throw fail(409); // A late ACK cannot undo administrative closure.
       const reconcile=this.fifo&&body.reconciliation===true&&/^[a-f0-9]{64}$/.test(body.evidence_sha256||'')&&body.result==='sent'&&row.state==='DEAD'&&require('./delivery-state').uncertain(row.last_error_code)&&row.lease_token===body.lease_token;
       if (row.last_ack_token === body.lease_token&&!reconcile) { if (row.last_ack_hash !== hash) throw fail(409); return { duplicate: true }; }
       const late=this.fifo&&row.lease_token===body.lease_token&&(row.state==='SENDING'||row.state==='DEAD'&&row.last_error_code==='LEASE_EXPIRED');

@@ -1,0 +1,29 @@
+{
+    "status":  "ADMINISTRATIVE_CUTOVER_TEMPORARY_PASS",
+    "checks":  {
+                   "defaultDryRunNoWrites":  "PASS",
+                   "activeWorkerOrRowLeaseStops":  "PASS",
+                   "changedCohortRollsBack":  "PASS",
+                   "affectedRowsMismatchRollsBackEntire18":  "PASS",
+                   "auditFailureRollsBackEntire18":  "PASS",
+                   "atomic10QueuedToDead8DeadPreserved":  "PASS",
+                   "decisionOperatorReasonReferenceTimeInDatabaseAudit":  "PASS",
+                   "idempotentNoDuplicateAudit":  "PASS",
+                   "unlistedQueuedUntouched":  "PASS",
+                   "dashboardNeverSent":  "PASS",
+                   "closureDoesNotReleaseUnknownSameOrderHold":  "PASS",
+                   "independentOrderStillProgresses":  "PASS",
+                   "oldAndV2NeverClaimTerminalClosedRows":  "PASS",
+                   "lateAckCannotUndoAdministrativeClosure":  "PASS",
+                   "separatePerIdFifoMarkerRequired":  "PASS",
+                   "executorOrderAndRealTemporaryBackupRestore":  "PASS",
+                   "automaticRuntimeRollbackPreservesAdminAuditAndStopsSender":  "PASS",
+                   "externalEffectRiskStopsWithoutDataRewind":  "PASS"
+               },
+    "productionAccessed":  false,
+    "telegramCalls":  0,
+    "windowsServiceControlsCalled":  0,
+    "nativeWindowsAdapterVerified":  false,
+    "tcpDisabled":  true,
+    "targetedUnitPassed":  7
+}

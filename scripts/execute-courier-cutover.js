@@ -1,0 +1,8 @@
+const fs=require('node:fs'),path=require('node:path');
+const {verifyPlan,executeCutover,within}=require('./lib/courier-cutover.cjs');
+function options(argv){const a={execute:false};for(let i=0;i<argv.length;i++){if(argv[i]==='--execute'){a.execute=true;continue;}const k={'--plan':'file','--plan-sha256':'sha','--expected-head':'head','--journal':'journal'}[argv[i]];if(!k||!argv[i+1]||a[k])throw Error('ARGUMENT_REJECTED');a[k]=argv[++i];}if(!path.isAbsolute(a.file||''))throw Error('ABSOLUTE_PLAN_REQUIRED');return a;}
+async function main(argv){const a=options(argv),v=await verifyPlan(a.file,a.sha,a.head);let host,fd;
+ if(a.execute){if(!v.plan.hostAdapter)throw Object.assign(Error('PINNED_OWNER_HOST_ADAPTER_REQUIRED'),{code:'PINNED_OWNER_HOST_ADAPTER_REQUIRED'});if(!a.journal||!path.isAbsolute(a.journal)||fs.existsSync(a.journal))throw Error('NEW_PRIVATE_EXECUTION_JOURNAL_REQUIRED');within(v.plan.releaseDirectory,path.relative(v.plan.releaseDirectory,a.journal));fd=fs.openSync(a.journal,'wx',0o600);}
+ try{if(a.execute)host=await require(v.plan.hostAdapter.file).create(v.plan);return await executeCutover(v,host,{execute:a.execute,save:j=>{if(a.execute){fs.ftruncateSync(fd,0);fs.writeSync(fd,JSON.stringify(j,null,2)+'\n',0,'utf8');fs.fsyncSync(fd);}}});}finally{await host?.close?.();if(fd!==undefined)fs.closeSync(fd);}}
+if(require.main===module)main(process.argv.slice(2)).then(r=>{console.log(JSON.stringify(r));if(r.status==='STOP')process.exitCode=1;}).catch(e=>{console.log(JSON.stringify({status:'STOP',code:/^[A-Z0-9_]+$/.test(e.code||'')?e.code:'EXECUTOR_REJECTED'}));process.exitCode=1;});
+module.exports={main,options};

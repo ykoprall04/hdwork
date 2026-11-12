@@ -4,6 +4,7 @@ const {validateReview}=require('./fifo-release');
 // Caller supplies an existing authorized pool. No credential lookup, Telegram, or runtime import.
 async function reviewRelease(pool,{botId,id,operator,reason,late=false,dryRun=true,expected}={}){
  validateReview({id,operator,reason,late});
+ if(reason==='ABANDONED_BY_OPERATOR')throw Object.assign(Error('ADMIN_CLOSURE_IS_NOT_FIFO_RELEASE'),{code:'ADMIN_CLOSURE_IS_NOT_FIFO_RELEASE'});
  if(typeof botId!=='string'||! /^[A-Za-z0-9_-]{1,64}$/.test(botId)||typeof dryRun!=='boolean')throw fail();
  if(!dryRun&&! /^[a-f0-9]{64}$/.test(expected||''))throw fail();
  const c=await pool.getConnection();
