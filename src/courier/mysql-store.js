@@ -49,13 +49,15 @@ class MysqlStore {
   enqueue(key, body) { return this.transaction(c => this.enqueueOn(c, key, body)); }
   async claim(limit = 1, options = {}) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw fail();
+    const blocked=options.excludeChats??[];if(!Array.isArray(blocked)||blocked.length>128||blocked.some(x=>typeof x!=='string'||!/^-[1-9]\d{0,19}$/.test(x))||blocked.length&&!this.fifo)throw fail();
+    const chatFence=blocked.length?" AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.chat_id')) NOT IN ("+blocked.map(()=>'?').join(',')+")":'';
     return this.transaction(async c => {
       if (options.before) await options.before(c);
       const now = this.now();
       if(this.fifo){const [legacy]=await c.execute("SELECT id FROM hd2_courier_outbox WHERE bot_id=? AND state<>'SENT' AND (conversation_key IS NULL OR conversation_seq IS NULL)"+this.boundarySql+" LIMIT 1 FOR SHARE",[this.botId,...this.boundaryParams]);if(legacy.length)throw Object.assign(fail(503),{code:'FIFO_LEGACY_BACKLOG_REVIEW_REQUIRED'});}
       const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=?" + this.boundarySql + this.outboxFence + " ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now, ...this.boundaryParams]);
       for (const row of expired) {logger().emit('OUTBOX_EXPIRED',{correlationId:row.id,status:'PRECOMMIT',reason:'LEASE_EXPIRED'});await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);}
-      const [rows] = await c.execute(`SELECT id,payload,attempts,created_at${this.fifo?',conversation_key,conversation_seq':''} FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?` + this.boundarySql + this.outboxFence + (this.fifo?require('./fifo').predicate:'') + " ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, ...this.boundaryParams, this.fifo?Math.min(10,limit*4):limit]);
+      const [rows] = await c.execute(`SELECT id,payload,attempts,created_at${this.fifo?',conversation_key,conversation_seq':''} FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?` + this.boundarySql + this.outboxFence + (this.fifo?require('./fifo').predicate:'') + chatFence + " ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, ...this.boundaryParams,...blocked, this.fifo?Math.min(10,limit*4):limit]);
       const messages = [];
       for (const row of rows) {
         if(messages.length>=limit)break;

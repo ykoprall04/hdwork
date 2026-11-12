@@ -8,13 +8,16 @@ from .http import TransportError
 from .raw_log import current_trace_id
 
 class InternalClient:
-    def __init__(self, config, transport, clock=time.time, nonce=lambda: uuid.uuid4().hex, fifo_ack=False):
+    def __init__(self, config, transport, clock=time.time, nonce=lambda: uuid.uuid4().hex, fifo_ack=False, budget=None):
         self.config, self.transport, self.clock, self.nonce = config, transport, clock, nonce
         self.worker = None
         self.fifo_ack = fifo_ack
         self.protocol_verified = False
+        self.budget = budget
 
     def post(self, path, body):
+        if self.budget:
+            self.budget.take(path)
         raw = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()
         stamp, nonce = str(int(self.clock())), self.nonce()
         content = '\n'.join([self.config.bot_id, stamp, nonce, 'POST', path, hashlib.sha256(raw).hexdigest()])
@@ -34,9 +37,9 @@ class InternalClient:
                 raise TransportError(409)
             self.protocol_verified = True
 
-    def claim(self):
+    def claim(self, exclude_chats=None):
         self.ensure_protocol()
-        response = self.post('/internal/courier/v1/outbox/claim', {'limit': 1, **({'delivery_protocol':'fifo-ack-v2'} if self.fifo_ack else {}), **({'worker': self.worker} if self.worker else {})})
+        response = self.post('/internal/courier/v1/outbox/claim', {'limit': 1, **({'exclude_chat_ids':exclude_chats} if exclude_chats else {}), **({'delivery_protocol':'fifo-ack-v2'} if self.fifo_ack else {}), **({'worker': self.worker} if self.worker else {})})
         if self.fifo_ack and response.get('delivery_protocol') != 'fifo-ack-v2':
             raise TransportError(409)
         return response['messages']

@@ -24,16 +24,24 @@ def serve(courier, stop, report=lambda code: print(code, file=sys.stderr)):
     failures = 0
     while not stop.is_set():
         retry_after = 0
+        local_budget=False
         try:
             observe('COURIER_CYCLE', courier.run_once)
             failures = 0
         except Exception as error:
             failures += 1
+            local_budget=getattr(error,'local_budget',False)
             if isinstance(error, TransportError):
                 retry_after = min(300, max(0, error.retry_after))
             logger().emit('CYCLE_RETRY', error=error, retryAfterMs=max(retry_after, min(60, 2 ** min(failures + 1, 6)))*1000)
             report('Courier cycle failed; durable backlog retained')
-        stop.wait(max(retry_after, min(60, 2 ** min(failures + 1, 6))))
+        if local_budget:
+            stop.wait(min(2,max(.05,retry_after)));continue
+        wait=max(retry_after,min(60,2**min(failures+1,6))) if failures else courier.recommended_delay() if getattr(courier,'scheduler',None) else 2
+        if getattr(courier,'scheduler',None):
+            courier.wakeup.wait(wait);courier.wakeup.clear()
+        else:
+            stop.wait(wait)
 
 def main():
     if sys.argv[1:] != ['--run']:
@@ -55,8 +63,11 @@ def main():
             if not source or Path(source).resolve() == journal_path.resolve():
                 raise ValueError('separate_source_journal_required')
             seed_offset(journal, source, config.base.bot_id, config.fingerprint, os.environ['COURIER_ACTIVATION_NOT_BEFORE'])
-        internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open), fifo_ack=config.fifo_ack)
-        ack_internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open)) if config.fifo_ack else None
+        from .scheduler import ApiBudget,Scheduler
+        budget=ApiBudget() if config.scheduler else None
+        scheduler=Scheduler(journal,config.group_rate,config.global_rate) if config.scheduler else None
+        internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open), fifo_ack=config.fifo_ack,budget=budget)
+        ack_internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open),budget=budget) if config.fifo_ack else None
         telegram = TelegramClient(config.base.token, JsonTransport(build_opener(NoRedirect()).open))
         if config.production_bot_id:
             telegram.verify_identity(config.production_bot_id, config.username)
@@ -83,7 +94,7 @@ def main():
         courier = DurableCourier(telegram, internal, journal,
                                  IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window, chat_enabled=config.chat_enabled), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,
-                                 report=report, database_routing=config.database_routing, fifo_ack=config.fifo_ack, ack_internal=ack_internal)
+                                 report=report, database_routing=config.database_routing, fifo_ack=config.fifo_ack, ack_internal=ack_internal,scheduler=scheduler)
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), lambda *_args: stop.set())

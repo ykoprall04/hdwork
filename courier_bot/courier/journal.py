@@ -170,6 +170,14 @@ class Journal:
     def has_ack(self):
         return self.db.execute('SELECT 1 FROM deliveries WHERE ack IS NOT NULL LIMIT 1').fetchone() is not None
 
+    def scheduler_state(self):
+        row=self.db.execute("SELECT value FROM metadata WHERE key='telegram_scheduler'").fetchone()
+        return json.loads(row['value']) if row else None
+
+    def save_scheduler(self,state):
+        with self.db:
+            self.db.execute("INSERT INTO metadata(key,value) VALUES ('telegram_scheduler',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (encoded(state),))
+
     def overdue_acks(self, age=60, interval=60):
         with self.db:
             rows = self.db.execute("SELECT delivery_id,ack_since FROM deliveries WHERE state IN ('ACK_PENDING','ACK_REVIEW') AND ack IS NOT NULL AND ack_since<=? AND (ack_alert_at IS NULL OR ack_alert_at<=?) ORDER BY ack_since LIMIT 10", (self.clock()-age, self.clock()-interval)).fetchall()

@@ -27,6 +27,7 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
           if (!table.some(r => r.bot_id === p[1] && r[key] === p[2])) table.push({ id: p[0], bot_id: p[1], [key]: p[2], payload_hash: p[3], payload: p[4], due_ms: p[5], state: inbox ? 'PENDING' : 'QUEUED', attempts: 0,...(!inbox&&p.length>6?{conversation_key:p[6],conversation_seq:p[7]}:{}) });
         } else if (sql.startsWith('SELECT') && sql.includes('hd2_courier_')) {
           let table = sql.includes('hd2_courier_inbox') ? state.inbox : state.outbox;
+          if(sql.includes("JSON_UNQUOTE(JSON_EXTRACT(payload,'$.chat_id')) NOT IN")){const blocked=p.slice(3,-1);table=table.filter(r=>!blocked.includes(JSON.parse(r.payload).chat_id));p=[...p.slice(0,3),p.at(-1)];}
           if(sql.includes('created_at>?')){
             const index=(sql.slice(0,sql.indexOf('created_at>?')).match(/\?/g)||[]).length;
             table=table.filter(r=>r.created_at>p[index]);

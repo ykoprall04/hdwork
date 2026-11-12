@@ -2,7 +2,8 @@
 import threading
 
 class AckPump:
-    def __init__(self):
+    def __init__(self, wake=lambda:None):
+        self.wake=wake
         self.pending = None
         self.completed = None
         self.closed = False
@@ -16,6 +17,8 @@ class AckPump:
                 self.completed = (row, call(), None)
             except Exception as error:
                 self.completed = (row, None, error)
+            finally:
+                self.wake()
         threading.Thread(target=work, daemon=True, name='courier-ack-http').start()
         return True
 

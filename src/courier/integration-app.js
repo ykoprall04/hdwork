@@ -37,6 +37,7 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
     if (req.body.limit !== 1) throw fail();
     if(req.body.delivery_protocol!==undefined&&(req.body.delivery_protocol!=='fifo-ack-v2'||!store.fifo))throw fail(409);
     const messages = await store.claim(1, {
+      excludeChats:req.body.exclude_chat_ids,
       before: c => runtime.assertWorker(req.body.worker, c),
       authorize: (payload, c) => policy.outgoing(payload, c)
     });

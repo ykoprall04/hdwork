@@ -1,6 +1,7 @@
 import json
 import time
 import uuid
+import threading
 from .http import TransportError
 from .raw_log import logger, observe
 
@@ -47,16 +48,20 @@ class WorkerLease:
 
 class DurableCourier:
     def __init__(self, telegram, internal, journal, policy, lease, *, poll=False, send=False,
-                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False, fifo_ack=False, ack_internal=None):
+                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False, fifo_ack=False, ack_internal=None, scheduler=None):
         self.telegram, self.internal, self.journal, self.policy, self.lease = telegram, internal, journal, policy, lease
         self.poll, self.send, self.clock, self.stopped = poll, send, clock, stopped
         self.database_routing = database_routing
+        self.wakeup=threading.Event()
+        self.scheduler=scheduler
+        self.active=False
+        self.routing_at=0
         self.fifo_ack = fifo_ack
         self.ack_internal = ack_internal
         if fifo_ack and ack_internal is None:
             raise ValueError('dedicated_ack_client_required')
         from .ack_pump import AckPump
-        self.ack_pump = AckPump() if fifo_ack else None
+        self.ack_pump = AckPump(self.wakeup.set) if fifo_ack else None
         self.cooldown_until = 0
         def technical_report(code):
             reasons = {'inbox_quarantined_review_required', 'inbox_backend_unavailable', 'outbox_ack_stale_cached_result_retained', 'outbox_ack_pending'}
@@ -86,7 +91,8 @@ class DurableCourier:
                 return
 
     def flush_ack(self):
-        for row in self.journal.overdue_acks():
+        age_check=getattr(self.journal,'overdue_acks',None)
+        for row in age_check() if callable(age_check) else ():
             logger().emit('ACK_STALLED',correlationId=row['delivery_id'],queueAgeMs=row['age_ms'],status='ERROR',reason='ACK_OVERDUE')
         if self.fifo_ack:
             return self.flush_ack_independent()
@@ -136,17 +142,22 @@ class DurableCourier:
         if self.ack_pump:
             self.ack_pump.close()
 
+    def recommended_delay(self):
+        return self.scheduler.delay(self.active) if self.scheduler else 2
+
     def run_once(self):
+        self.active=False
         if self.stopped():
             return
         self.lease.ensure()
         if self.fifo_ack:
             self.flush_ack()
-        if self.database_routing:
+        if self.database_routing and (not self.scheduler or self.clock()>=self.routing_at):
             configuration = observe('ROUTING', self.internal.routing)
             if configuration.get('ok') is not True:
                 raise TransportError()
             self.policy.refresh(configuration)
+            self.routing_at=self.clock()+15
         if self.poll and self.clock() >= self.cooldown_until:
             try:
                 updates = observe('TELEGRAM_POLL', lambda: self.telegram.updates(self.journal.offset))
@@ -168,7 +179,9 @@ class DurableCourier:
             logger().emit('OUTBOX_BLOCKED', reason='ACK_PENDING' if ack_pending else 'STOPPED')
             return
         self.lease.ensure()
-        deliveries = observe('OUTBOX_CLAIM', self.internal.claim)
+        if self.scheduler and self.scheduler.state['global_at']>self.scheduler.clock():
+            return
+        deliveries = observe('OUTBOX_CLAIM', lambda:self.internal.claim(exclude_chats=self.scheduler.blocked()) if self.scheduler else self.internal.claim())
         logger().emit('OUTBOX_CLAIM_RESULT', count=len(deliveries) if isinstance(deliveries, list) else 0, reason='CLAIMED' if deliveries else 'NO_ELIGIBLE_MESSAGE')
         if not isinstance(deliveries, list) or len(deliveries) > 1:
             raise TransportError()
@@ -178,21 +191,30 @@ class DurableCourier:
             self.lease.ensure()
             correlation = delivery.get('delivery_id')
             logger().emit('DELIVERY_START', correlationId=correlation, attempt=delivery.get('attempt', 0))
+            telegram_called=False
             try:
                 cached = observe('JOURNAL_BEGIN', lambda: self.journal.begin_delivery(delivery, strict=True) if self.fifo_ack else self.journal.begin_delivery(delivery), correlationId=correlation)
                 if not cached:
                     self.policy.outgoing(delivery['payload'])
                 if not cached and getattr(self.policy, 'dispatch_authorization_required', False) and not observe('AUTHORIZE', lambda: self.internal.authorize_delivery(delivery), correlationId=correlation):
                     raise TransportError(403)
+                if not cached and self.scheduler:
+                    self.scheduler.reserve(delivery['payload']['chat_id'])
+                telegram_called=True
                 message_id = cached or str(observe('TELEGRAM_SEND', lambda: self.telegram.send(delivery['payload']), correlationId=correlation))
                 result = {'result': 'sent', 'telegram_message_id': message_id}
             except TransportError as error:
-                if error.status == 429:
+                if error.status == 429 and self.scheduler and telegram_called:
+                    self.scheduler.limited(delivery['payload']['chat_id'],error.retry_after)
+                elif error.status == 429:
                     self.cooldown_until = self.clock() + max(1, error.retry_after)
                 code = {400: 'BAD_REQUEST', 403: 'FORBIDDEN', 429: 'RATE_LIMIT'}.get(error.status, 'NETWORK')
                 result = {'result': 'failed' if error.status in (400, 403) else 'retry',
                           'error_code': code, 'retry_after': min(300, max(0, error.retry_after))}
             observe('JOURNAL_RESULT', lambda: self.journal.delivery_result(delivery, result), correlationId=correlation)
+            self.active=True
+            if self.scheduler and result['result']=='sent':
+                self.scheduler.durable_success(delivery['payload']['chat_id'])
             logger().emit('DELIVERY_RESULT', correlationId=correlation, status=result['result'].upper(), retryAfterMs=result.get('retry_after', 0)*1000)
             if not self.stopped():
                 self.flush_ack()

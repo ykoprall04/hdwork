@@ -22,18 +22,24 @@ class RuntimeConfig:
     chat_enabled: bool = False
     production_bot_id: str = None
     fifo_ack: bool = False
+    scheduler: bool = False
+    group_rate: int = 18
+    global_rate: float = 1
 
     @classmethod
     def from_env(cls, env):
         if env.get('COURIER_INTEGRATION_ENABLED') != 'true':
             raise ValueError('integration_disabled')
-        for flag in ('COURIER_POLL_ENABLED', 'COURIER_SEND_ENABLED', 'COURIER_DATABASE_ROUTING_ENABLED', 'COURIER_CHAT_ENABLED', 'COURIER_PRODUCTION_MODE', 'COURIER_FIFO_ACK_ENABLED'):
+        for flag in ('COURIER_POLL_ENABLED', 'COURIER_SEND_ENABLED', 'COURIER_DATABASE_ROUTING_ENABLED', 'COURIER_CHAT_ENABLED', 'COURIER_PRODUCTION_MODE', 'COURIER_FIFO_ACK_ENABLED','COURIER_ADAPTIVE_SCHEDULER_ENABLED'):
             if env.get(flag, 'false') not in ('true', 'false'):
                 raise ValueError('integration_flag_invalid')
         if env.get('COURIER_CHAT_ENABLED') == 'true' and env.get('COURIER_DATABASE_ROUTING_ENABLED') != 'true':
             raise ValueError('chat_requires_database_routing')
         if env.get('COURIER_FIFO_ACK_ENABLED') == 'true' and any(env.get(k) != 'true' for k in ('COURIER_SEND_ENABLED', 'COURIER_DATABASE_ROUTING_ENABLED', 'COURIER_CHAT_ENABLED')):
             raise ValueError('fifo_ack_requires_verified_sender')
+        if env.get('COURIER_ADAPTIVE_SCHEDULER_ENABLED')=='true' and env.get('COURIER_FIFO_ACK_ENABLED')!='true':raise ValueError('scheduler_requires_fifo_ack')
+        group_rate=int(env.get('COURIER_GROUP_MESSAGES_PER_MINUTE','18'));global_rate=float(env.get('COURIER_GLOBAL_MESSAGES_PER_SECOND','1'))
+        if not 1<=group_rate<=18 or not .1<=global_rate<=1:raise ValueError('scheduler_rate_rejected')
         base = Config.from_env(env)
         expected_id = None
         if env.get('COURIER_PRODUCTION_MODE') == 'true':
@@ -62,7 +68,7 @@ class RuntimeConfig:
                 raise ValueError('journal_outside_repository_required')
             paths.append(p)
         return cls(base, username, groups, *paths, hashlib.sha256(base.token.encode()).hexdigest(),
-                   env.get('COURIER_POLL_ENABLED') == 'true', env.get('COURIER_SEND_ENABLED') == 'true', env.get('COURIER_DATABASE_ROUTING_ENABLED') == 'true', env.get('COURIER_CHAT_ENABLED') == 'true', expected_id, env.get('COURIER_FIFO_ACK_ENABLED') == 'true')
+                   env.get('COURIER_POLL_ENABLED') == 'true', env.get('COURIER_SEND_ENABLED') == 'true', env.get('COURIER_DATABASE_ROUTING_ENABLED') == 'true', env.get('COURIER_CHAT_ENABLED') == 'true', expected_id, env.get('COURIER_FIFO_ACK_ENABLED') == 'true',env.get('COURIER_ADAPTIVE_SCHEDULER_ENABLED')=='true',group_rate,global_rate)
 
 
 def private_directory(path):

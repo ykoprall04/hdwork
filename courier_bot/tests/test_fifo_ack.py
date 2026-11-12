@@ -90,3 +90,11 @@ class FifoAckTests(unittest.TestCase):
         from courier.runtime_config import RuntimeConfig
         with self.assertRaisesRegex(ValueError,'fifo_ack_requires_verified_sender'):
             RuntimeConfig.from_env({'COURIER_INTEGRATION_ENABLED':'true','COURIER_FIFO_ACK_ENABLED':'true','COURIER_SEND_ENABLED':'false'})
+
+    def test_scheduler_429_cools_only_that_group_before_claim(self):
+        from courier.scheduler import Scheduler
+        r,tg,api=self.runner(lambda *_:{'ok':True});r.scheduler=Scheduler(self.j,clock=lambda:self.now)
+        first=job();other=job(B,'22');other['payload']['chat_id']='-1002';api.claim.side_effect=[[first],[other]];tg.send.side_effect=[TransportError(429,30),100]
+        try:
+            r.run_once();self.assertEqual(r.cooldown_until,0);self.now+=1;r.run_once();self.assertIn('-1001',api.claim.call_args.kwargs['exclude_chats']);self.assertEqual(tg.send.call_count,2)
+        finally:r.close()
