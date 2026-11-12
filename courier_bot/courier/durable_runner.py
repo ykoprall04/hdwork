@@ -48,11 +48,16 @@ class WorkerLease:
 
 class DurableCourier:
     def __init__(self, telegram, internal, journal, policy, lease, *, poll=False, send=False,
-                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False, fifo_ack=False, ack_internal=None, scheduler=None):
+                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False, fifo_ack=False, ack_internal=None, scheduler=None, inbound_telegram=None, forward_internal=None):
         self.telegram, self.internal, self.journal, self.policy, self.lease = telegram, internal, journal, policy, lease
         self.poll, self.send, self.clock, self.stopped = poll, send, clock, stopped
         self.database_routing = database_routing
         self.wakeup=threading.Event()
+        from .inbound_io import PollPump
+        self.poll_pump=PollPump(inbound_telegram,self.wakeup.set,clock) if inbound_telegram else None
+        self.forward_internal=forward_internal
+        from .ack_pump import AckPump
+        self.forward_pump=AckPump(self.wakeup.set) if forward_internal else None
         self.scheduler=scheduler
         self.active=False
         self.routing_at=0
@@ -70,6 +75,8 @@ class DurableCourier:
         self.report = technical_report
 
     def flush_events(self):
+        if self.forward_pump:
+            return self.flush_events_independent()
         for _ in range(5):
             if self.stopped():
                 return
@@ -89,6 +96,23 @@ class DurableCourier:
             except (KeyError, ValueError, TypeError):
                 self.journal.defer(row)
                 return
+
+    def flush_events_independent(self):
+        done=self.forward_pump.poll()
+        if done:
+            row,result,error=done
+            if error is None and isinstance(result,dict) and result.get('ok') is True:
+                self.journal.accepted(row,result.get('receipt_id'))
+            else:
+                terminal=getattr(error,'status',0) in (400,403,409,413)
+                self.journal.defer(row,terminal=terminal,retry_after=getattr(error,'retry_after',0))
+                logger().emit('INBOX_FORWARD_RETRY',error=error,status='ERROR')
+        if self.forward_pump.pending is None and not self.stopped():
+            row=self.journal.next_event()
+            if row:
+                self.lease.ensure();worker=getattr(self.internal,'worker',None)
+                self.forward_internal.worker=dict(worker) if isinstance(worker,dict) else worker
+                self.forward_pump.submit(row,lambda:observe('INBOX_FORWARD',lambda:self.forward_internal.event(json.loads(row['payload']))))
 
     def flush_ack(self):
         age_check=getattr(self.journal,'overdue_acks',None)
@@ -139,6 +163,8 @@ class DurableCourier:
             self.ack_pump.submit(row, lambda: observe('ACK_HTTP', lambda: self.ack_internal.settle(ack, ack['result']), correlationId=row['delivery_id']))
 
     def close(self):
+        if self.poll_pump:self.poll_pump.close()
+        if self.forward_pump:self.forward_pump.close()
         if self.ack_pump:
             self.ack_pump.close()
 
@@ -158,7 +184,15 @@ class DurableCourier:
                 raise TransportError()
             self.policy.refresh(configuration)
             self.routing_at=self.clock()+15
-        if self.poll and self.clock() >= self.cooldown_until:
+        if self.poll and self.poll_pump:
+            done=self.poll_pump.take(self.journal.offset)
+            if done:
+                updates,error=done
+                if error:logger().emit('TELEGRAM_POLL_RETRY',error=error,status='ERROR')
+                else:
+                    observe('JOURNAL_INCOMING',lambda:self.journal.append(updates,self.policy.prepare))
+                    logger().emit('TELEGRAM_POLL_RESULT',count=len(updates))
+        elif self.poll and self.clock() >= self.cooldown_until:
             try:
                 updates = observe('TELEGRAM_POLL', lambda: self.telegram.updates(self.journal.offset))
             except TransportError as error:

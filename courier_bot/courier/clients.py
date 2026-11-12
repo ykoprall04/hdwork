@@ -66,8 +66,9 @@ class TelegramClient:
         if webhook.get('url'):
             raise ValueError('production_webhook_already_configured')
 
-    def updates(self, offset):
-        payload = {'timeout': 0, 'limit': 10, 'allowed_updates': ['message', 'edited_message']}
+    def updates(self, offset, timeout=0):
+        if type(timeout) is not int or not 0<=timeout<=25:raise TransportError(400)
+        payload = {'timeout': timeout, 'limit': 10, 'allowed_updates': ['message', 'edited_message']}
         if offset is not None:
             payload['offset'] = offset
         return self.transport.post(self._base + 'getUpdates', payload)['result']

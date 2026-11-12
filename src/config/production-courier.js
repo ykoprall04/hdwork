@@ -5,6 +5,7 @@ const {boundary}=require('../courier/activation-boundary');
 const {clearSecrets}=require('./private-courier-env');
 function validate(plan,{repo}={}){
  const keys=['version','environment','telegramBotId','botId','botUsername','port','groups','secretRoot','tokenDpapiFile','serviceKeyDpapiFile','identityKeyDpapiFile','dbPasswordDpapiFile','journalDirectory','sourceJournalDirectory','lockDirectory','activationNotBefore'];
+ if(plan&&Object.hasOwn(plan,'separateIo')){if(plan.separateIo!==true||plan.adaptiveScheduler!==true)throw Error('SEPARATE_IO_REQUIRES_SCHEDULER');keys.push('separateIo');}
  if(plan&&Object.hasOwn(plan,'telegramLimits')){const l=plan.telegramLimits;if(plan.adaptiveScheduler!==true||!l||Object.keys(l).sort().join(',')!=='globalPerSecond,groupPerMinute'||!Number.isInteger(l.groupPerMinute)||l.groupPerMinute<1||l.groupPerMinute>18||!Number.isFinite(l.globalPerSecond)||l.globalPerSecond<.1||l.globalPerSecond>1)throw Error('TELEGRAM_LIMITS_REJECTED');keys.push('telegramLimits');}
  if(plan&&Object.hasOwn(plan,'adaptiveScheduler')){if(plan.adaptiveScheduler!==true||plan.deliveryMode!=='fifo-ack-v2')throw Error('SCHEDULER_REQUIRES_FIFO');keys.push('adaptiveScheduler');}
  if(plan&&Object.hasOwn(plan,'deliveryMode')){if(plan.deliveryMode!=='fifo-ack-v2')throw Error('DELIVERY_MODE_REJECTED');keys.push('deliveryMode');}
@@ -41,6 +42,7 @@ async function load(plan,{kind,repo,readSecret}={}){
   if(p.deliveryMode==='fifo-ack-v2'){if(p.routingMode!=='database')throw Error('FIFO_REQUIRES_DATABASE_ROUTING');if(kind==='backend')env.HDWORK2_COURIER_FIFO_ENABLED='true';else env.COURIER_FIFO_ACK_ENABLED='true';}
   if(p.adaptiveScheduler&&kind==='python')env.COURIER_ADAPTIVE_SCHEDULER_ENABLED='true';
   if(p.telegramLimits&&kind==='python'){env.COURIER_GROUP_MESSAGES_PER_MINUTE=String(p.telegramLimits.groupPerMinute);env.COURIER_GLOBAL_MESSAGES_PER_SECOND=String(p.telegramLimits.globalPerSecond);}
+  if(p.separateIo&&kind==='python')env.COURIER_SEPARATE_IO_ENABLED='true';
   env.COURIER_SERVICE_KEY=await readSecret(path.resolve(repo,p.serviceKeyDpapiFile));
   if(typeof env.COURIER_SERVICE_KEY!=='string'||Buffer.byteLength(env.COURIER_SERVICE_KEY)<32)throw Error('PROTECTED_SERVICE_KEY_REJECTED');
   if(kind==='backend'){

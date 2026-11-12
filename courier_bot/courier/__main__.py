@@ -68,6 +68,8 @@ def main():
         scheduler=Scheduler(journal,config.group_rate,config.global_rate) if config.scheduler else None
         internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open), fifo_ack=config.fifo_ack,budget=budget)
         ack_internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open),budget=budget) if config.fifo_ack else None
+        inbound_telegram=TelegramClient(config.base.token,JsonTransport(build_opener(NoRedirect()).open,timeout=35)) if config.separate_io else None
+        forward_internal=InternalClient(config.base,JsonTransport(build_opener(ProxyHandler({}),NoRedirect()).open),budget=budget) if config.separate_io else None
         telegram = TelegramClient(config.base.token, JsonTransport(build_opener(NoRedirect()).open))
         if config.production_bot_id:
             telegram.verify_identity(config.production_bot_id, config.username)
@@ -94,7 +96,7 @@ def main():
         courier = DurableCourier(telegram, internal, journal,
                                  IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window, chat_enabled=config.chat_enabled), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,
-                                 report=report, database_routing=config.database_routing, fifo_ack=config.fifo_ack, ack_internal=ack_internal,scheduler=scheduler)
+                                 report=report, database_routing=config.database_routing, fifo_ack=config.fifo_ack, ack_internal=ack_internal,scheduler=scheduler,inbound_telegram=inbound_telegram,forward_internal=forward_internal)
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), lambda *_args: stop.set())

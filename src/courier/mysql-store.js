@@ -18,9 +18,10 @@ class MysqlStore {
   }
   async transaction(run) {
     const connection = await observe('MYSQL_POOL_ACQUIRE',{},()=>this.pool.getConnection());
+    let liveDirty=false;
     const execute=connection.execute;
-    connection.execute=function(...args){return observe('MYSQL_EXECUTE',{},()=>execute.apply(this,args));};
-    try { await observe('MYSQL_BEGIN',{},()=>connection.beginTransaction()); const result = await run(connection); await observe('MYSQL_COMMIT',{},()=>connection.commit()); return result; }
+    connection.execute=function(...args){if(typeof args[0]==='string'&&/^INSERT INTO hd2_live_events\b/.test(args[0]))liveDirty=true;return observe('MYSQL_EXECUTE',{},()=>execute.apply(this,args));};
+    try { await observe('MYSQL_BEGIN',{},()=>connection.beginTransaction()); const result = await run(connection); await observe('MYSQL_COMMIT',{},()=>connection.commit());if(liveDirty){try{require('../operations/live-signal').notify();}catch(error){logger().emit('LIVE_WAKE_FAILED',{status:'ERROR'},error);}} return result; }
     catch (error) { try { await observe('MYSQL_ROLLBACK',{},()=>connection.rollback()); } catch { /* release still required */ } throw error; }
     finally { connection.execute=execute;connection.release(); }
   }
