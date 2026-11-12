@@ -22,18 +22,19 @@ async function run(argv=process.argv.slice(2)){
   backendEnv=await load(plan,{kind:'backend'});pythonEnv=await load(plan,{kind:'python'});
   if(require('node:crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex')!==rawHash)throw Error('PRODUCTION_PLAN_CHANGED');
   backend=await require('../courier-b2c-server').startIntegration({env:backendEnv,deferInboxWorker:true});
-  const childEnv=Object.fromEntries(['SystemRoot','WINDIR','PATH','Path','PATHEXT','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA'].filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
+  const childEnv=Object.fromEntries(['SystemRoot','WINDIR','PATH','Path','PATHEXT','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA','ProgramData','HDWORK2_RAW_LOG_ENABLED','HDWORK2_LOG_DIRECTORY'].filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
   Object.assign(childEnv,pythonEnv,{PYTHONDONTWRITEBYTECODE:'1'});
   child=spawn('python',['-B','-m','courier','--run'],{cwd:path.resolve(__dirname,'../courier_bot'),env:childEnv,windowsHide:true,stdio:['pipe','pipe','pipe']});clearSecrets(childEnv);
   child.stdin.on('error',()=>{});
   childDone=new Promise(resolve=>{child.once('exit',resolve);child.once('error',resolve);});
   // Never echo Python stderr, environment, Telegram responses or payloads.
-  child.stderr.on('data',()=>{});
+  child.stderr.on('data',bytes=>require('../src/observability/raw-log').logger().emit('PYTHON_STDERR',{count:bytes.length}));
   await new Promise((resolve,reject)=>{
    let output='';const timeout=setTimeout(()=>reject(Error('PRODUCTION_COURIER_READY_TIMEOUT')),30000);
    const fail=()=>{clearTimeout(timeout);reject(Error('PRODUCTION_COURIER_START_FAILED'));};
    child.once('error',fail);child.once('exit',fail);
    child.stdout.on('data',bytes=>{
+    require('../src/observability/raw-log').logger().emit('PYTHON_STDOUT',{count:bytes.length});
     output+=bytes.toString('utf8');if(output.length>4096)return fail();
     const end=output.indexOf('\n');if(end<0)return;
     try{const event=JSON.parse(output.slice(0,end));if(event.event!=='READY'||event.productionIdentityVerified!==true||event.send!==true)return fail();clearTimeout(timeout);resolve();}catch{fail();}

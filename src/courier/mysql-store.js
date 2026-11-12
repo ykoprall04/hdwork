@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const {logger,observe}=require('../observability/raw-log');
 const { eventEnvelope, outbound, digest, fail, messageId } = require('./contract');
 const json = value => typeof value === 'string' ? JSON.parse(value) : value;
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
@@ -15,10 +16,12 @@ class MysqlStore {
     this.boundaryParams = this.activationBoundary ? [this.activationBoundary.sql] : [];
   }
   async transaction(run) {
-    const connection = await this.pool.getConnection();
-    try { await connection.beginTransaction(); const result = await run(connection); await connection.commit(); return result; }
-    catch (error) { try { await connection.rollback(); } catch { /* release still required */ } throw error; }
-    finally { connection.release(); }
+    const connection = await observe('MYSQL_POOL_ACQUIRE',{},()=>this.pool.getConnection());
+    const execute=connection.execute;
+    connection.execute=function(...args){return observe('MYSQL_EXECUTE',{},()=>execute.apply(this,args));};
+    try { await observe('MYSQL_BEGIN',{},()=>connection.beginTransaction()); const result = await run(connection); await observe('MYSQL_COMMIT',{},()=>connection.commit()); return result; }
+    catch (error) { try { await observe('MYSQL_ROLLBACK',{},()=>connection.rollback()); } catch { /* release still required */ } throw error; }
+    finally { connection.execute=execute;connection.release(); }
   }
   async accept(body) {
     const payload = eventEnvelope(body, this.botId), hash = digest(payload), id = randomUUID();
@@ -27,6 +30,7 @@ class MysqlStore {
       await c.execute('INSERT INTO hd2_courier_inbox (id,bot_id,update_id,payload_hash,payload,due_ms) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE id=id', [id, this.botId, payload.update_id, hash, JSON.stringify(payload), this.now()]);
       const [[row]] = await c.execute('SELECT id,payload_hash FROM hd2_courier_inbox WHERE bot_id=? AND update_id=? FOR UPDATE', [this.botId, payload.update_id]);
       if (!row || row.payload_hash !== hash) throw fail(409);
+      logger().emit('INBOX_ACCEPTED',{correlationId:row.id,status:'PRECOMMIT'});
       return { receipt_id: row.id, duplicate: row.id !== id };
     });
   }
@@ -37,6 +41,7 @@ class MysqlStore {
     await c.execute('INSERT INTO hd2_courier_outbox (id,bot_id,idem_key,payload_hash,payload,due_ms) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE id=id', [id, this.botId, key, hash, JSON.stringify(payload), this.now()]);
     const [[row]] = await c.execute('SELECT id,payload_hash FROM hd2_courier_outbox WHERE bot_id=? AND idem_key=? FOR UPDATE', [this.botId, key]);
     if (!row || row.payload_hash !== hash) throw fail(409);
+    logger().emit('OUTBOX_ENQUEUE', {correlationId:row.id,status:'PRECOMMIT'});
     return row.id;
   }
   enqueue(key, body) { return this.transaction(c => this.enqueueOn(c, key, body)); }
@@ -46,16 +51,18 @@ class MysqlStore {
       if (options.before) await options.before(c);
       const now = this.now();
       const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=?" + this.boundarySql + this.outboxFence + " ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now, ...this.boundaryParams]);
-      for (const row of expired) await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);
-      const [rows] = await c.execute("SELECT id,payload,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?" + this.boundarySql + this.outboxFence + " ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, ...this.boundaryParams, limit]);
+      for (const row of expired) {logger().emit('OUTBOX_EXPIRED',{correlationId:row.id,status:'PRECOMMIT',reason:'LEASE_EXPIRED'});await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);}
+      const [rows] = await c.execute("SELECT id,payload,attempts,created_at FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?" + this.boundarySql + this.outboxFence + " ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, ...this.boundaryParams, limit]);
       const messages = [];
       for (const row of rows) {
         if (options.authorize && !await options.authorize(json(row.payload), c)) {
+          logger().emit('OUTBOX_REJECTED',{correlationId:row.id,status:'PRECOMMIT',reason:'AUTHORIZATION_DENIED'});
           await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now, 'BAD_REQUEST', row.id, this.botId]);
           continue;
         }
         const lease = randomUUID();
         await c.execute("UPDATE hd2_courier_outbox SET state='SENDING',attempts=attempts+1,lease_token=?,lease_until_ms=? WHERE id=? AND bot_id=?", [lease, now + 60000, row.id, this.botId]);
+        logger().emit('OUTBOX_SELECTED',{correlationId:row.id,attempt:row.attempts+1,queueAgeMs:Number.isFinite(new Date(row.created_at).getTime())?Math.max(0,now-new Date(row.created_at).getTime()):undefined,status:'PRECOMMIT'});
         messages.push({ delivery_id: row.id, lease_token: lease, attempt: row.attempts + 1, payload: json(row.payload) });
       }
       return messages;
@@ -95,12 +102,14 @@ class MysqlStore {
         if (!row) return false;
         if (this.orderedInbox && Number(row.due_ms) > this.now()) return false;
         selected = row.id;
+        logger().emit('INBOX_SELECTED',{correlationId:row.id,attempt:row.attempts+1,status:'PRECOMMIT'});
         const result = await handler(json(row.payload), { connection: c, inboxId: row.id, enqueue: (key, payload) => this.enqueueOn(c, key, payload) });
         const state = result?.disposition === 'IGNORED' ? 'IGNORED' : 'PROCESSED';
         await c.execute('UPDATE hd2_courier_inbox SET state=?,attempts=attempts+1,processed_at=UTC_TIMESTAMP(3) WHERE id=? AND bot_id=?', [state, row.id, this.botId]);
         return true;
       });
-    } catch {
+    } catch (error) {
+      logger().emit('INBOX_PROCESS_FAILURE',{correlationId:selected,status:'ERROR'},error);
       if (selected) await this.transaction(async c => {
         const [[row]] = await c.execute('SELECT state,attempts FROM hd2_courier_inbox WHERE id=? AND bot_id=? FOR UPDATE', [selected, this.botId]);
         if (row?.state === 'PENDING') await c.execute('UPDATE hd2_courier_inbox SET attempts=?,state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', [row.attempts + 1, row.attempts + 1 >= this.maxAttempts ? 'DEAD' : 'PENDING', this.now() + backoff(row.attempts + 1), 'HANDLER_FAILED', selected, this.botId]);
@@ -108,5 +117,11 @@ class MysqlStore {
       throw fail(503);
     }
   }
+}
+for(const name of ['transaction','accept','enqueueOn','claim','authorizeDelivery','settle','processNext']){
+ const original=MysqlStore.prototype[name];MysqlStore.prototype[name]=function(...args){
+  const data={};if(['settle','authorizeDelivery'].includes(name))data.correlationId=args[0];
+  return observe('MYSQL_'+name.replace(/[A-Z]/g,c=>'_'+c).toUpperCase(),data,()=>original.apply(this,args));
+ };
 }
 module.exports = { MysqlStore };

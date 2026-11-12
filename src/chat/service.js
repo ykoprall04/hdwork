@@ -1,4 +1,5 @@
 const {randomUUID}=require('node:crypto'),{fail,uuid,hash,moduleOf}=require('../operations/policy'),{digest}=require('../access/service'),{MysqlStore}=require('../courier/mysql-store');
+const {logger,observe}=require('../observability/raw-log');
 const B2C=['TIAL','REQ','LOGIC_PSB','LOGIC_MO','ASSUREN','B2B','REPLACEMENT'];
 const scope=user=>user.modules.filter(m=>B2C.includes(m));
 function page(value='1'){if(typeof value!=='string'||! /^[1-9]\d{0,3}$/.test(value))throw fail();return Number(value);}
@@ -17,7 +18,7 @@ async function captureIncoming({c,event:e,botId}){
 }
 async function recordOriginal({c,event:e,botId,orderId}){await c.execute("INSERT IGNORE INTO hd2_chat_messages(id,order_id,bot_id,chat_id,thread_id,telegram_message_id,reply_to_id,direction,sender_id,body,attachments,telegram_timestamp) VALUES (?,?,?,?,?,?,NULL,'IN',?,?,?,?)",[randomUUID(),orderId,botId,e.chat_id,e.telegram_thread_id,e.message_id,e.sender_id,e.text,JSON.stringify(e.attachments),e.timestamp]);}
 function createChat({readPool,writePool,sharedGroups=process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true'}){
- return {
+ const service={
   async conversations(query,user){if(user.username==='trial_yanto')throw fail(403);if(Object.keys(query).some(k=>!['page','area'].includes(k)))throw fail();const n=page(query.page),modules=scope(user).filter(m=>!query.area||(query.area==='TIAL'?['TIAL','REQ'].includes(m):query.area==='LOGIC'?m.startsWith('LOGIC'):false));if(query.area&&!['TIAL','LOGIC'].includes(query.area))throw fail();const [rows]=await readPool.execute(`SELECT o.id,o.sc_in AS reference,o.access_module AS module,o.status,o.version,o.owner_user_id AS ownerId,u.name AS ownerName,DATE_FORMAT(o.started_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS startedAt,DATE_FORMAT(o.finished_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS finishedAt,o.duplicate_of AS duplicateOf,o.duplicate_decision AS decision,o.command FROM hd2_orders o LEFT JOIN users u ON u.id=o.owner_user_id WHERE o.access_module IN (${modules.map(()=>'?').join(',')||"''"}) AND o.command IN ('order','req','config_psb','mo','assuren','b2b','replacement') ORDER BY o.telegram_timestamp DESC,o.id DESC LIMIT 26 OFFSET ?`,[...modules,(n-1)*25]);return {data:rows.slice(0,25),page:n,hasMore:rows.length>25};},
   async messages(id,query,user){if(user.username==='trial_yanto')throw fail(403);uuid(id);if(Object.keys(query).some(k=>k!=='page'))throw fail();const n=page(query.page),allowed=scope(user);const [[order]]=await readPool.execute(`SELECT id,bot_id,chat_id,thread_id FROM hd2_orders WHERE id=? AND access_module IN (${allowed.map(()=>'?').join(',')||"''"})`,[id,...allowed]);if(!order)throw fail(404);
    let routeActive=true;if(sharedGroups){const [[route]]=await readPool.execute('SELECT enabled,verified FROM hd2_system_mappings WHERE bot_id=? AND chat_id=? AND thread_id<=>?',[order.bot_id,order.chat_id,order.thread_id]);routeActive=!!route&&[1,true].includes(route.enabled)&&[1,true].includes(route.verified);}
@@ -34,5 +35,10 @@ function createChat({readPool,writePool,sharedGroups=process.env.HDWORK2_SHARED_
    await c.execute("INSERT INTO hd2_chat_messages(id,order_id,bot_id,chat_id,thread_id,reply_to_id,direction,user_id,body,outbox_id) VALUES (?,?,?,?,?,?,'OUT',?,?,?)",[messageId,id,order.bot_id,order.chat_id,order.thread_id,order.message_id,userId,body.text,outboxId]);await c.execute("INSERT INTO hd2_audit(id,order_id,action,user_id,detail) VALUES (?,?,'CHAT_SENT',?,?)",[randomUUID(),id,userId,JSON.stringify({messageId,requestId:body.requestId,outboxId})]);await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,'change')",[moduleOf(order)]);const result={success:true,messageId,outboxId,status:'ANTRE'};await c.execute('UPDATE hd2_web_requests SET result=? WHERE user_id=? AND request_id=?',[JSON.stringify(result),userId,body.requestId]);return result;
   });}
  };
+ for(const name of ['messages','conversations']){const original=service[name];service[name]=function(...args){return observe(name==='messages'?'CHAT_HISTORY':'CHAT_CONVERSATIONS',{},()=>original.apply(this,args));};}
+ const send=service.send;service.send=async function(id,token,userId,input){
+  const result=await observe('CHAT_SEND',{orderId:id,requestId:input?.requestId},()=>send.call(this,id,token,userId,input));
+  logger().emit('CHAT_COMMITTED',{orderId:id,requestId:input?.requestId,correlationId:result.outboxId,status:'QUEUED'});return result;
+ };return service;
 }
 module.exports={createChat,captureIncoming,recordOriginal,reply,page};

@@ -11,6 +11,7 @@ from .clients import InternalClient, TelegramClient
 from .groups import IngressPolicy
 from .journal import Journal
 from .lock import PollingLock
+from .raw_log import logger, observe
 from .durable_runner import DurableCourier, WorkerLease
 
 
@@ -24,12 +25,13 @@ def serve(courier, stop, report=lambda code: print(code, file=sys.stderr)):
     while not stop.is_set():
         retry_after = 0
         try:
-            courier.run_once()
+            observe('COURIER_CYCLE', courier.run_once)
             failures = 0
         except Exception as error:
             failures += 1
             if isinstance(error, TransportError):
                 retry_after = min(300, max(0, error.retry_after))
+            logger().emit('CYCLE_RETRY', error=error, retryAfterMs=max(retry_after, min(60, 2 ** min(failures + 1, 6)))*1000)
             report('Courier cycle failed; durable backlog retained')
         stop.wait(max(retry_after, min(60, 2 ** min(failures + 1, 6))))
 
@@ -94,7 +96,8 @@ def main():
         return 0
     except KeyboardInterrupt:
         return 0
-    except Exception:
+    except Exception as error:
+        logger().emit('COURIER_START_FAILED', error=error)
         print('Courier configuration or journal rejected', file=sys.stderr)
         return 1
     finally:

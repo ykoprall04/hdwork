@@ -2,6 +2,7 @@ import json
 import time
 import uuid
 from .http import TransportError
+from .raw_log import logger, observe
 
 
 class WorkerLease:
@@ -51,7 +52,11 @@ class DurableCourier:
         self.poll, self.send, self.clock, self.stopped = poll, send, clock, stopped
         self.database_routing = database_routing
         self.cooldown_until = 0
-        self.report = report
+        def technical_report(code):
+            reasons = {'inbox_quarantined_review_required', 'inbox_backend_unavailable', 'outbox_ack_stale_cached_result_retained', 'outbox_ack_pending'}
+            logger().emit('COURIER_NOTICE', reason=code.upper() if code in reasons else 'REDACTED')
+            report(code)
+        self.report = technical_report
 
     def flush_events(self):
         for _ in range(5):
@@ -62,10 +67,10 @@ class DurableCourier:
                 return
             self.lease.ensure()
             try:
-                ack = self.internal.event(json.loads(row['payload']))
+                ack = observe('INBOX_FORWARD', lambda: self.internal.event(json.loads(row['payload'])))
                 if ack.get('ok') is not True:
                     raise TransportError()
-                self.journal.accepted(row, ack.get('receipt_id'))
+                observe('JOURNAL_INBOX_ACK', lambda: self.journal.accepted(row, ack.get('receipt_id')), correlationId=ack.get('receipt_id'))
             except TransportError as error:
                 self.journal.defer(row, terminal=error.status in (400, 403, 409, 413), retry_after=error.retry_after)
                 self.report('inbox_quarantined_review_required' if error.status in (400,403,409,413) else 'inbox_backend_unavailable')
@@ -81,13 +86,13 @@ class DurableCourier:
         ack = json.loads(row['ack'])
         self.lease.ensure()
         try:
-            result = self.internal.settle(ack, ack['result'])
+            result = observe('ACK', lambda: self.internal.settle(ack, ack['result']), correlationId=ack.get('delivery_id'))
             if result.get('ok') is not True:
                 raise TransportError()
-            self.journal.finish_ack(row)
+            observe('JOURNAL_ACK_FINISH', lambda: self.journal.finish_ack(row), correlationId=ack.get('delivery_id'))
         except TransportError as error:
             if error.status == 409:
-                self.journal.finish_ack(row)
+                observe('JOURNAL_ACK_FINISH', lambda: self.journal.finish_ack(row), correlationId=ack.get('delivery_id'))
                 self.report('outbox_ack_stale_cached_result_retained')
             else:
                 self.journal.defer_ack(row, retry_after=error.retry_after)
@@ -98,40 +103,48 @@ class DurableCourier:
             return
         self.lease.ensure()
         if self.database_routing:
-            configuration = self.internal.routing()
+            configuration = observe('ROUTING', self.internal.routing)
             if configuration.get('ok') is not True:
                 raise TransportError()
             self.policy.refresh(configuration)
         if self.poll and self.clock() >= self.cooldown_until:
             try:
-                updates = self.telegram.updates(self.journal.offset)
+                updates = observe('TELEGRAM_POLL', lambda: self.telegram.updates(self.journal.offset))
             except TransportError as error:
                 self.cooldown_until = self.clock() + max(2, error.retry_after if error.status == 429 else 5)
                 updates = None
             if updates is not None:
-                self.journal.append(updates, self.policy.prepare)
+                observe('JOURNAL_INCOMING', lambda: self.journal.append(updates, self.policy.prepare))
+                logger().emit('TELEGRAM_POLL_RESULT', count=len(updates))
         if self.poll and not self.stopped():
             self.flush_events()
-        if not self.send or self.stopped() or self.clock() < self.cooldown_until:
+        reason = 'SEND_DISABLED' if not self.send else 'STOPPED' if self.stopped() else 'COOLDOWN' if self.clock() < self.cooldown_until else None
+        if reason:
+            logger().emit('OUTBOX_BLOCKED', reason=reason, waitMs=max(0, self.cooldown_until-self.clock())*1000)
             return
         self.flush_ack()
-        if self.journal.has_ack() or self.stopped():
+        ack_pending = self.journal.has_ack()
+        if ack_pending or self.stopped():
+            logger().emit('OUTBOX_BLOCKED', reason='ACK_PENDING' if ack_pending else 'STOPPED')
             return
         self.lease.ensure()
-        deliveries = self.internal.claim()
+        deliveries = observe('OUTBOX_CLAIM', self.internal.claim)
+        logger().emit('OUTBOX_CLAIM_RESULT', count=len(deliveries) if isinstance(deliveries, list) else 0, reason='CLAIMED' if deliveries else 'NO_ELIGIBLE_MESSAGE')
         if not isinstance(deliveries, list) or len(deliveries) > 1:
             raise TransportError()
         for delivery in deliveries:
             if self.stopped():
                 return
             self.lease.ensure()
-            cached = self.journal.begin_delivery(delivery)
+            correlation = delivery.get('delivery_id')
+            logger().emit('DELIVERY_START', correlationId=correlation, attempt=delivery.get('attempt', 0))
+            cached = observe('JOURNAL_BEGIN', lambda: self.journal.begin_delivery(delivery), correlationId=correlation)
             try:
                 if not cached:
                     self.policy.outgoing(delivery['payload'])
-                if not cached and getattr(self.policy, 'dispatch_authorization_required', False) and not self.internal.authorize_delivery(delivery):
+                if not cached and getattr(self.policy, 'dispatch_authorization_required', False) and not observe('AUTHORIZE', lambda: self.internal.authorize_delivery(delivery), correlationId=correlation):
                     raise TransportError(403)
-                message_id = cached or str(self.telegram.send(delivery['payload']))
+                message_id = cached or str(observe('TELEGRAM_SEND', lambda: self.telegram.send(delivery['payload']), correlationId=correlation))
                 result = {'result': 'sent', 'telegram_message_id': message_id}
             except TransportError as error:
                 if error.status == 429:
@@ -139,6 +152,7 @@ class DurableCourier:
                 code = {400: 'BAD_REQUEST', 403: 'FORBIDDEN', 429: 'RATE_LIMIT'}.get(error.status, 'NETWORK')
                 result = {'result': 'failed' if error.status in (400, 403) else 'retry',
                           'error_code': code, 'retry_after': min(300, max(0, error.retry_after))}
-            self.journal.delivery_result(delivery, result)
+            observe('JOURNAL_RESULT', lambda: self.journal.delivery_result(delivery, result), correlationId=correlation)
+            logger().emit('DELIVERY_RESULT', correlationId=correlation, status=result['result'].upper(), retryAfterMs=result.get('retry_after', 0)*1000)
             if not self.stopped():
                 self.flush_ack()

@@ -16,10 +16,13 @@ function stateWriter(file){return value=>{const temp=file+'.'+crypto.randomUUID(
 async function run(argv=process.argv.slice(2)){
  if(argv.length!==4||argv[0]!=='--config'||argv[2]!=='--config-sha256')throw Error('TASK_CONFIG_ARGUMENTS_REQUIRED');
  const configFile=path.resolve(argv[1]),config=configuration(configFile,argv[3]),save=stateWriter(path.join(path.dirname(configFile),'state.json'));
+ const log=process.env.HDWORK2_RAW_LOG_ENABLED==='true'?require(path.join(config.snapshot,'src/observability/raw-log')).logger():{emit(){},async flush(){}};
+ const restoreOutput=process.env.HDWORK2_RAW_LOG_ENABLED==='true'?require(path.join(config.snapshot,'src/observability/raw-log')).captureOutput(log):()=>{};
+ log.emit('TASK_START',{status:'STARTING'});
  const originalSpawn=cp.spawn,originalLog=console.log;
  let python,ready=false,ownerGone=false,forceTimer,heartbeat;
  const startedAt=new Date().toISOString();let status='STARTING';
- const record=code=>save({status,code,nodePid:process.pid,pythonPid:python?.pid||null,startedAt,updatedAt:new Date().toISOString(),ownerSid:config.ownerSid,botId:config.botId,telegramBotId:config.telegramBotId,baseCommit:config.baseCommit,patchCommit:config.patchCommit,configSha256:argv[3],productionPlanSha256:config.productionPlanSha256,liveChatEndToEndVerified:false});
+ const record=code=>{log.emit('TASK_STATE',{status,reason:code});return save({status,code,nodePid:process.pid,pythonPid:python?.pid||null,startedAt,updatedAt:new Date().toISOString(),ownerSid:config.ownerSid,botId:config.botId,telegramBotId:config.telegramBotId,baseCommit:config.baseCommit,patchCommit:config.patchCommit,configSha256:argv[3],productionPlanSha256:config.productionPlanSha256,liveChatEndToEndVerified:false});};
  const stop=()=>{
   if(ownerGone)return;ownerGone=true;status='STOPPING';record('OWNER_STOP');
   if(python&&python.exitCode===null){python.stdin.end('STOP\n');forceTimer=setTimeout(()=>{if(python.exitCode===null)python.kill();},15000);}
@@ -39,8 +42,8 @@ async function run(argv=process.argv.slice(2)){
  };
  record('START_REQUESTED');heartbeat=setInterval(()=>record(ready?'IDENTITY_AND_LEASE_VERIFIED':'STARTING'),5000);heartbeat.unref();
  try{await require(path.join(config.snapshot,'scripts/run-production-live-chat-courier.js')).run(['--run-production-approved','--plan',config.productionPlan]);status='STOPPED';record('COURIER_STOPPED');}
- catch(error){status=ownerGone?'STOPPED':'FAILED';const code=/^(ER_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT|ECONNREFUSED|ETIMEDOUT|PRIVATE_DB_CONFIG_REJECTED|DPAPI_[A-Z_]+)$/.test(error.code||'')?error.code:'COURIER_TASK_FAILED';record(code);if(!ownerGone)process.exitCode=1;}
- finally{clearInterval(heartbeat);clearTimeout(forceTimer);cp.spawn=originalSpawn;console.log=originalLog;process.stdin.destroy();}
+ catch(error){log.emit('TASK_FAILURE',{status:'ERROR'},error);status=ownerGone?'STOPPED':'FAILED';const code=/^(ER_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT|ECONNREFUSED|ETIMEDOUT|PRIVATE_DB_CONFIG_REJECTED|DPAPI_[A-Z_]+)$/.test(error.code||'')?error.code:'COURIER_TASK_FAILED';record(code);if(!ownerGone)process.exitCode=1;}
+ finally{clearInterval(heartbeat);clearTimeout(forceTimer);cp.spawn=originalSpawn;console.log=originalLog;process.stdin.destroy();restoreOutput();await log.flush();}
 }
 if(require.main===module)run().catch(()=>{console.error('COURIER_TASK_BOOTSTRAP_REJECTED');process.exitCode=1;});
 module.exports={configuration,verify,hash,run};

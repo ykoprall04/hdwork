@@ -1,6 +1,7 @@
 import json
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from .raw_log import logger
 
 class TransportError(Exception):
     def __init__(self, status=0, retry_after=0):
@@ -27,6 +28,7 @@ class JsonTransport:
                     raise TransportError(result.get('error_code', 0), min(300, max(0, int(result.get('parameters', {}).get('retry_after', 0)))))
                 return result
         except HTTPError as error:
+            logger().emit('HTTP_FAILURE', error=error, status='ERROR')
             retry = 0
             if error.code == 429:
                 try:
@@ -37,5 +39,6 @@ class JsonTransport:
             raise TransportError(error.code, retry) from None
         except TransportError:
             raise
-        except Exception:
+        except Exception as error:
+            logger().emit('HTTP_FAILURE', error=error, status='ERROR')
             raise TransportError() from None

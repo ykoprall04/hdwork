@@ -47,6 +47,7 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
   });
   app.use((_req, res) => res.status(404).json({ ok: false, code: 'NOT_FOUND' }));
   app.use((error, _req, res, _next) => {
+    require('../observability/raw-log').logger().emit('COURIER_API_FAILURE',{status:'ERROR'},error);
     onFailure?.('LIVE_TEST_API_REJECTED');
     const status = error.type === 'entity.too.large' ? 413 : [400, 401, 403, 409, 429].includes(error.statusCode) ? error.statusCode : 503;
     res.status(status).json({ ok: false, code: 'COURIER_REQUEST_REJECTED' });
