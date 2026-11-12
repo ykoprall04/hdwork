@@ -1,6 +1,6 @@
 # Offline Windows-only checks; never installs a viewer or changes a service/profile/ACL.
 $ErrorActionPreference='Stop'
-foreach($name in @('courier-log.ps1','install-courier-log.ps1','run-courier-scheduled-owner.ps1')){
+foreach($name in @('courier-log.ps1','install-courier-log.ps1','run-courier-scheduled-owner.ps1','inspect-raw-log-release.ps1')){
  $tokens=$null;$errors=$null
  [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $name),[ref]$tokens,[ref]$errors)
  if($errors.Count){throw "POWERSHELL_PARSE_FAILED: $name"}
