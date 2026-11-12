@@ -2,6 +2,9 @@
 $ErrorActionPreference='Stop'
 $snapshot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $state=Join-Path $snapshot 'service\state'
+# Logging release activation is single-attempt; Task Scheduler retry is disabled by controller.
+$rawLogSingleAttempt=(Get-Content -LiteralPath (Join-Path $snapshot 'service/environment.json') -Raw|ConvertFrom-Json).HDWORK2_RAW_LOG_ENABLED -eq 'true'
+$webExit=0
 while($true){
 $child=$null;$plain=$null
 try{
@@ -17,14 +20,18 @@ try{
  $child=New-Object Diagnostics.Process;$child.StartInfo=$info;[void]$child.Start()
  $child.BeginOutputReadLine();$errors=$child.StandardError.ReadToEndAsync()
  $child.StandardInput.WriteLine([Text.Encoding]::UTF8.GetString($plain));$child.StandardInput.Flush();[Array]::Clear($plain,0,$plain.Length);$plain=$null
- $child.WaitForExit()
+ $child.WaitForExit();$webExit=$child.ExitCode
  # Child emits codes only, no exception messages or credential contents.
  [IO.File]::WriteAllText((Join-Path $state 'supervisor.json'),(@{exited=$true;exitCode=$child.ExitCode;checkedAt=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json))
 }catch{
+ $webExit=1
  [IO.File]::WriteAllText((Join-Path $state 'supervisor.json'),(@{status='RETRYING';errorType=$_.Exception.GetType().Name;checkedAt=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json))
 }finally{
  if($plain){[Array]::Clear($plain,0,$plain.Length)}
  if($child){try{$child.StandardInput.Close();if(-not $child.HasExited){$child.Kill()}}catch{};$child.Dispose()}
 }
+if($rawLogSingleAttempt){break}
 Start-Sleep -Seconds 5
 }
+
+if($rawLogSingleAttempt){exit $webExit}

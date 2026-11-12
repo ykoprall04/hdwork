@@ -22,12 +22,16 @@ function WriteOwnerLog([string]$Event,$Failure=$null) {
   [IO.File]::AppendAllText((Join-Path $root "hdwork2-$date-owner-$PID.jsonl"),(ConvertTo-Json $row -Compress)+[Environment]::NewLine,(New-Object Text.UTF8Encoding($false)))
  }catch{} # owner lifecycle must remain independent from log storage
 }
-WriteOwnerLog 'OWNER_START'
 try {
  if($ConfigSha256 -notmatch '^[a-f0-9]{64}$'){throw 'CONFIG_HASH_REQUIRED'}
  $actual=(Get-FileHash -LiteralPath $Config -Algorithm SHA256).Hash.ToLowerInvariant()
  if($actual -ne $ConfigSha256){throw 'CONFIG_CHANGED'}
  $cfg=Get-Content -LiteralPath $Config -Raw|ConvertFrom-Json
+ if($cfg.rawLog){
+  if($cfg.rawLog.enabled -ne $true -or $cfg.rawLog.directory -cne 'C:\ProgramData\HDWork2\Logs'){throw 'RAW_LOG_CONFIG_REJECTED'}
+  $env:HDWORK2_RAW_LOG_ENABLED='true';$env:HDWORK2_LOG_DIRECTORY=$cfg.rawLog.directory
+ }
+ WriteOwnerLog 'OWNER_START'
  if([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $cfg.ownerSid){throw 'DPAPI_OWNER_MISMATCH'}
  $runner=Join-Path (Split-Path -Parent $Config) 'courier-task-runner.js'
  if((Get-FileHash -LiteralPath $runner -Algorithm SHA256).Hash.ToLowerInvariant() -ne $cfg.runnerSha256){throw 'RUNNER_CHANGED'}

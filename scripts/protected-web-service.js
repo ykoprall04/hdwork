@@ -7,6 +7,7 @@ async function run(){
  require('../src/config/persistent-auth').validatePersistentAuth(env);
  for(const k of Object.keys(process.env))if(/^(HDWORK2_|DB_|OP_READ_|OP_WRITE_|COURIER_|B2C_|JWT_SECRET|LOCAL_|FRONTEND_ORIGIN|NODE_OPTIONS|NODE_PATH)/.test(k))delete process.env[k];
  Object.assign(process.env,env);
+ if(env.HDWORK2_RAW_LOG_ENABLED==='true'){const logging=require('../src/observability/raw-log');logging.captureOutput();logging.logger().emit('WEB_START',{status:'STARTING'});}
  const testingScope=require('../src/operations/testing-solver-scope').configuration(env);
  const {bootstrap,validateOperationalBundle}=require('./office-web-service');
  const secrets=await bootstrap(process.stdin,{validate:value=>require('../src/config/protected-service-bundle').validateProtectedBundle(value,env,{validateOperationalBundle})});
@@ -22,7 +23,7 @@ async function run(){
   if(testingScope)await require('../src/config/testing-solver-runtime').initialize({env,password:secrets.testingWritePassword,telegramToken:secrets.testingTelegramToken,stateDirectory:path.join(home,'state')});
   app=await require('../local-web-server').startLocalWeb();
   if(leaseEnded){await close();throw Error('Lease ended');}
-  process.once('SIGINT',()=>void close());process.once('SIGTERM',()=>void close());save('READY');
+  process.once('SIGINT',()=>void close());process.once('SIGTERM',()=>void close());save('READY');if(env.HDWORK2_RAW_LOG_ENABLED==='true')require('../src/observability/raw-log').logger().emit('WEB_READY',{status:'READY'});
  }catch(error){await close();throw error;}
  finally{delete process.env.DB_PASSWORD;delete process.env.JWT_SECRET;for(const k of Object.keys(secrets))secrets[k]='';}
 }

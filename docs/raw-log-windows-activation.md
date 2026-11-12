@@ -1,5 +1,8 @@
 # Batch 1 RAW LOG — Windows activation preparation
 
+Latest activation procedure: [single-attempt RAW LOG deployment](raw-log-single-attempt-deployment.md).
+Its verified ZIP entry point supersedes the earlier preparation-only handoff below.
+
 Application commit: `1fc87f5df8aea39df6e813625248de6adf8a0a0a`.
 Preparation does not imply deployment is active. Production approval is already given;
 the remaining gate is fresh Windows evidence, not a request for approval again.

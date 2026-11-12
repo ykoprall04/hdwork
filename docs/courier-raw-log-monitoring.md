@@ -1,5 +1,8 @@
 # Batch 1 — RAW LOG & Real-Time Monitoring
 
+Latest activation procedure: [single-attempt RAW LOG deployment](raw-log-single-attempt-deployment.md).
+Its verified ZIP entry point supersedes the earlier preparation-only handoff below.
+
 Status: implementation for development branch only. No production access, deployment,
 restart, snapshot edit, repinning, database migration, push or real Telegram send is
 performed by these tools. Logging is opt-in. This batch does not optimize delivery.
