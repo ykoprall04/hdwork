@@ -31,7 +31,7 @@ try{
  & (Get-Command tar.exe).Source -xf $archive -C $code
  if($LASTEXITCODE -ne 0){throw 'SOURCE_EXTRACTION_FAILED_NO_SERVICE_CHANGE'}
  # Syntax-only validation before any task/file/ACL modification. Never run mock suites here.
- foreach($file in @('deploy-raw-log.ps1','run-courier-scheduled-owner.ps1','run-protected-web.ps1','install-courier-log.ps1','courier-log.ps1')){
+ foreach($file in @('deploy-raw-log.ps1','run-courier-scheduled-owner.ps1','run-protected-web.ps1','install-courier-log.ps1','courier-log.ps1','raw-log-task-policy.ps1')){
   $tokens=$null;$errors=$null
   [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $code ('scripts/'+$file)),[ref]$tokens,[ref]$errors)
   if($errors.Count){$errors|Format-List;throw ('RELEASE_POWERSHELL_PARSE_FAILED_'+$file)}

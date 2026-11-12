@@ -52,7 +52,7 @@ mock test suite on production. Without -Activate it stages a packet only.
   new PowerShell and type `courier-log`. Profiles disabled via -NoProfile do not load functions;
   dot-source the installed courier-log.ps1 explicitly in that case. A different pre-existing
   viewer is rejected instead of overwritten.
-- Both owned tasks' RestartCount becomes 0 and stays 0, including after success, as requested
+- Both owned tasks' RestartOnFailure XML element is removed (no failure retries), including after success, as requested
   for single-attempt operation. Original policy is retained in task XML backups for deliberate
   manual restoration later. Task principals/triggers and other bots' tasks are untouched.
 
@@ -143,3 +143,25 @@ frontend preservation, partial-write stop with no rollback/retry, tamper/source 
 explicit manual recovery without deletion/start, and whitelist of controlled task names.
 Windows syntax-only parsing runs before mutation in the operator package; Windows Task
 Scheduler/ACL/DPAPI startup and real log health must be verified by actual operator output.
+
+
+## Finalize an already-running packet after the 3b3d0b9 helper errors
+
+Windows rejected the old RestartCount=0 serialization because RestartOnFailure requires
+Count >=1 when present. The corrected helper removes RestartOnFailure from the exported
+current XML, preserving all other task elements. Register-ScheduledTask -Xml -Force updates
+the same named definition; no start/stop is invoked. RegistrationTrigger/non-IgnoreNew
+policies are rejected, and PID invariance is verified after the update. Explicit ErrorAction
+Stop prevents a failed settings update from silently continuing to service start.
+
+The viewer probe now uses check-courier-log.js rather than inline node -e, avoiding Windows
+PowerShell native quoting of JavaScript string literals. It prints a structured technical
+error if reading fails instead of swallowing the reason.
+
+For a packet already running but marked FAILED_MANUAL_RECOVERY_REQUIRED, invoke the latest
+scripts/finalize-raw-log.ps1 with the original Directory and PlanSha256. It verifies the
+original immutable packet, full applied pins, task actions/owners, web TLS/frontend, current
+READY/process ancestry, single owned Courier, all four log sources and actual installed
+viewer. It then disables failure retry via valid XML, checks unchanged PIDs, and marks ACTIVE.
+It does not restart/stop/start services, reapply runtime source/pins, touch data or roll back.
+If any check fails, it stops and prints the error. Original failure evidence is retained.

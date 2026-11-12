@@ -80,8 +80,8 @@ function ProcessesFor([string]$Kind){
 }
 function StopOwned([string]$Name,$Expected,[string]$Owner,[string]$Kind){
  $null=AssertAction $Name $Expected $Owner
- Disable-ScheduledTask -TaskPath '\' -TaskName $Name|Out-Null
- Stop-ScheduledTask -TaskPath '\' -TaskName $Name
+ Disable-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction Stop|Out-Null
+ Stop-ScheduledTask -TaskPath '\' -TaskName $Name -ErrorAction Stop
  $until=[DateTimeOffset]::UtcNow.AddSeconds(45)
  do{if(@(ProcessesFor $Kind).Count -eq 0){return};Start-Sleep -Milliseconds 500}while([DateTimeOffset]::UtcNow -lt $until)
  throw ($Kind.ToUpperInvariant()+'_STOP_NOT_CONFIRMED_NO_FORCE_KILL')
@@ -119,17 +119,14 @@ try{
  $courierArguments=[string]$ca.Arguments
  foreach($pair in @(@((Join-Path $auto 'run-owner.ps1'),[string]$p.newOwner),@($config,[string]$p.newConfig),@($hm.Groups[1].Value,[string]$p.configSha256))){if([regex]::Matches($courierArguments,[regex]::Escape($pair[0])).Count -ne 1){throw 'EXACT_COURIER_ACTION_REPLACEMENT_REQUIRED'};$courierArguments=$courierArguments.Replace($pair[0],$pair[1])}
  if($ca.WorkingDirectory){$newAction=New-ScheduledTaskAction -Execute $ca.Execute -Argument $courierArguments -WorkingDirectory $ca.WorkingDirectory}else{$newAction=New-ScheduledTaskAction -Execute $ca.Execute -Argument $courierArguments}
- Set-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier' -Action $newAction|Out-Null
- # Disable scheduled failure-restart during this single activation attempt; restore only on success.
- foreach($name in @('HDWork2-Web','HDWork2-LiveChat-Courier')){
-  $settings=(Task $name).Settings;$settings.RestartCount=0
-  Set-ScheduledTask -TaskPath '\' -TaskName $name -Settings $settings|Out-Null
- }
+ Set-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier' -Action $newAction -ErrorAction Stop|Out-Null
+ . (Join-Path $PSScriptRoot 'raw-log-task-policy.ps1')
+ foreach($name in @('HDWork2-Web','HDWork2-LiveChat-Courier')){SetRawLogNoFailureRestart -TaskName $name}
  $phase='START_WEB';$null=Engine 'mark' ($base+@{event='WEB_START_ATTEMPTED'})
- $after=[DateTimeOffset]::UtcNow;Enable-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-Web'|Out-Null;Start-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-Web'
+ $after=[DateTimeOffset]::UtcNow;Enable-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-Web' -ErrorAction Stop|Out-Null;Start-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-Web' -ErrorAction Stop
  $webReady=WaitReady 'web' $null $after;$null=Engine 'health' $base
  $phase='START_COURIER';$null=Engine 'mark' ($base+@{event='COURIER_START_ATTEMPTED'})
- $after=[DateTimeOffset]::UtcNow;Enable-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier'|Out-Null;Start-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier'
+ $after=[DateTimeOffset]::UtcNow;Enable-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier' -ErrorAction Stop|Out-Null;Start-ScheduledTask -TaskPath '\' -TaskName 'HDWork2-LiveChat-Courier' -ErrorAction Stop
  $courierReady=WaitReady 'courier' $newAction $after
  $phase='VERIFY_LOGS';$logRoot='C:\ProgramData\HDWork2\Logs'
  $deadline=[DateTimeOffset]::UtcNow.AddSeconds(15)
@@ -142,7 +139,7 @@ try{
  }while([DateTimeOffset]::UtcNow -lt $deadline)
  if(-not ($webLog.Count -and $nodeLog.Count -and $pyLog.Count -and $ownerLog.Count)){throw 'WEB_COURIER_PYTHON_OWNER_LOG_COVERAGE_FAILED'}
  # Invoke actual reader once, no follow loop and no Courier import/start.
- & $node -e 'const m=require(process.argv[1]);m.initial(process.argv[2]).then(x=>{if(!x.lines.length)process.exitCode=1;else console.log("RAW_LOG_VIEWER_READ_PASS");}).catch(()=>process.exitCode=1);' (Join-Path $PSScriptRoot 'courier-log.js') $logRoot
+ & $node (Join-Path $PSScriptRoot 'check-courier-log.js') $logRoot (Join-Path $PSScriptRoot 'courier-log.js')
  if($LASTEXITCODE -ne 0){throw 'VIEWER_READ_FAILED'}
  $null=Engine 'verify' ($base+@{applied=$true})
  # Leave automatic task retries disabled as requested; original settings remain in task XML backups.
