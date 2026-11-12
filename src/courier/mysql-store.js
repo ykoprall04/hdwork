@@ -4,8 +4,10 @@ const { eventEnvelope, outbound, digest, fail, messageId } = require('./contract
 const json = value => typeof value === 'string' ? JSON.parse(value) : value;
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
 class MysqlStore {
-  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false, activationBoundary, chatDeliveryEvents = false, fifo = process.env.HDWORK2_COURIER_FIFO_ENABLED==='true', routeFence = process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true' }) {
+  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false, activationBoundary, chatDeliveryEvents = false, fifo = process.env.HDWORK2_COURIER_FIFO_ENABLED==='true', fifoRelease = process.env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true', routeFence = process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true' }) {
     this.fifo=fifo;
+    if(fifoRelease&&!fifo)throw Error('FIFO_RELEASE_REQUIRES_FIFO');
+    this.fifoRelease=fifoRelease;
     this.routeFence=routeFence;
     this.inboxFence=routeFence?require('./route-fence').eligible('hd2_courier_inbox',true):'';
     this.outboxFence=routeFence?require('./route-fence').eligible('hd2_courier_outbox'):'';
@@ -40,8 +42,8 @@ class MysqlStore {
     if (typeof key !== 'string' || !/^[\x21-\x7e]{1,200}$/.test(key)) throw fail();
     const payload = outbound(body), hash = digest(payload), id = randomUUID();
     if(this.routeFence){const [[route]]=await c.execute('SELECT id FROM hd2_system_mappings WHERE bot_id=? AND chat_id=? AND thread_id<=>? AND enabled=TRUE AND verified=TRUE FOR SHARE',[this.botId,payload.chat_id,payload.telegram_thread_id]);if(!route)throw fail(403);}
-    const lane=this.fifo?await require('./fifo').allocate(c,this.botId,payload):null;
-    await c.execute('INSERT INTO hd2_courier_outbox (id,bot_id,idem_key,payload_hash,payload,due_ms'+(lane?',conversation_key,conversation_seq':'')+') VALUES (?,?,?,?,?,?'+(lane?',?,?':'')+') ON DUPLICATE KEY UPDATE id=id', [id, this.botId, key, hash, JSON.stringify(payload), this.now(),...(lane?[lane.key,lane.sequence]:[])]);
+    const lane=this.fifo?await (this.fifoRelease?require('./fifo-release').allocateOrder(c,this.botId,payload):require('./fifo').allocate(c,this.botId,payload)):null;
+    await c.execute('INSERT INTO hd2_courier_outbox (id,bot_id,idem_key,payload_hash,payload,due_ms'+(lane?',conversation_key,conversation_seq':'')+(lane&&this.fifoRelease?',fifo_order_id':'')+') VALUES (?,?,?,?,?,?'+(lane?',?,?':'')+(lane&&this.fifoRelease?',?':'')+') ON DUPLICATE KEY UPDATE id=id', [id, this.botId, key, hash, JSON.stringify(payload), this.now(),...(lane?[lane.key,lane.sequence]:[]),...(lane&&this.fifoRelease?[lane.orderId]:[])]);
     const [[row]] = await c.execute('SELECT id,payload_hash FROM hd2_courier_outbox WHERE bot_id=? AND idem_key=? FOR UPDATE', [this.botId, key]);
     if (!row || row.payload_hash !== hash) throw fail(409);
     logger().emit('OUTBOX_ENQUEUE', {correlationId:row.id,status:'PRECOMMIT'});
@@ -55,14 +57,14 @@ class MysqlStore {
     return this.transaction(async c => {
       if (options.before) await options.before(c);
       const now = this.now();
-      if(this.fifo){const [legacy]=await c.execute("SELECT id FROM hd2_courier_outbox WHERE bot_id=? AND state<>'SENT' AND (conversation_key IS NULL OR conversation_seq IS NULL)"+this.boundarySql+" LIMIT 1 FOR SHARE",[this.botId,...this.boundaryParams]);if(legacy.length)throw Object.assign(fail(503),{code:'FIFO_LEGACY_BACKLOG_REVIEW_REQUIRED'});}
+      if(this.fifo&&!this.fifoRelease){const [legacy]=await c.execute("SELECT id FROM hd2_courier_outbox WHERE bot_id=? AND state<>'SENT' AND (conversation_key IS NULL OR conversation_seq IS NULL)"+this.boundarySql+" LIMIT 1 FOR SHARE",[this.botId,...this.boundaryParams]);if(legacy.length)throw Object.assign(fail(503),{code:'FIFO_LEGACY_BACKLOG_REVIEW_REQUIRED'});}
       const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=?" + this.boundarySql + this.outboxFence + " ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now, ...this.boundaryParams]);
       for (const row of expired) {logger().emit('OUTBOX_EXPIRED',{correlationId:row.id,status:'PRECOMMIT',reason:'LEASE_EXPIRED'});await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);}
-      const [rows] = await c.execute(`SELECT id,payload,attempts,created_at${this.fifo?',conversation_key,conversation_seq':''} FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?` + this.boundarySql + this.outboxFence + (this.fifo?require('./fifo').predicate:'') + chatFence + " ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, ...this.boundaryParams,...blocked, this.fifo?Math.min(10,limit*4):limit]);
+      const [rows] = await c.execute(`SELECT id,payload,attempts,created_at${this.fifo?',conversation_key,conversation_seq':''} FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?` + this.boundarySql + this.outboxFence + (this.fifo?require(this.fifoRelease?'./fifo-release':'./fifo').predicate:'') + chatFence + " ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, ...this.boundaryParams,...blocked, this.fifo?Math.min(10,limit*4):limit]);
       const messages = [];
       for (const row of rows) {
         if(messages.length>=limit)break;
-        if(this.fifo&&!await require('./fifo').head(c,this.botId,row)){logger().emit('OUTBOX_BLOCKED',{correlationId:row.id,reason:'ORDER_PREDECESSOR'});continue;}
+        if(this.fifo&&!await require(this.fifoRelease?'./fifo-release':'./fifo').head(c,this.botId,row)){logger().emit('OUTBOX_BLOCKED',{correlationId:row.id,reason:'ORDER_PREDECESSOR'});continue;}
         if (options.authorize && !await options.authorize(json(row.payload), c)) {
           logger().emit('OUTBOX_REJECTED',{correlationId:row.id,status:'PRECOMMIT',reason:'AUTHORIZATION_DENIED'});
           await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now, 'BAD_REQUEST', row.id, this.botId]);
@@ -86,6 +88,7 @@ class MysqlStore {
   async settle(id, body) {
     if (!body || typeof body.lease_token !== 'string' || !['sent', 'retry', 'failed'].includes(body.result)) throw fail();
     const ack = { lease_token: body.lease_token, result: body.result, telegram_message_id: body.result === 'sent' ? messageId(body.telegram_message_id) : null, error_code: body.result === 'sent' ? null : body.error_code, retry_after: body.retry_after ?? 0 };
+    if(this.fifoRelease&&body.telegram_error!==undefined)ack.telegram_error=require('./fifo-release').telegramError(body.telegram_error);
     if (!['NETWORK', 'RATE_LIMIT', 'FORBIDDEN', 'BAD_REQUEST', 'UNKNOWN', 'ECONNRESET', 'ETIMEDOUT', null].includes(ack.error_code) || !Number.isInteger(ack.retry_after) || ack.retry_after < 0 || ack.retry_after > 300) throw fail();
     if(body.reconciliation!==undefined){if(!this.fifo||body.reconciliation!==true||body.result!=='sent'||!/^[a-f0-9]{64}$/.test(body.evidence_sha256||''))throw fail();ack.reconciliation=true;ack.evidence_sha256=body.evidence_sha256;}
     const hash = digest(ack);
@@ -96,12 +99,25 @@ class MysqlStore {
       if (row.last_ack_token === body.lease_token&&!reconcile) { if (row.last_ack_hash !== hash) throw fail(409); return { duplicate: true }; }
       const late=this.fifo&&row.lease_token===body.lease_token&&(row.state==='SENDING'||row.state==='DEAD'&&row.last_error_code==='LEASE_EXPIRED');
       if (!reconcile&&!late&&(row.state !== 'SENDING' || row.lease_token !== body.lease_token || Number(row.lease_until_ms) <= this.now())) throw fail(409);
-      const state = require('./delivery-state').settlementState(body.result,ack.error_code,row.attempts,this.maxAttempts);
+      let state = require('./delivery-state').settlementState(body.result,ack.error_code,row.attempts,this.maxAttempts);
+      if(this.fifoRelease&&row.state==='DEAD'){
+        if(state==='SENT')throw fail(409); // Preserve DEAD; retain receipt in journal for per-ID review.
+        state='DEAD'; // A delayed RATE_LIMIT ACK must never resurrect an expired DEAD lease.
+      }
+      if(this.fifoRelease&&row.fifo_release&&state==='SENT')throw fail(409); // No late ACK may rewrite an operator disposition.
       await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_ack_token=?,last_ack_hash=?,telegram_message_id=?,last_error_code=? WHERE id=? AND bot_id=?', [state, this.now() + Math.max(ack.retry_after * 1000, backoff(row.attempts)), body.lease_token, hash, ack.telegram_message_id, ack.error_code, id, this.botId]);
+      let releaseAlert=false;
+      if(this.fifoRelease){
+        if(ack.telegram_error)await c.execute('UPDATE hd2_courier_outbox SET telegram_error=? WHERE id=? AND bot_id=?',[JSON.stringify(ack.telegram_error),id,this.botId]);
+        releaseAlert=await require('./fifo-release').automatic(c,{...row,state,last_error_code:ack.error_code},ack.telegram_error,this.now());
+      }
       if(this.fifo)await c.execute("INSERT INTO hd2_audit(id,action,detail) VALUES (?,'COURIER_DELIVERY_ACK',?)",[randomUUID(),JSON.stringify({outboxId:id,state,late:Number(row.lease_until_ms)<=this.now(),reconciliation:ack.reconciliation===true,evidenceSha256:ack.reconciliation?body.evidence_sha256:undefined})]);
       if(this.recordDeliveryTime&&state==='SENT')await c.execute('UPDATE hd2_courier_outbox SET delivered_at=UTC_TIMESTAMP(3) WHERE id=? AND bot_id=?',[id,this.botId]);
       if(this.chatDeliveryEvents)await c.execute("INSERT INTO hd2_live_events(module,kind) SELECT DISTINCT o.access_module,'change' FROM hd2_chat_messages m JOIN hd2_orders o ON o.id=m.order_id WHERE m.outbox_id=? AND m.bot_id=?",[id,this.botId]);
-      return { duplicate: false };
+      return { duplicate: false, releaseAlert };
+    }).then(result=>{
+      if(result.releaseAlert)logger().emit('FIFO_RELEASE_ALERT',{correlationId:id,status:'ALERT',reason:'CONFIRMED_TELEGRAM_400'});
+      return {duplicate:result.duplicate};
     });
   }
   async processNext(handler) {

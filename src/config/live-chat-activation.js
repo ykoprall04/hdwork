@@ -11,6 +11,7 @@ function prepare(env){
  return {patch,changes:Object.keys(patch).filter(k=>env[k]!==patch[k]).map(key=>({key,before:env[key]??null,after:patch[key]})),candidate};
 }
 function profiles(env){
+ if(env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true'&&env.HDWORK2_COURIER_FIFO_ENABLED!=='true')throw Error('FIFO_RELEASE_REQUIRES_FIFO');
  for(const key of ['HDWORK2_LIVE_CHAT_ENABLED','HDWORK2_SYSTEM_MONITORING_ENABLED','HDWORK2_COURIER_FIFO_ENABLED'])if(env[key]!==undefined&&!['true','false'].includes(env[key]))throw Error('LIVE_CHAT_INVALID_FLAG');
  if(env.HDWORK2_LIVE_CHAT_ENABLED==='true'&&env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true')throw Error('LIVE_CHAT_REQUIRES_SYSTEM_MONITORING');
  if(env.HDWORK2_COURIER_FIFO_ENABLED==='true'&&env.HDWORK2_LIVE_CHAT_ENABLED!=='true')throw Error('FIFO_REQUIRES_LIVE_CHAT');
@@ -28,6 +29,7 @@ async function preflight({reader,writer,env}){
   await reader.execute('SELECT delivered_at FROM hd2_courier_outbox LIMIT 0');
  }
  if(env.HDWORK2_LIVE_CHAT_ENABLED==='true')for(const pool of [reader,writer])await pool.execute('SELECT id,order_id FROM hd2_chat_messages LIMIT 0');
+ if(env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true')await writer.execute('SELECT fifo_order_id,fifo_release,telegram_error FROM hd2_courier_outbox LIMIT 0');
  return {status:'PASS',profiles:selected,writesPerformed:false,telegramVerified:false};
 }
 module.exports={prepare,profiles,preflight};

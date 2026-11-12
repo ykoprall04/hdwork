@@ -245,6 +245,8 @@ class DurableCourier:
                 code = {400: 'BAD_REQUEST', 403: 'FORBIDDEN', 429: 'RATE_LIMIT'}.get(error.status, 'NETWORK')
                 result = {'result': 'failed' if error.status in (400, 403) else 'retry',
                           'error_code': code, 'retry_after': min(300, max(0, error.retry_after))}
+                if telegram_called and getattr(error, 'telegram_error', None):
+                    result['telegram_error'] = error.telegram_error
             observe('JOURNAL_RESULT', lambda: self.journal.delivery_result(delivery, result), correlationId=correlation)
             self.active=True
             if self.scheduler and result['result']=='sent':

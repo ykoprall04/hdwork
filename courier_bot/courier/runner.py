@@ -36,4 +36,6 @@ class Courier:
                 permanent = error.status in (400, 403)
                 code = 'FORBIDDEN' if error.status == 403 else 'BAD_REQUEST' if error.status == 400 else 'RATE_LIMIT' if error.status == 429 else 'NETWORK'
                 result = {'result': 'failed' if permanent else 'retry', 'error_code': code, 'retry_after': error.retry_after}
+                if getattr(error, 'telegram_error', None):
+                    result['telegram_error'] = error.telegram_error
             self.internal.settle(delivery, result)

@@ -3,6 +3,7 @@ import argparse
 import json
 import re
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from .journal import Journal
 from .lock import PollingLock
@@ -24,7 +25,7 @@ def main(argv=None):
     directory = Path(args.lock_directory)
     if not file.is_absolute() or file.is_symlink() or not file.is_file() or not directory.is_absolute() or directory.is_symlink() or not directory.is_dir():
         raise ValueError('existing_private_paths_required')
-    with sqlite3.connect(file.as_uri()+'?mode=ro', uri=True) as reader:
+    with closing(sqlite3.connect(file.as_uri()+'?mode=ro', uri=True)) as reader:
         metadata = dict(reader.execute("SELECT key,value FROM metadata WHERE key IN ('bot_id','token_fingerprint')"))
     if not re.fullmatch(r'[a-f0-9]{64}', metadata.get('token_fingerprint','')) or file.stat().st_nlink != 1 or file.resolve() != file.absolute() or directory.resolve() != directory.absolute():
         raise ValueError('journal_identity_or_path_rejected')

@@ -89,7 +89,13 @@ class TelegramClient:
             raise TransportError(400)
         if payload.get('reply_to_message_id') is not None:
             body['reply_parameters'] = {'message_id': message_id(payload['reply_to_message_id']), 'allow_sending_without_reply': False}
-        result = self.transport.post(self._base + 'sendMessage', body)['result']['message_id']
+        try:
+            result = self.transport.post(self._base + 'sendMessage', body)['result']['message_id']
+        except TransportError as error:
+            evidence = getattr(error, 'api_failure', None)
+            if evidence:
+                error.telegram_error = {'source': 'TELEGRAM_BOT_API', **evidence}
+            raise
         if type(result) is not int or result < 1 or result > 2147483647:
             raise TransportError()
         return result
