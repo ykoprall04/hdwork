@@ -1,0 +1,28 @@
+{
+  "status": "DEVELOPMENT_IMPLEMENTED_NOT_APPROVED_FOR_PRODUCTION",
+  "supersedes": "707f7ec",
+  "target": "branch HEAD containing this file; regenerate all pins",
+  "applyProduction": false,
+  "schema": ["015 exact", "016_fifo_release.PLAN_ONLY.sql"],
+  "originalActivationBoundary": "2026-11-10T13:20:35.278Z",
+  "legacyHoldIds": [
+    "5cc09c53-e565-4d62-9a47-49ca9072dd1a",
+    "1020994b-f598-4a90-acbe-881980e4b0de",
+    "165fcb2b-73ce-4265-bc1d-52c854b15108",
+    "2fdfe5c9-8315-4364-b524-b94c96376fc9",
+    "7f045a1a-c286-498f-858d-11792a3439a3",
+    "8dcc90cf-abfd-45cb-a6c0-8551c8b37404",
+    "fc36ec24-2c01-4063-9736-500634181dbe",
+    "a012c5f1-75e3-4599-978e-aa6cff02d307"
+  ],
+  "legacyAutomaticRelease": false,
+  "identityBackfill": false,
+  "boundaryChanged": false,
+  "manualDefault": "DRY_RUN",
+  "manualWrites": ["outbox.fifo_release only", "append audit with operator, reason, time, database account"],
+  "manualMustNotWrite": ["state", "attempts", "payload", "sequence", "due_ms", "Telegram result"],
+  "lateDelivery": "append late=true and lateReview to marker, retain original disposition, no send",
+  "unknownIdentity": "HOLD; existing possible lanes remain held, proven newer order+Telegram anchor may proceed",
+  "automaticRelease": "new known-lane DEAD BAD_REQUEST with parsed Telegram rejection evidence only",
+  "ambiguous": "HOLD same known lane until explicit per-ID manual marker; no resend"
+}

@@ -1,0 +1,38 @@
+{
+    "status":  "FIFO_RELEASE_TEMPORARY_INTEGRATION_PASS",
+    "checks":  {
+                   "preflightPostflightReadOnlyScripts":  "PASS",
+                   "unknownLegacyHoldsUnprovenExistingOrder":  "PASS",
+                   "newDatabaseRowDoesNotBypassOldTelegramAnchor":  "PASS",
+                   "legacyFivePlusThreeDoNotBlockProvenNewOrders":  "PASS",
+                   "deadAAllowsOrderBEvenInSameChat":  "PASS",
+                   "sameOrderBlockedBeforeMarker":  "PASS",
+                   "markerSurvivesBackendRestart":  "PASS",
+                   "manualDryRunIdempotentMarkerOnly":  "PASS",
+                   "sameOrderProgressAfterManualMarker":  "PASS",
+                   "confirmedTelegram400AutoMarkerAndAlert":  "PASS",
+                   "localBadRequestNotAutomaticRelease":  "PASS",
+                   "failedAckAmbiguityNeverRequeued":  "PASS",
+                   "delayedAckCannotResurrectDeadOrOverrideReview":  "PASS",
+                   "perChatExclusionIndependentFromOrderLanes":  "PASS",
+                   "legacyReleaseRequiresExplicitMarkerPerId":  "PASS",
+                   "allEightLegacyStatesAttemptsErrorsUnchanged":  "PASS",
+                   "manualLaterDeliveryIsMarkedLate":  "PASS",
+                   "unknownIdentityNeverLeased":  "PASS",
+                   "manualAuditExactlyOnce":  "PASS"
+               },
+    "productionAccessed":  false,
+    "telegramCalls":  0,
+    "tcpDisabled":  true,
+    "temporaryDataPreserved":  true,
+    "targetedJavaScript":  {
+                               "passed":  44,
+                               "failed":  0
+                           },
+    "targetedPython":  {
+                           "passed":  27,
+                           "failed":  0
+                       },
+    "implementationCommit":  "9dda699",
+    "manualToolCommit":  "d09eee9"
+}
