@@ -193,7 +193,7 @@ class Journal:
             row = self.db.execute("SELECT * FROM deliveries WHERE delivery_id=? AND hash=? AND state='ACK_REVIEW'", (delivery_id, expected_hash)).fetchone()
             if not row or not row['ack']:
                 raise ValueError('reviewed_ack_required')
-            self.db.execute("UPDATE deliveries SET state='ACK_PENDING',attempts=0,due=0 WHERE delivery_id=?", (delivery_id,))
+            self.db.execute("UPDATE deliveries SET state='ACK_PENDING',attempts=0,due=0,ack_since=COALESCE(ack_since,?),ack_alert_at=NULL WHERE delivery_id=?", (self.clock(),delivery_id))
             self.db.execute("INSERT INTO reconciliation_audit(delivery_id,payload_hash,action,at) VALUES (?,?,'RETRY_ACK',?)", (delivery_id, expected_hash, self.clock()))
 
     def verified_receipt(self, delivery_id, expected_hash, telegram_message_id, evidence_sha256):
@@ -206,7 +206,7 @@ class Journal:
                 raise ValueError('receipt_binding_rejected')
             result = {'result':'sent', 'telegram_message_id':telegram_message_id, 'reconciliation':True, 'evidence_sha256':evidence_sha256}
             ack = {'delivery_id':delivery_id, 'lease_token':row['last_lease_token'], 'result':result}
-            self.db.execute("UPDATE deliveries SET success_id=?,ack=?,last_result=?,state='ACK_PENDING',attempts=0,due=0 WHERE delivery_id=?", (telegram_message_id, encoded(ack), encoded(result), delivery_id))
+            self.db.execute("UPDATE deliveries SET success_id=?,ack=?,last_result=?,state='ACK_PENDING',attempts=0,due=0,ack_since=COALESCE(ack_since,?),ack_alert_at=NULL WHERE delivery_id=?", (telegram_message_id, encoded(ack), encoded(result), self.clock(), delivery_id))
             self.db.execute("INSERT INTO reconciliation_audit(delivery_id,payload_hash,action,evidence_sha256,at) VALUES (?,?,'VERIFIED_RECEIPT',?,?)", (delivery_id, expected_hash, evidence_sha256, self.clock()))
 
     def close(self):

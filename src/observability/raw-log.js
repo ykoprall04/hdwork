@@ -17,7 +17,8 @@ function errorInfo(error){
 function errorInfoShallow(e){return {code:CODE.test(e?.code||'')?e.code:undefined,message:'[redacted]'};}
 function fields(input={}){const out={};for(const [k,v]of Object.entries(input)){
  if(['traceId','correlationId','outboxId','orderId','requestId'].includes(k)&&typeof v==='string'&&UUID.test(v))out[k]=v;
- if(['durationMs','queueAgeMs','retryAfterMs','waitMs','count','attempt','dropped','statusCode'].includes(k)&&typeof v==='number'&&Number.isFinite(v))out[k]=Math.max(0,v);
+ if(['groupRate','durationMs','queueAgeMs','retryAfterMs','waitMs','count','attempt','dropped','statusCode'].includes(k)&&typeof v==='number'&&Number.isFinite(v))out[k]=Math.max(0,v);
+ if(k==='groupHash'&&typeof v==='string'&&/^[a-f0-9]{64}$/.test(v))out[k]=v;
  if(['status','reason'].includes(k)&&typeof v==='string'&&/^[A-Z_]{2,64}$/.test(v))out[k]=v;
  }return out;}
 const day=now=>new Date(now+7*3600000).toISOString().slice(0,10);

@@ -1,0 +1,8 @@
+// Offline metadata reducer. No production connections, payload output or scheduling.
+const {project}=require('./courier-log-view');
+function percentile(values,p){return values[Math.max(0,Math.ceil(values.length*p)-1)];}
+function summarize(records){const stages=new Map();for(const input of records){const row=project(typeof input==='string'?input:JSON.stringify(input));let stage=stages.get(row.event);if(!stage){stage={count:0,errors:0,durations:[],maxQueueAgeMs:0,reasons:{}};stages.set(row.event,stage);}stage.count++;if(row.error||['ERROR','RETRY','TIDAK_PASTI'].includes(row.status))stage.errors++;if(Number.isFinite(row.durationMs))stage.durations.push(row.durationMs);stage.maxQueueAgeMs=Math.max(stage.maxQueueAgeMs,row.queueAgeMs||0);if(row.reason)stage.reasons[row.reason]=(stage.reasons[row.reason]||0)+1;}
+ return {stages:Object.fromEntries([...stages].map(([name,s])=>{s.durations.sort((a,b)=>a-b);return [name,{count:s.count,errors:s.errors,durationSamples:s.durations.length,p50Ms:s.durations.length>=20?percentile(s.durations,.5):null,p95Ms:s.durations.length>=20?percentile(s.durations,.95):null,maxMs:s.durations.length?s.durations.at(-1):null,maxQueueAgeMs:s.maxQueueAgeMs,reasons:s.reasons}];}))};}
+async function main(file){const fs=require('node:fs'),readline=require('node:readline');const lines=readline.createInterface({input:fs.createReadStream(file),crlfDelay:Infinity});const records=[];for await(const line of lines){records.push(project(line));if(records.length>100000)throw Error('METRICS_SAMPLE_LIMIT_USE_SMALLER_WINDOW');}console.log(JSON.stringify(summarize(records),null,2));}
+if(require.main===module)main(process.argv[2]).catch(()=>{console.error('METRICS_INPUT_REJECTED');process.exitCode=1;});
+module.exports={summarize};

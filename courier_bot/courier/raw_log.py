@@ -49,8 +49,10 @@ class RawLog:
         for key, value in {**(_context.get() or {}), **values}.items():
             if key in ('traceId', 'correlationId', 'outboxId') and isinstance(value, str) and _ID.fullmatch(value):
                 row[key] = value
-            elif key in ('durationMs', 'queueAgeMs', 'retryAfterMs', 'waitMs', 'count', 'attempt') and type(value) in (int, float):
+            elif key in ('groupRate', 'durationMs', 'queueAgeMs', 'retryAfterMs', 'waitMs', 'count', 'attempt') and type(value) in (int, float):
                 row[key] = max(0, value)
+            elif key == 'groupHash' and isinstance(value,str) and re.fullmatch('[a-f0-9]{64}',value):
+                row[key] = value
             elif key in ('status', 'reason') and isinstance(value, str) and re.fullmatch('[A-Z_]{2,64}', value):
                 row[key] = value
         if error is not None:

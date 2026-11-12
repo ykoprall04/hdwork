@@ -1,5 +1,7 @@
 """Durable, dynamic per-chat pacing. No local message queue or second poller."""
 import collections
+import hashlib
+from .raw_log import logger
 import math
 import threading
 import time
@@ -37,6 +39,7 @@ class Scheduler:
         self.state['global_at']=now+1/self.global_rate;row['at']=now+60/row['rate'];self.journal.save_scheduler(self.state)
     def limited(self,chat,retry_after):
         row=self.group(chat);row['rate']=max(1,row['rate']*.8);row['good']=0;row['at']=max(row['at'],self.clock()+max(1,retry_after));self.journal.save_scheduler(self.state)
+        logger().emit('TELEGRAM_RATE_LIMIT',status='RETRY',groupHash=hashlib.sha256(chat.encode()).hexdigest(),groupRate=row['rate'],retryAfterMs=max(1,retry_after)*1000,reason='GROUP_429')
     def durable_success(self,chat):
         row=self.group(chat);row['good']+=1
         if row['good']>=20:row['rate']=min(self.group_max,row['rate']+1);row['good']=0
