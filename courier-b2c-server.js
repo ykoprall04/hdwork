@@ -1,8 +1,8 @@
 // Opt-in composition root. Never imported by api-only-server.js or server.js.
-async function startIntegration({ env = process.env,testWindow,testingRead,report=code=>console.error(code),deferInboxWorker=false } = {}) {
+async function startIntegration({ env = process.env,testWindow,testingRead,report=code=>console.error(code),deferInboxWorker=false,createPool=options=>require('mysql2/promise').createPool(options) } = {}) {
   const config = require('./src/courier/integration-config').configuration(env);
   if (require('node:cluster').isWorker) throw Error('Courier integration requires one fork');
-  const pool = require('mysql2/promise').createPool(config.database);
+  const pool = createPool(config.database);
   let server, worker,trafficReady=!deferInboxWorker;
   try {
     // Readiness is read-only. No automatic schema creation or provisioning.
@@ -17,12 +17,14 @@ async function startIntegration({ env = process.env,testWindow,testingRead,repor
     if(env.COURIER_DATABASE_ROUTING_ENABLED==='true'&&env.COURIER_OUTBOX_ENABLED==='true')await pool.execute('SELECT delivered_at FROM hd2_courier_outbox LIMIT 0');
     if(env.COURIER_CHAT_ENABLED==='true')await pool.execute('SELECT id,order_id FROM hd2_chat_messages LIMIT 0');
     if(env.HDWORK2_SHARED_GROUPS_ENABLED==='true')await pool.execute('SELECT group_name,blocked_before FROM hd2_system_mappings LIMIT 0');
+    if(env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true')await pool.execute('SELECT fifo_order_id,fifo_release,telegram_error FROM hd2_courier_outbox LIMIT 0');
+    for(const botId of require('./src/config/courier-writer').bots(env))await require('./src/courier/writer-fence').inspect(pool,{botId});
     if(env.HDWORK2_COURIER_FIFO_ENABLED==='true'){await pool.execute('SELECT conversation_key,conversation_seq FROM hd2_courier_outbox LIMIT 0');await pool.execute('SELECT bot_id,conversation_key,next_seq FROM hd2_courier_lanes LIMIT 0');}
     const { MysqlStore } = require('./src/courier/mysql-store');
-    const store = new MysqlStore({ fifo:env.HDWORK2_COURIER_FIFO_ENABLED==='true',pool, botId: config.botId, orderedInbox: true,recordDeliveryTime:env.COURIER_DATABASE_ROUTING_ENABLED==='true', activationBoundary:config.activationBoundary,chatDeliveryEvents:env.COURIER_CHAT_ENABLED==='true',routeFence:env.HDWORK2_SHARED_GROUPS_ENABLED==='true' });
+    const store = new MysqlStore({ env,fifoRelease:env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true',fifo:env.HDWORK2_COURIER_FIFO_ENABLED==='true',pool, botId: config.botId, orderedInbox: true,recordDeliveryTime:env.COURIER_DATABASE_ROUTING_ENABLED==='true', activationBoundary:config.activationBoundary,chatDeliveryEvents:env.COURIER_CHAT_ENABLED==='true',routeFence:env.HDWORK2_SHARED_GROUPS_ENABLED==='true' });
     const { RuntimeStore } = require('./src/courier/runtime-store');
     const basePolicy = require('./src/courier/groups').createGroupPolicy({ botId: config.botId, botUsername: env.COURIER_BOT_USERNAME, groups: config.groups });
-    const databasePolicy=env.COURIER_DATABASE_ROUTING_ENABLED==='true'?require('./src/system/routing').databasePolicy({system:require('./src/system/store').createSystem({readPool:pool,writePool:pool,fifo:env.HDWORK2_COURIER_FIFO_ENABLED==='true',sharedGroups:env.HDWORK2_SHARED_GROUPS_ENABLED==='true'}),botId:config.botId,botUsername:env.COURIER_BOT_USERNAME,alertsApproved:env.HDWORK2_SYSTEM_ALERTS_APPROVED==='true',chatEnabled:env.COURIER_CHAT_ENABLED==='true',dispatchAuthorizationRequired:env.HDWORK2_SHARED_GROUPS_ENABLED==='true',expectedGroups:env.COURIER_PRODUCTION_MODE==='true'&&env.HDWORK2_SHARED_GROUPS_ENABLED!=='true'?config.groups:undefined}):null;
+    const databasePolicy=env.COURIER_DATABASE_ROUTING_ENABLED==='true'?require('./src/system/routing').databasePolicy({system:require('./src/system/store').createSystem({env,readPool:pool,writePool:pool,fifo:env.HDWORK2_COURIER_FIFO_ENABLED==='true',sharedGroups:env.HDWORK2_SHARED_GROUPS_ENABLED==='true'}),botId:config.botId,botUsername:env.COURIER_BOT_USERNAME,alertsApproved:env.HDWORK2_SYSTEM_ALERTS_APPROVED==='true',chatEnabled:env.COURIER_CHAT_ENABLED==='true',dispatchAuthorizationRequired:env.HDWORK2_SHARED_GROUPS_ENABLED==='true',expectedGroups:env.COURIER_PRODUCTION_MODE==='true'&&env.HDWORK2_SHARED_GROUPS_ENABLED!=='true'?config.groups:undefined}):null;
     if(databasePolicy)await databasePolicy.configuration();
     const policy=testWindow?require('./src/courier/single-order-window').singleOrderWindow(basePolicy,testWindow):(databasePolicy||basePolicy);
     const app = require('./src/courier/integration-app').createIntegrationApp({ store,
@@ -43,7 +45,7 @@ async function startIntegration({ env = process.env,testWindow,testingRead,repor
       await closed;
       await pool.end();
     })();
-    return { server, close, startWorker };
+    return { server, close, startWorker, store };
   } catch (error) { server?.close(); await worker?.close(); await pool.end(); throw error; }
 }
 

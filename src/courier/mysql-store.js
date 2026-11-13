@@ -5,8 +5,8 @@ const json = value => typeof value === 'string' ? JSON.parse(value) : value;
 const activeTransactions=new WeakSet();
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
 class MysqlStore {
-  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false, activationBoundary, chatDeliveryEvents = false, fifo = process.env.HDWORK2_COURIER_FIFO_ENABLED==='true', fifoRelease = process.env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true', routeFence = process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true' }) {
-    this.writerV2=require('../config/courier-writer').bots().includes(botId);
+  constructor({ pool, botId, env = process.env, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false, activationBoundary, chatDeliveryEvents = false, fifo = env.HDWORK2_COURIER_FIFO_ENABLED==='true', fifoRelease = env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true', routeFence = env.HDWORK2_SHARED_GROUPS_ENABLED==='true' }) {
+    this.writerV2=require('../config/courier-writer').bots(env).includes(botId);
     if(this.writerV2){fifo=true;fifoRelease=true;}
     this.fifo=fifo;
     if(fifoRelease&&!fifo)throw Error('FIFO_RELEASE_REQUIRES_FIFO');

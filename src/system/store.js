@@ -2,8 +2,8 @@ const {randomUUID}=require('node:crypto');
 const p=require('./policy');
 const {MysqlStore}=require('../courier/mysql-store');
 const timestamp="DATE_FORMAT(checked_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS checkedAt";
-function createSystem({fifo=process.env.HDWORK2_COURIER_FIFO_ENABLED==='true',readPool,writePool,now=Date.now,sharedGroups=process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true'}){
- const tx=fn=>new MysqlStore({pool:writePool,botId:'unused'}).transaction(fn);
+function createSystem({env=process.env,fifo=env.HDWORK2_COURIER_FIFO_ENABLED==='true',readPool,writePool,now=Date.now,sharedGroups=env.HDWORK2_SHARED_GROUPS_ENABLED==='true'}){
+ const tx=fn=>new MysqlStore({env,pool:writePool,botId:'unused'}).transaction(fn);
  async function once(user,input,body,superOnly=true){return tx(async c=>{
   const [[actor]]=await c.execute('SELECT id,role,is_active FROM users WHERE id=? FOR SHARE',[user.id]);if(!actor||(superOnly?actor.role!=='SUPER_ADMIN':!['SUPER_ADMIN','ADMIN'].includes(actor.role))||![1,true].includes(actor.is_active)||!user.sessionToken)throw p.fail(403);const [[session]]=await c.execute('SELECT token_hash FROM hd2_sessions WHERE token_hash=? AND user_id=? AND revoked=FALSE AND expires_at>UTC_TIMESTAMP(3) FOR SHARE',[require('../access/service').digest(user.sessionToken),user.id]);if(!session)throw p.fail(401);
   const digest=p.hash(input);await c.execute('INSERT INTO hd2_system_requests(actor_id,request_id,payload_hash) VALUES (?,?,?) ON DUPLICATE KEY UPDATE request_id=request_id',[user.id,input.requestId,digest]);
@@ -43,7 +43,7 @@ function createSystem({fifo=process.env.HDWORK2_COURIER_FIFO_ENABLED==='true',re
   const [[t]]=await c.execute('SELECT chat_id,thread_id,anchor_id FROM hd2_system_targets WHERE bot_id=? AND enabled=TRUE AND verified=TRUE FOR SHARE',[botId]);if(!t)return {queued:false,reason:'NO_VERIFIED_TARGET'};
   await c.execute('INSERT IGNORE INTO hd2_system_alerts(bot_id,alert_key,window_id) VALUES (?,?,0)',[botId,code]);
   const [[last]]=await c.execute('SELECT window_id,outbox_id FROM hd2_system_alerts WHERE bot_id=? AND alert_key=? FOR UPDATE',[botId,code]);if(last.outbox_id&&now()-Number(last.window_id)<cooldownMs)return {queued:false,reason:'COOLDOWN'};
-  const id=await new MysqlStore({pool:writePool,botId,now,fifo}).enqueueOn(c,'system:'+code+':'+now(),{method:'sendMessage',chat_id:t.chat_id,telegram_thread_id:t.thread_id,thread_mode:t.thread_id===null?'non_topic':'thread',reply_to_message_id:t.anchor_id,text:'HD Work 2.0 system alert: '+code});
+  const id=await new MysqlStore({env,pool:writePool,botId,now,fifo}).enqueueOn(c,'system:'+code+':'+now(),{method:'sendMessage',chat_id:t.chat_id,telegram_thread_id:t.thread_id,thread_mode:t.thread_id===null?'non_topic':'thread',reply_to_message_id:t.anchor_id,text:'HD Work 2.0 system alert: '+code});
   await c.execute('UPDATE hd2_system_alerts SET outbox_id=?,window_id=? WHERE bot_id=? AND alert_key=?',[id,now(),botId,code]);return {queued:true,id};
  });},
  async targets(botId,c=readPool){p.bot(botId);const [rows]=await c.execute(`SELECT chat_id AS chatId,thread_id AS threadId,anchor_id AS anchorId FROM hd2_system_targets WHERE bot_id=? AND enabled=TRUE AND verified=TRUE${c===readPool?'':' FOR SHARE'}`,[botId]);return rows;},

@@ -41,7 +41,7 @@ async function load(plan,{kind,repo,readSecret}={}){
  const env={...(p.routingMode==='database'?{HDWORK2_SHARED_GROUPS_ENABLED:'true'}:{}),COURIER_ENABLED:'true',COURIER_INTEGRATION_ENABLED:'true',COURIER_PRODUCTION_MODE:'true',COURIER_BOT_ID:p.botId,COURIER_BOT_USERNAME:p.botUsername,COURIER_COMMAND_GROUPS_JSON:JSON.stringify(p.groups),COURIER_DATABASE_ROUTING_ENABLED:'true',COURIER_CHAT_ENABLED:'true',COURIER_ACTIVATION_NOT_BEFORE:p.activationNotBefore};
  try{
   if(p.deliveryMode==='fifo-ack-v2'){if(p.routingMode!=='database')throw Error('FIFO_REQUIRES_DATABASE_ROUTING');if(kind==='backend')env.HDWORK2_COURIER_FIFO_ENABLED='true';else env.COURIER_FIFO_ACK_ENABLED='true';}
-  if(p.fifoRelease&&kind==='backend')env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED='true';
+  if(p.fifoRelease&&kind==='backend'){env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED='true';env.HDWORK2_COURIER_WRITER_V2_BOTS_JSON=JSON.stringify([p.botId]);}
   if(p.adaptiveScheduler&&kind==='python')env.COURIER_ADAPTIVE_SCHEDULER_ENABLED='true';
   if(p.telegramLimits&&kind==='python'){env.COURIER_GROUP_MESSAGES_PER_MINUTE=String(p.telegramLimits.groupPerMinute);env.COURIER_GLOBAL_MESSAGES_PER_SECOND=String(p.telegramLimits.globalPerSecond);}
   if(p.separateIo&&kind==='python')env.COURIER_SEPARATE_IO_ENABLED='true';
