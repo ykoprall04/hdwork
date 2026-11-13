@@ -70,6 +70,7 @@ test('explicit courier startup uses mock hdwork2 readiness, loopback listener an
     const dependencies={
       './src/courier/integration-config':{configuration},'node:cluster':{isWorker:false},
       './src/config/operational-grants':require('../src/config/operational-grants'),
+      './src/config/courier-writer':require('../src/config/courier-writer'),
       'mysql2/promise':{createPool(config){assert.equal(config.database,'hdwork2');return mockPool;}},
       './src/courier/mysql-store':{MysqlStore:class{constructor(){}}},
       './src/courier/runtime-store':{RuntimeStore:class{constructor(){}}},

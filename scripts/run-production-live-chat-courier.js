@@ -37,11 +37,11 @@ async function run(argv=process.argv.slice(2)){
     require('../src/observability/raw-log').logger().emit('PYTHON_STDOUT',{count:bytes.length});
     output+=bytes.toString('utf8');if(output.length>4096)return fail();
     const end=output.indexOf('\n');if(end<0)return;
-    try{const event=JSON.parse(output.slice(0,end));if(event.event!=='READY'||event.productionIdentityVerified!==true||event.send!==true)return fail();clearTimeout(timeout);resolve();}catch{fail();}
+    try{const event=JSON.parse(output.slice(0,end));if(event.event!=='READY'||event.productionIdentityVerified!==true||event.send!==(plan.receiveOnly!==true))return fail();clearTimeout(timeout);resolve();}catch{fail();}
    });
   });
   backend.startWorker();
-  console.log(JSON.stringify({status:'COURIER_STARTED_IDENTITY_AND_LEASE_VERIFIED',botId:plan.botId,telegramBotId:plan.telegramBotId,activationNotBefore:plan.activationNotBefore,liveChatEndToEndVerified:false}));
+  console.log(JSON.stringify({status:'COURIER_STARTED_IDENTITY_AND_LEASE_VERIFIED',botId:plan.botId,telegramBotId:plan.telegramBotId,activationNotBefore:plan.activationNotBefore,receiveOnly:plan.receiveOnly===true,send:plan.receiveOnly!==true,liveChatEndToEndVerified:false}));
   process.once('SIGINT',()=>void stop());process.once('SIGTERM',()=>void stop());
   await childDone;
   if(!closing)throw Error('PRODUCTION_COURIER_EXITED');

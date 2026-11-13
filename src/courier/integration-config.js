@@ -2,6 +2,13 @@
 const { validateGroups } = require('./groups');
 function configuration(env) {
   const reject = () => { throw Error('Courier integration configuration rejected'); };
+  if(env.COURIER_RECEIVE_ONLY!==undefined&&!['true','false'].includes(env.COURIER_RECEIVE_ONLY))reject();
+  if(env.COURIER_RECEIVE_ONLY==='true'){
+    if(env.COURIER_OUTBOX_ENABLED!=='false'||env.COURIER_SEND_ENABLED!=='false'||env.COURIER_RECEIVE_ENABLED!=='true'||env.COURIER_WORKER_ENABLED!=='true'||
+       ['COURIER_FIFO_ACK_ENABLED','COURIER_ADAPTIVE_SCHEDULER_ENABLED','COURIER_SEPARATE_IO_ENABLED','HDWORK2_COURIER_FIFO_ENABLED','HDWORK2_COURIER_FIFO_RELEASE_ENABLED','HDWORK2_SYSTEM_ALERTS_APPROVED'].some(k=>env[k]!==undefined&&env[k]!=='false'))reject();
+    // Validate scoped writer settings as well; never let receive-only compose a writer.
+    if(require('../config/courier-writer').bots(env).length)reject();
+  }
   for (const flag of ['COURIER_RECEIVE_ENABLED', 'COURIER_OUTBOX_ENABLED', 'COURIER_WORKER_ENABLED','COURIER_DATABASE_ROUTING_ENABLED','HDWORK2_SYSTEM_ALERTS_APPROVED','COURIER_CHAT_ENABLED','COURIER_PRODUCTION_MODE','HDWORK2_SHARED_GROUPS_ENABLED','HDWORK2_COURIER_FIFO_ENABLED']) {
     if (env[flag] !== undefined && !['true', 'false'].includes(env[flag])) reject();
   }

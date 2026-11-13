@@ -79,3 +79,16 @@ class ProductionCutoverTests(unittest.TestCase):
             for key, value in [('COURIER_EXPECTED_TELEGRAM_BOT_ID','987654321'), ('COURIER_ACTIVATION_NOT_BEFORE',''), ('COURIER_SINGLE_TEST_REFERENCE','trial')]:
                 changed = copy.deepcopy(env); changed[key] = value
                 with self.assertRaises(ValueError): RuntimeConfig.from_env(changed)
+            receive_only = {**env, 'COURIER_RECEIVE_ONLY': 'true', 'COURIER_SEND_ENABLED': 'false'}
+            config = RuntimeConfig.from_env(receive_only)
+            self.assertTrue(config.poll)
+            self.assertFalse(config.send)
+            self.assertEqual(config.production_bot_id, '123456789')
+            for key, value in [('COURIER_SEND_ENABLED', 'true'), ('COURIER_SEND_ENABLED', ''),
+                               ('COURIER_POLL_ENABLED', 'false'), ('COURIER_RECEIVE_ONLY', 'yes'),
+                               ('COURIER_FIFO_ACK_ENABLED', 'true'), ('COURIER_ADAPTIVE_SCHEDULER_ENABLED', 'true'),
+                               ('COURIER_SEPARATE_IO_ENABLED', 'true'), ('COURIER_EXPECTED_TELEGRAM_BOT_ID', '987654321'),
+                               ('COURIER_ACTIVATION_NOT_BEFORE', '')]:
+                with self.subTest(receive_only_option=key):
+                    with self.assertRaises(ValueError):
+                        RuntimeConfig.from_env({**receive_only, key: value})

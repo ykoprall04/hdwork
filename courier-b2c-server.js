@@ -9,7 +9,7 @@ async function startIntegration({ env = process.env,testWindow,testingRead,repor
     const [[target]]=await pool.query('SELECT DATABASE() AS db,CURRENT_USER() AS account');
     if(target.db!=='hdwork2'||target.account!==config.database.user+'@localhost')throw Error('Courier database identity rejected');
     const [grants]=await pool.query('SHOW GRANTS FOR CURRENT_USER');
-    if(!require('./src/config/operational-grants').reviewOperationalGrants(grants,(env.COURIER_OUTBOX_ENABLED==='true'?'courierSend':'courier')+(env.COURIER_CHAT_ENABLED==='true'?'Chat':env.COURIER_DATABASE_ROUTING_ENABLED==='true'?'System':'')+(env.HDWORK2_COURIER_FIFO_ENABLED==='true'?'Fifo':'')).ok)throw Error('Courier database grants rejected');
+    if(!require('./src/config/operational-grants').reviewOperationalGrants(grants,(env.COURIER_OUTBOX_ENABLED==='true'?'courierSend':'courier')+(env.COURIER_CHAT_ENABLED==='true'?'Chat':env.COURIER_DATABASE_ROUTING_ENABLED==='true'?'System':'')+(env.HDWORK2_COURIER_FIFO_ENABLED==='true'?'Fifo':'')).ok)throw Object.assign(Error('Courier database grants rejected'),{code:env.COURIER_RECEIVE_ONLY==='true'?'COURIER_RECEIVE_ONLY_GRANTS_REJECTED':'COURIER_GRANTS_REJECTED'});
     await pool.execute('SELECT bot_id FROM hd2_courier_workers LIMIT 0');
     await pool.execute('SELECT nonce FROM hd2_courier_nonces LIMIT 0');
     await pool.execute('SELECT version,access_module FROM hd2_orders LIMIT 0');

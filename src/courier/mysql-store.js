@@ -6,6 +6,7 @@ const activeTransactions=new WeakSet();
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
 class MysqlStore {
   constructor({ pool, botId, env = process.env, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false, activationBoundary, chatDeliveryEvents = false, fifo = env.HDWORK2_COURIER_FIFO_ENABLED==='true', fifoRelease = env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true', routeFence = env.HDWORK2_SHARED_GROUPS_ENABLED==='true' }) {
+    this.receiveOnly=env.COURIER_RECEIVE_ONLY==='true';
     this.writerV2=require('../config/courier-writer').bots(env).includes(botId);
     if(this.writerV2){fifo=true;fifoRelease=true;}
     this.fifo=fifo;
@@ -43,6 +44,7 @@ class MysqlStore {
     });
   }
   async enqueueOn(c, key, body) {
+    if(this.receiveOnly)throw Object.assign(fail(503),{code:'COURIER_RECEIVE_ONLY'});
     if (typeof key !== 'string' || !/^[\x21-\x7e]{1,200}$/.test(key)) throw fail();
     const payload = outbound(body), hash = digest(payload), id = randomUUID();
     if(this.writerV2){if(!activeTransactions.has(c))throw Object.assign(fail(503),{code:'WRITER_TRANSACTION_REQUIRED'});await require('./writer-fence').enter(c,this.botId);}
@@ -57,6 +59,7 @@ class MysqlStore {
   }
   enqueue(key, body) { return this.transaction(c => this.enqueueOn(c, key, body)); }
   async claim(limit = 1, options = {}) {
+    if(this.receiveOnly)throw Object.assign(fail(503),{code:'COURIER_RECEIVE_ONLY'});
     if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw fail();
     const blocked=options.excludeChats??[];if(!Array.isArray(blocked)||blocked.length>128||blocked.some(x=>typeof x!=='string'||!/^-[1-9]\d{0,19}$/.test(x))||blocked.length&&!this.fifo)throw fail();
     const chatFence=blocked.length?" AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.chat_id')) NOT IN ("+blocked.map(()=>'?').join(',')+")":'';
@@ -85,6 +88,7 @@ class MysqlStore {
     });
   }
   async authorizeDelivery(id,body,options={}) {
+    if(this.receiveOnly)throw Object.assign(fail(503),{code:'COURIER_RECEIVE_ONLY'});
     return this.transaction(async c=>{
       await options.before?.(c);
       const [[row]]=await c.execute("SELECT id,payload FROM hd2_courier_outbox WHERE id=? AND bot_id=? AND state='SENDING' AND lease_token=? AND lease_until_ms>?"+this.boundarySql+this.outboxFence+' FOR SHARE',[id,this.botId,body.lease_token,this.now(),...this.boundaryParams]);
@@ -92,6 +96,7 @@ class MysqlStore {
     });
   }
   async settle(id, body) {
+    if(this.receiveOnly)throw Object.assign(fail(503),{code:'COURIER_RECEIVE_ONLY'});
     if (!body || typeof body.lease_token !== 'string' || !['sent', 'retry', 'failed'].includes(body.result)) throw fail();
     const ack = { lease_token: body.lease_token, result: body.result, telegram_message_id: body.result === 'sent' ? messageId(body.telegram_message_id) : null, error_code: body.result === 'sent' ? null : body.error_code, retry_after: body.retry_after ?? 0 };
     if(this.fifoRelease&&body.telegram_error!==undefined)ack.telegram_error=require('./fifo-release').telegramError(body.telegram_error);

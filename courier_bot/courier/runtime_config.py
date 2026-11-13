@@ -31,6 +31,12 @@ class RuntimeConfig:
     def from_env(cls, env):
         if env.get('COURIER_INTEGRATION_ENABLED') != 'true':
             raise ValueError('integration_disabled')
+        if env.get('COURIER_RECEIVE_ONLY', 'false') not in ('true', 'false'):
+            raise ValueError('receive_only_flag_invalid')
+        if env.get('COURIER_RECEIVE_ONLY') == 'true':
+            if (env.get('COURIER_POLL_ENABLED') != 'true' or env.get('COURIER_SEND_ENABLED') != 'false' or
+                    any(env.get(k, 'false') != 'false' for k in ('COURIER_FIFO_ACK_ENABLED', 'COURIER_ADAPTIVE_SCHEDULER_ENABLED', 'COURIER_SEPARATE_IO_ENABLED'))):
+                raise ValueError('receive_only_sender_rejected')
         for flag in ('COURIER_POLL_ENABLED', 'COURIER_SEND_ENABLED', 'COURIER_DATABASE_ROUTING_ENABLED', 'COURIER_CHAT_ENABLED', 'COURIER_PRODUCTION_MODE', 'COURIER_FIFO_ACK_ENABLED','COURIER_ADAPTIVE_SCHEDULER_ENABLED','COURIER_SEPARATE_IO_ENABLED'):
             if env.get(flag, 'false') not in ('true', 'false'):
                 raise ValueError('integration_flag_invalid')

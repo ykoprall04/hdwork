@@ -5,6 +5,11 @@ const {boundary}=require('../courier/activation-boundary');
 const {clearSecrets}=require('./private-courier-env');
 function validate(plan,{repo}={}){
  const keys=['version','environment','telegramBotId','botId','botUsername','port','groups','secretRoot','tokenDpapiFile','serviceKeyDpapiFile','identityKeyDpapiFile','dbPasswordDpapiFile','journalDirectory','sourceJournalDirectory','lockDirectory','activationNotBefore'];
+ if(plan&&Object.hasOwn(plan,'receiveOnly')){
+  if(plan.receiveOnly!==true)throw Error('RECEIVE_ONLY_MUST_BE_EXPLICIT_TRUE');
+  if(['deliveryMode','fifoRelease','adaptiveScheduler','separateIo','telegramLimits'].some(k=>Object.hasOwn(plan,k)))throw Error('RECEIVE_ONLY_SENDER_OPTIONS_REJECTED');
+  keys.push('receiveOnly');
+ }
  if(plan&&Object.hasOwn(plan,'fifoRelease')){if(plan.fifoRelease!==true||plan.deliveryMode!=='fifo-ack-v2')throw Error('FIFO_RELEASE_REQUIRES_FIFO');keys.push('fifoRelease');}
  if(plan&&Object.hasOwn(plan,'separateIo')){if(plan.separateIo!==true||plan.adaptiveScheduler!==true)throw Error('SEPARATE_IO_REQUIRES_SCHEDULER');keys.push('separateIo');}
  if(plan&&Object.hasOwn(plan,'telegramLimits')){const l=plan.telegramLimits;if(plan.adaptiveScheduler!==true||!l||Object.keys(l).sort().join(',')!=='globalPerSecond,groupPerMinute'||!Number.isInteger(l.groupPerMinute)||l.groupPerMinute<1||l.groupPerMinute>18||!Number.isFinite(l.globalPerSecond)||l.globalPerSecond<.1||l.globalPerSecond>1)throw Error('TELEGRAM_LIMITS_REJECTED');keys.push('telegramLimits');}
@@ -40,6 +45,7 @@ async function load(plan,{kind,repo,readSecret}={}){
  readSecret||=(file=>require('./private-database-env').readPrivateDpapi(file,{allowedRoot:repo}));
  const env={...(p.routingMode==='database'?{HDWORK2_SHARED_GROUPS_ENABLED:'true'}:{}),COURIER_ENABLED:'true',COURIER_INTEGRATION_ENABLED:'true',COURIER_PRODUCTION_MODE:'true',COURIER_BOT_ID:p.botId,COURIER_BOT_USERNAME:p.botUsername,COURIER_COMMAND_GROUPS_JSON:JSON.stringify(p.groups),COURIER_DATABASE_ROUTING_ENABLED:'true',COURIER_CHAT_ENABLED:'true',COURIER_ACTIVATION_NOT_BEFORE:p.activationNotBefore};
  try{
+  if(p.receiveOnly)Object.assign(env,{COURIER_RECEIVE_ONLY:'true',COURIER_SEND_ENABLED:'false',COURIER_OUTBOX_ENABLED:'false',COURIER_FIFO_ACK_ENABLED:'false',COURIER_ADAPTIVE_SCHEDULER_ENABLED:'false',COURIER_SEPARATE_IO_ENABLED:'false',HDWORK2_COURIER_FIFO_ENABLED:'false',HDWORK2_COURIER_FIFO_RELEASE_ENABLED:'false',HDWORK2_COURIER_WRITER_V2_BOTS_JSON:'[]',HDWORK2_SYSTEM_ALERTS_APPROVED:'false'});
   if(p.deliveryMode==='fifo-ack-v2'){if(p.routingMode!=='database')throw Error('FIFO_REQUIRES_DATABASE_ROUTING');if(kind==='backend')env.HDWORK2_COURIER_FIFO_ENABLED='true';else env.COURIER_FIFO_ACK_ENABLED='true';}
   if(p.fifoRelease&&kind==='backend'){env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED='true';env.HDWORK2_COURIER_WRITER_V2_BOTS_JSON=JSON.stringify([p.botId]);}
   if(p.adaptiveScheduler&&kind==='python')env.COURIER_ADAPTIVE_SCHEDULER_ENABLED='true';
@@ -48,12 +54,12 @@ async function load(plan,{kind,repo,readSecret}={}){
   env.COURIER_SERVICE_KEY=await readSecret(path.resolve(repo,p.serviceKeyDpapiFile));
   if(typeof env.COURIER_SERVICE_KEY!=='string'||Buffer.byteLength(env.COURIER_SERVICE_KEY)<32)throw Error('PROTECTED_SERVICE_KEY_REJECTED');
   if(kind==='backend'){
-   Object.assign(env,{HDWORK2_LOCAL_READ_ONLY:'false',HDWORK2_OPERATIONS_ENABLED:'true',HDWORK2_AUTH_V2:'true',COURIER_STORE:'mysql',COURIER_SCHEMA_READY:'true',B2C_COMMAND_SCHEMA_READY:'true',COURIER_DB_HOST:'127.0.0.1',COURIER_DB_PORT:'3306',COURIER_DB_NAME:'hdwork2',COURIER_DB_USER:'hdwork_courier',COURIER_DB_PASSWORD:await readSecret(path.resolve(repo,p.dbPasswordDpapiFile)),COURIER_IDENTITY_KEY:await readSecret(path.resolve(repo,p.identityKeyDpapiFile)),COURIER_PORT:String(p.port),COURIER_RECEIVE_ENABLED:'true',COURIER_WORKER_ENABLED:'true',COURIER_OUTBOX_ENABLED:'true'});
+   Object.assign(env,{HDWORK2_LOCAL_READ_ONLY:'false',HDWORK2_OPERATIONS_ENABLED:'true',HDWORK2_AUTH_V2:'true',COURIER_STORE:'mysql',COURIER_SCHEMA_READY:'true',B2C_COMMAND_SCHEMA_READY:'true',COURIER_DB_HOST:'127.0.0.1',COURIER_DB_PORT:'3306',COURIER_DB_NAME:'hdwork2',COURIER_DB_USER:'hdwork_courier',COURIER_DB_PASSWORD:await readSecret(path.resolve(repo,p.dbPasswordDpapiFile)),COURIER_IDENTITY_KEY:await readSecret(path.resolve(repo,p.identityKeyDpapiFile)),COURIER_PORT:String(p.port),COURIER_RECEIVE_ENABLED:'true',COURIER_WORKER_ENABLED:'true',COURIER_OUTBOX_ENABLED:p.receiveOnly?'false':'true'});
    require('../courier/integration-config').configuration(env);
   }else{
    env.COURIER_TELEGRAM_BOT_TOKEN=await readSecret(path.resolve(repo,p.tokenDpapiFile));
    if(typeof env.COURIER_TELEGRAM_BOT_TOKEN!=='string'||!new RegExp('^'+p.telegramBotId+':[A-Za-z0-9_-]{30,}$').test(env.COURIER_TELEGRAM_BOT_TOKEN))throw Error('PRODUCTION_TOKEN_BOT_ID_MISMATCH');
-   Object.assign(env,{COURIER_EXPECTED_TELEGRAM_BOT_ID:p.telegramBotId,COURIER_ALLOW_NETWORK:'true',COURIER_SERVER_URL:'http://127.0.0.1:'+p.port,COURIER_POLL_ENABLED:'true',COURIER_SEND_ENABLED:'true',COURIER_JOURNAL_DIR:p.journalDirectory,COURIER_SOURCE_JOURNAL_FILE:path.join(p.sourceJournalDirectory,'courier.sqlite3'),COURIER_LOCK_DIR:p.lockDirectory,COURIER_PRIVATE_CONTROL_STDIN:'true'});
+   Object.assign(env,{COURIER_EXPECTED_TELEGRAM_BOT_ID:p.telegramBotId,COURIER_ALLOW_NETWORK:'true',COURIER_SERVER_URL:'http://127.0.0.1:'+p.port,COURIER_POLL_ENABLED:'true',COURIER_SEND_ENABLED:p.receiveOnly?'false':'true',COURIER_JOURNAL_DIR:p.journalDirectory,COURIER_SOURCE_JOURNAL_FILE:path.join(p.sourceJournalDirectory,'courier.sqlite3'),COURIER_LOCK_DIR:p.lockDirectory,COURIER_PRIVATE_CONTROL_STDIN:'true'});
   }
   return env;
  }catch(error){clearSecrets(env);throw error;}
