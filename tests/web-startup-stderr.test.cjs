@@ -31,6 +31,13 @@ const cases=[
  ['rejects oversized frames and safely handles a missing code',`process.stderr.write(JSON.stringify({status:'FAILED',code:'EACCES',message:'${marker}'.repeat(400)})+'\\n'+JSON.stringify({status:'FAILED',message:'${marker}'})+'\\n');process.exitCode=1;`,'WEB_STARTUP_FAILED'],
  ['successful child leaves no failure record',`process.exitCode=0;`,null]
 ];
+for(const stage of ['CONFIG','BOOTSTRAP','API_CONFIG','OPERATIONAL_POOLS','TESTING_RUNTIME','LOCAL_WEB','READY_STATE']){
+ const helper=path.join(__dirname,'helpers/protected-startup-mock.cjs');
+ cases.push(['receives actual mocked startup code for '+stage,`require(${JSON.stringify(helper)}).simulate(${JSON.stringify(stage)}).then(r=>{for(const frame of r.frames)console.error(JSON.stringify(frame));process.exitCode=r.exitCode;});`,'WEB_STAGE_'+stage+'_FAILED']);
+}
+for(const [code,expected] of [['ER_SYNTHETIC_SECRET_DO_NOT_RECORD','WEB_STAGE_LOCAL_WEB_FAILED'],['ER_ACCESS_DENIED_ERROR','ER_ACCESS_DENIED_ERROR']]){
+ cases.push(['receives sanitized mocked database error '+code,`require(${JSON.stringify(path.join(__dirname,'helpers/protected-startup-mock.cjs'))}).simulate('LOCAL_WEB',${JSON.stringify(code)},true).then(r=>{for(const frame of r.frames)console.error(JSON.stringify(frame));process.exitCode=r.exitCode;});`,expected]);
+}
 for(const [name,code,expected] of cases)test(name,{skip:process.platform!=='win32'},async()=>{const r=await fixture(code,expected);assert.equal(r.owner.exitCode,expected||name!=='successful child leaves no failure record'?1:0);});
 test('PowerShell source parses and stderr is drained before bootstrap input',{skip:process.platform!=='win32'},()=>{
  const source=fs.readFileSync(supervisor,'utf8');assert.ok(source.indexOf('$child.add_ErrorDataReceived($stderrHandler)')<source.indexOf('[void]$child.Start()'));assert.ok(source.indexOf('$child.BeginErrorReadLine()')<source.indexOf('$child.StandardInput.WriteLine([Text.Encoding]::UTF8.GetString($plain))'));

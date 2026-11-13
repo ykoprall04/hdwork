@@ -5,7 +5,8 @@ async function run(){
  let stage='CONFIG';
  try { return await runStartup(); }
  catch(error){
-  const known=/^(?:EACCES|EPERM|ENOENT|EADDRINUSE|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ER_[A-Z0-9_]+)$/.test(error?.code||'')?error.code:null;
+  // Keep emitted codes within the supervisor allowlist; arbitrary ER_* values may contain secrets.
+  const known=/^(?:EACCES|EPERM|ENOENT|EADDRINUSE|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ER_ACCESS_DENIED_ERROR|ER_DBACCESS_DENIED_ERROR|ER_TABLEACCESS_DENIED_ERROR|ER_SPECIFIC_ACCESS_DENIED_ERROR|ER_BAD_DB_ERROR|ER_BAD_FIELD_ERROR|ER_NO_SUCH_TABLE|ER_CON_COUNT_ERROR|ER_USER_LIMIT_REACHED|ER_LOCK_WAIT_TIMEOUT|ER_LOCK_DEADLOCK)$/.test(error?.code||'')?error.code:null;
   const code=known||('WEB_STAGE_'+stage+'_FAILED');
   console.error(JSON.stringify({status:'FAILED',code}));
   process.exitCode=1;
