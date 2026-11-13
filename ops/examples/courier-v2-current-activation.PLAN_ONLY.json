@@ -55,13 +55,13 @@
     "reason": "Existing backup restores 10 QUEUED and 8 DEAD; current live baseline is 18 DEAD"
   },
   "blockers": [
-    "Live web writer has no FIFO allocation support or bot-scoped cooperative writer fence; no web change is authorized",
+    "Prepared FIFO/fence writer code has not been deployed: separately approve a web handoff preserving availability, verify all target writer versions/configs and drain old unfenced requests before claiming quiescence",
     "Administrative audit metadata remains unrecorded; marker-only recording requires proven writer quiescence",
     "Delivery release source/configuration pins and no-send health binding must be completed after compatible writer/fence; staged runtime is flags-off only",
     "A fresh coherent MySQL+SQLite recovery point requires writer quiescence; existing MySQL backup restore alone is not a paired current recovery point"
   ],
   "nextStages": [
-    "Prepare compatible bot-scoped writer and enforceable quiescence without affecting other bots; resolve permitted production change scope",
+    "Review and separately approve deployment of the prepared bot-scoped FIFO writer and cooperative fence; verify actual version coverage and online web handoff",
     "Regenerate reviewed immutable delivery-release pins; retain flags-off and startup fence",
     "After separate cutover approval: establish writer fence, recheck 109/18 and zero QUEUED/SENDING, create and rehearse paired current backup",
     "Record 18 administrative markers and 18 audit entries atomically with current fingerprint; no status/attempt/lease/error/FIFO changes",
@@ -78,5 +78,29 @@
     "tests/manual-closure-mysql.cjs": "82ca9c8a5c87141d15a4efde15962c6db50319955492222d05f84d6d90dee894",
     "tests/restore-existing-courier-backup.cjs": "d4262e5248e9d54f7686ab9d9c8baf2796f632c62e48090b0acadd9eb922ea9e"
   },
-  "privatePreparationDirectory": "C:/ProgramData/HDWork2CourierV2Activation-27bddfe96ae3407cac57c7f8448c7751"
+  "privatePreparationDirectory": "C:/ProgramData/HDWork2CourierV2Activation-27bddfe96ae3407cac57c7f8448c7751",
+  "writerV2": {
+    "codePrepared": true,
+    "productionDeployed": false,
+    "scopeFlag": "HDWORK2_COURIER_WRITER_V2_BOTS_JSON",
+    "candidateScope": [
+      "hdworkopsbot-testing"
+    ],
+    "controlRowKey": "43639aa660678fd848c38b72f1ee6bd12fcc9d7d5589444fb1712a5ff4e0d421",
+    "protocol": "COOPERATIVE_BOT_ROW_V1",
+    "additionalDdl": false,
+    "additionalProductionGrants": false,
+    "deploymentPlan": "docs/courier-writer-v2-deployment.md",
+    "controlSession": "scripts/lib/production-courier-writer-session.cjs",
+    "automaticLegacyRollbackAllowed": false,
+    "rollbackVerifier": "scripts/lib/courier-writer-rollback.cjs",
+    "validation": {
+      "newTestsPassed": 21,
+      "mysqlScenariosPassed": 16,
+      "regressionTestsPassed": 63,
+      "environment": "Owned MySQL Windows named pipe with TCP disabled; synthetic data only",
+      "productionAccessed": false,
+      "telegramCalls": 0
+    }
+  }
 }

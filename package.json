@@ -19,7 +19,9 @@
     "start:local:private": "node scripts/private-runtime.js local",
     "build:operational": "node scripts/build-operational-frontend.js --build",
     "ops:health": "node scripts/hdwork2-control.js health",
-    "ops:plan": "node scripts/hdwork2-control.js plan"
+    "ops:plan": "node scripts/hdwork2-control.js plan",
+    "test:courier-writer": "node --test tests/courier-writer-config.test.cjs",
+    "test:courier-writer:mysql-isolated": "node --test tests/courier-writer-config.test.cjs tests/courier-writer-mysql.test.cjs"
   },
   "keywords": [],
   "author": "",

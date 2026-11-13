@@ -1,3 +1,9 @@
+## Pembaruan pengembangan writer v2 - 13 November 2026
+
+Integrasi FIFO writer dan fence per bot sudah diimplementasikan serta diuji terisolasi. Produksi belum diubah. Lihat [rencana deployment writer](D:/HDWork2-New/courier-v2-fifo-dev/docs/courier-writer-v2-deployment.md). Scope kandidat hanya `hdworkopsbot-testing`, tanpa DDL/GRANT baru atau perubahan 18 DEAD. Blocker implementasi kedua fitur telah ditangani; bukti cakupan versi writer produksi, handoff web, recovery/audit terbaru dan runtime pengiriman masih menjadi gate deployment/aktivasi. Catatan produksi dan staging berikut tetap merupakan riwayat sebelum deployment ini.
+
+---
+
 # Courier v2 activation plan — current production, 13 November 2026
 
 Status: PREPARED, NOT ACTIVATED. This document and `ops/examples/courier-v2-current-activation.PLAN_ONLY.json` supersede the old 10 QUEUED + 8 DEAD cutover stages for hdworkopsbot-testing. Do not execute the old administrative18 procedure, migrations 015–017, grants, frontend installation, queue reset, or resend.

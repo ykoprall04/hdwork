@@ -1,0 +1,37 @@
+{
+  "kind": "COURIER_WRITER_V2_DEVELOPMENT_VALIDATION",
+  "observedAtUtc": "2026-11-13T08:21:24.651253+00:00",
+  "commands": [
+    {
+      "command": "npm run test:courier-writer:mysql-isolated",
+      "passed": 21,
+      "failed": 0,
+      "mysqlScenarios": 16
+    },
+    {
+      "command": "node --test tests/live-chat.test.js tests/live-chat-activation.test.js tests/courier-fifo.test.js tests/courier-fifo-release.test.js tests/courier-mysql.test.js tests/operational-pool-routing.test.js tests/operational-grant-review.test.js tests/system-monitoring.test.js tests/operations.test.js tests/private-integration-pools.test.js",
+      "passed": 63,
+      "failed": 0
+    }
+  ],
+  "actualMysql": true,
+  "mockTelegramCalls": 0,
+  "realTelegramCalls": 0,
+  "productionAccessed": false,
+  "deployed": false,
+  "installedMysql2Version": "3.24.2",
+  "lockedMysql2Version": "3.24.2",
+  "rollbackScope": "Retain compatible fence/FIFO code and bot-scoped config; arbitrary legacy rollback is rejected",
+  "sourceSha256": {
+    "src/courier/mysql-store.js": "17da460ae13e663194c40c2eaf5ed97e6e3244fcb267a9b46f6ac32d80785cd4",
+    "src/courier/writer-fence.js": "f4a931a7b7766014154a7dd47f7447305c0473fe56d506f1c1cae92045c5fa47",
+    "src/config/courier-writer.js": "03b19e3fbc9d8aecedc4b91a83ef41a459417b40a2fa1d8e7512e848a827454f",
+    "src/config/live-chat-activation.js": "6c3a66ee03bf941e6d63455e697dcbe9da30fb525a29d62ba34f828453981ee2",
+    "src/config/operational-pools.js": "a51dc614346265cab9bca39e752b26208e77cfe0360f497f0e0ac488d83d7c3f",
+    "scripts/control-courier-writer.js": "b2a81ab12e3aad157aaff487b858778ec39ae167d282b363421c7273de671bc3",
+    "scripts/lib/production-courier-writer-session.cjs": "41dc21c94feb7d458ac8214553f490e52abb0c0a7b9e420feb7474bbf0f1f633",
+    "scripts/lib/courier-writer-rollback.cjs": "6f656fcdccc69ccf65e1b381fda32cc911e1521be0515219a4326403eca74f86",
+    "tests/courier-writer-config.test.cjs": "6c0556a514f9d96f313d6a4f58ccac6b3d502a517c4bda4362623f9c94ab8584",
+    "tests/courier-writer-mysql.test.cjs": "769f6a7aed5b79ec33a0c83796083ddb40ef131f4a3b77dcb8f5edbb5d0a8334"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "kind": "HDWORK2_WRITER_FENCE_APPROVAL",
+  "approved": false,
+  "botId": "hdworkopsbot-testing",
+  "action": "close",
+  "expectedEpoch": null,
+  "operator": "OPERATOR_TO_COMPLETE",
+  "reason": "REVIEWED_REASON_TO_COMPLETE",
+  "expectedAccount": "hdwork_courier@localhost",
+  "sessionSha256": null,
+  "runtimeConfigFile": null,
+  "runtimeConfigSha256": null,
+  "expiresAtUtc": null
+}

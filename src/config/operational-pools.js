@@ -6,6 +6,7 @@ function options(role,env){
  if(env.HDWORK2_SHARED_GROUPS_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_SHARED_GROUPS_ENABLED)||env.HDWORK2_SHARED_GROUPS_ENABLED==='true'&&(env.HDWORK2_LIVE_CHAT_ENABLED!=='true'||env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true'))throw rejected();
  if(env.HDWORK2_LIVE_CHAT_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_LIVE_CHAT_ENABLED)||env.HDWORK2_LIVE_CHAT_ENABLED==='true'&&env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true')throw rejected();
  if(env.HDWORK2_SYSTEM_MONITORING_ENABLED!==undefined&&!['true','false'].includes(env.HDWORK2_SYSTEM_MONITORING_ENABLED))throw rejected();
+ require('./live-chat-activation').profiles(env);
  const spec=roles[role];if(!spec)throw rejected();const p=spec.prefix;
  if(env[p+'_ENABLED']!=='true'||env[p+'_DB_USER']!==spec.user||env[p+'_DB_NAME']!=='hdwork2'||env[p+'_DB_HOST']!=='127.0.0.1'||String(env[p+'_DB_PORT'])!=='3306'||env[p+'_DB_PASSWORD'])throw rejected();
  if(role==='write'&&(env.HDWORK2_LOCAL_READ_ONLY!=='false'||env.HDWORK2_OPERATIONAL_WRITE_APPROVED!=='true'))throw rejected();
@@ -41,7 +42,11 @@ function createManager({env=process.env,readSecret=file=>require('./private-data
     if(env.HDWORK2_SYSTEM_MONITORING_ENABLED==='true'){await raw.execute('SELECT component,status,checked_at FROM hd2_system_state LIMIT 0');if(role==='read')await raw.execute('SELECT delivered_at FROM hd2_courier_outbox LIMIT 0');}
     if(env.HDWORK2_SHARED_GROUPS_ENABLED==='true')await raw.execute('SELECT group_name,blocked_before FROM hd2_system_mappings LIMIT 0');
     if(env.HDWORK2_LIVE_CHAT_ENABLED==='true')await raw.execute('SELECT id,order_id FROM hd2_chat_messages LIMIT 0');
-    if(env.HDWORK2_COURIER_FIFO_ENABLED==='true'&&role==='write'){await raw.execute('SELECT conversation_key,conversation_seq FROM hd2_courier_outbox LIMIT 0');await raw.execute('SELECT bot_id,conversation_key,next_seq FROM hd2_courier_lanes LIMIT 0');}
+    if((env.HDWORK2_COURIER_FIFO_ENABLED==='true'||require('./courier-writer').bots(env).length)&&role==='write'){await raw.execute('SELECT conversation_key,conversation_seq FROM hd2_courier_outbox LIMIT 0');await raw.execute('SELECT bot_id,conversation_key,next_seq FROM hd2_courier_lanes LIMIT 0');}
+    if(role==='write'&&require('./courier-writer').bots(env).length){
+     await raw.execute('SELECT fifo_order_id,fifo_release,telegram_error FROM hd2_courier_outbox LIMIT 0');
+     for(const botId of require('./courier-writer').bots(env))await require('../courier/writer-fence').inspect(raw,{botId});
+    }
     pools.set(role,role==='read'?guardedRead(raw):writeGuard(raw));
    }
   }catch{await close();throw rejected();}})();

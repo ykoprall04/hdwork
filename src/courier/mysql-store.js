@@ -2,9 +2,12 @@ const { randomUUID } = require('node:crypto');
 const {logger,observe}=require('../observability/raw-log');
 const { eventEnvelope, outbound, digest, fail, messageId } = require('./contract');
 const json = value => typeof value === 'string' ? JSON.parse(value) : value;
+const activeTransactions=new WeakSet();
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
 class MysqlStore {
   constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false, recordDeliveryTime = false, activationBoundary, chatDeliveryEvents = false, fifo = process.env.HDWORK2_COURIER_FIFO_ENABLED==='true', fifoRelease = process.env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED==='true', routeFence = process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true' }) {
+    this.writerV2=require('../config/courier-writer').bots().includes(botId);
+    if(this.writerV2){fifo=true;fifoRelease=true;}
     this.fifo=fifo;
     if(fifoRelease&&!fifo)throw Error('FIFO_RELEASE_REQUIRES_FIFO');
     this.fifoRelease=fifoRelease;
@@ -23,9 +26,9 @@ class MysqlStore {
     let liveDirty=false;
     const execute=connection.execute;
     connection.execute=function(...args){if(typeof args[0]==='string'&&/^INSERT INTO hd2_live_events\b/.test(args[0]))liveDirty=true;return observe('MYSQL_EXECUTE',{},()=>execute.apply(this,args));};
-    try { await observe('MYSQL_BEGIN',{},()=>connection.beginTransaction()); const result = await run(connection); await observe('MYSQL_COMMIT',{},()=>connection.commit());if(liveDirty){try{require('../operations/live-signal').notify();}catch(error){logger().emit('LIVE_WAKE_FAILED',{status:'ERROR'},error);}} return result; }
+    try { await observe('MYSQL_BEGIN',{},()=>connection.beginTransaction()); activeTransactions.add(connection); const result = await run(connection); await observe('MYSQL_COMMIT',{},()=>connection.commit());if(liveDirty){try{require('../operations/live-signal').notify();}catch(error){logger().emit('LIVE_WAKE_FAILED',{status:'ERROR'},error);}} return result; }
     catch (error) { try { await observe('MYSQL_ROLLBACK',{},()=>connection.rollback()); } catch { /* release still required */ } throw error; }
-    finally { connection.execute=execute;connection.release(); }
+    finally { activeTransactions.delete(connection);connection.execute=execute;connection.release(); }
   }
   async accept(body) {
     const payload = eventEnvelope(body, this.botId), hash = digest(payload), id = randomUUID();
@@ -41,8 +44,10 @@ class MysqlStore {
   async enqueueOn(c, key, body) {
     if (typeof key !== 'string' || !/^[\x21-\x7e]{1,200}$/.test(key)) throw fail();
     const payload = outbound(body), hash = digest(payload), id = randomUUID();
+    if(this.writerV2){if(!activeTransactions.has(c))throw Object.assign(fail(503),{code:'WRITER_TRANSACTION_REQUIRED'});await require('./writer-fence').enter(c,this.botId);}
     if(this.routeFence){const [[route]]=await c.execute('SELECT id FROM hd2_system_mappings WHERE bot_id=? AND chat_id=? AND thread_id<=>? AND enabled=TRUE AND verified=TRUE FOR SHARE',[this.botId,payload.chat_id,payload.telegram_thread_id]);if(!route)throw fail(403);}
     const lane=this.fifo?await (this.fifoRelease?require('./fifo-release').allocateOrder(c,this.botId,payload):require('./fifo').allocate(c,this.botId,payload)):null;
+    if(this.writerV2&&!lane)throw Object.assign(fail(503),{code:'WRITER_FIFO_ORDER_REQUIRED'});
     await c.execute('INSERT INTO hd2_courier_outbox (id,bot_id,idem_key,payload_hash,payload,due_ms'+(lane?',conversation_key,conversation_seq':'')+(lane&&this.fifoRelease?',fifo_order_id':'')+') VALUES (?,?,?,?,?,?'+(lane?',?,?':'')+(lane&&this.fifoRelease?',?':'')+') ON DUPLICATE KEY UPDATE id=id', [id, this.botId, key, hash, JSON.stringify(payload), this.now(),...(lane?[lane.key,lane.sequence]:[]),...(lane&&this.fifoRelease?[lane.orderId]:[])]);
     const [[row]] = await c.execute('SELECT id,payload_hash FROM hd2_courier_outbox WHERE bot_id=? AND idem_key=? FOR UPDATE', [this.botId, key]);
     if (!row || row.payload_hash !== hash) throw fail(409);
