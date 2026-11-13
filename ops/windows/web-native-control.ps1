@@ -9,7 +9,7 @@ try{
  $cfg=Get-Content -LiteralPath $ControlConfig -Raw|ConvertFrom-Json
  $caller=[Security.Principal.WindowsIdentity]::GetCurrent();$owner=[string]$cfg.ownerSid
  if($caller.User.Value -cne $owner -and $caller.User.Value -cne 'S-1-5-18' -and -not (New-Object Security.Principal.WindowsPrincipal($caller)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){Reject 'WEB_CONTROL_OPERATOR_REJECTED'}
- if($cfg.kind -cne 'HDWORK2_WEB_SUPERVISOR' -or $cfg.ownerSid -cne $owner -or $cfg.taskName -notmatch '^(HDWork2-Web|HDWork2-WebFixture-[a-f0-9]{32})$'){Reject 'OWNER_SCOPE_REJECTED'}
+ if($cfg.kind -cne 'HDWORK2_WEB_SUPERVISOR' -or $cfg.ownerSid -cne $owner -or $cfg.taskName -notmatch '^(HDWork2-Web(?:-Standby|-Rollback)?|HDWork2-WebFixture-[a-f0-9]{32})$'){Reject 'OWNER_SCOPE_REJECTED'}
  $root=[IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ControlConfig))
  foreach($rule in (Get-Acl -LiteralPath $root).Access){$identity=$rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value;if($rule.AccessControlType -eq 'Allow' -and ([int]$rule.FileSystemRights -band [int][Security.AccessControl.FileSystemRights]::Write) -and $identity -notin @($owner,'S-1-5-18','S-1-5-32-544')){Reject 'UNSAFE_CONTROL_DIRECTORY_ACL'}}
  foreach($file in @($cfg.stateFile,$cfg.fenceFile)){if(-not ([IO.Path]::GetFullPath($file)).StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){Reject 'CONTROL_PATH_ESCAPE'}}

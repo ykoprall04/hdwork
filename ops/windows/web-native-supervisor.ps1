@@ -8,7 +8,7 @@ function HashFile($p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLo
 if((HashFile $ControlConfig) -cne $ConfigSha256){throw 'CONTROL_CONFIG_CHANGED'}
 $cfg=Get-Content -LiteralPath $ControlConfig -Raw|ConvertFrom-Json
 $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-if($cfg.kind -cne 'HDWORK2_WEB_SUPERVISOR' -or $cfg.version -ne 1 -or $cfg.ownerSid -cne $sid -or $cfg.taskName -notmatch '^(HDWork2-Web|HDWork2-WebFixture-[a-f0-9]{32})$' -or $cfg.pipeName -notmatch '^hdwork2-web-[a-f0-9]{32}$' -or $cfg.graceSeconds -lt 1 -or $cfg.graceSeconds -gt 60){throw 'NATIVE_OWNER_REJECTED'}
+if($cfg.kind -cne 'HDWORK2_WEB_SUPERVISOR' -or $cfg.version -ne 1 -or $cfg.ownerSid -cne $sid -or $cfg.taskName -notmatch '^(HDWork2-Web(?:-Standby|-Rollback)?|HDWork2-WebFixture-[a-f0-9]{32})$' -or $cfg.pipeName -notmatch '^hdwork2-web-[a-f0-9]{32}$' -or $cfg.graceSeconds -lt 1 -or $cfg.graceSeconds -gt 60){throw 'NATIVE_OWNER_REJECTED'}
 $root=[IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ControlConfig))
 foreach($file in @($cfg.stateFile,$cfg.fenceFile)){if(-not ([IO.Path]::GetFullPath($file)).StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'CONTROL_PATH_ESCAPE'}}
 if((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'CONTROL_DIRECTORY_LINK'}
@@ -37,7 +37,7 @@ if(Test-Path -LiteralPath $cfg.fenceFile){
 }
 if((HashFile $cfg.childCodeFile) -cne $cfg.childCodeSha256 -or (HashFile $cfg.supervisorScript) -cne $cfg.supervisorSha256){throw 'NATIVE_SOURCE_DRIFT'}
 if([IO.Path]::GetFileName($cfg.childExecutable) -cne 'node.exe' -or $cfg.childArguments.Count -lt 1 -or $cfg.childArguments[0] -cne $cfg.childCodeFile){throw 'NATIVE_CHILD_REJECTED'}
-if($cfg.taskName -ceq 'HDWork2-Web' -and ((HashFile $cfg.childExecutable) -cne $cfg.childExecutableSha256 -or ([IO.Path]::GetFileName($cfg.childCodeFile) -cne 'protected-web-service.js' -or $cfg.childArguments.Count -ne 1))){throw 'WEB_CHILD_REJECTED'}
+if($cfg.taskName -in @('HDWork2-Web','HDWork2-Web-Standby','HDWork2-Web-Rollback') -and ((HashFile $cfg.childExecutable) -cne $cfg.childExecutableSha256 -or ([IO.Path]::GetFileName($cfg.childCodeFile) -cne 'protected-web-service.js' -or $cfg.childArguments.Count -ne 1))){throw 'WEB_CHILD_REJECTED'}
 foreach($arg in $cfg.childArguments){if($arg.Contains('"') -or $arg.Contains("`r") -or $arg.Contains("`n")){throw 'CHILD_ARGUMENT_REJECTED'}}
 try{
  [IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),'{"phase":"CHILD_PREPARE"}')
@@ -47,11 +47,13 @@ try{
  $info.EnvironmentVariables.Clear();foreach($key in @('SystemRoot','WINDIR','PATH','PATHEXT','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA','ProgramData')){$value=[Environment]::GetEnvironmentVariable($key);if($value){$info.EnvironmentVariables[$key]=$value}}
  $info.EnvironmentVariables['HDWORK2_NATIVE_GRACEFUL_ONLY']='true'
  if(Test-Path -LiteralPath $cfg.fenceFile){SaveState 'FENCED_START_REFUSED';exit 0}
- if($cfg.taskName -ceq 'HDWork2-Web' -or $cfg.secretBundleFile){
+ if($cfg.taskName -in @('HDWork2-Web','HDWork2-Web-Standby','HDWork2-Web-Rollback') -or $cfg.secretBundleFile){
+  if($cfg.ownerSid -cne 'S-1-5-19'){throw 'WEB_SERVICE_IDENTITY_REQUIRED'}
   if(-not $cfg.sourceHashes -or $cfg.secretBundleFile -cne (Join-Path $cfg.childWorkingDirectory 'service\secrets.dpapi') -or (HashFile $cfg.secretBundleFile) -cne $cfg.encryptedBundleSha256){throw 'WEB_BOOTSTRAP_PIN_REJECTED'}
   foreach($required in @('scripts/protected-web-service.js','local-web-server.js','api-only-server.js','src/config/web-drain.js','src/courier/mysql-store.js','src/operations/transaction-gate.js','src/config/operational-grants.js','service/environment.json')){if(-not $cfg.sourceHashes.PSObject.Properties[$required]){throw 'WEB_SOURCE_COVERAGE_REJECTED'}}
   foreach($entry in $cfg.sourceHashes.PSObject.Properties){$file=[IO.Path]::GetFullPath((Join-Path $cfg.childWorkingDirectory $entry.Name));if(-not $file.StartsWith($cfg.childWorkingDirectory+'\') -or (HashFile $file) -cne $entry.Value){throw 'WEB_RUNTIME_SOURCE_DRIFT'}}
   $webEnv=Get-Content (Join-Path $cfg.childWorkingDirectory 'service\environment.json') -Raw|ConvertFrom-Json
+  if($webEnv.HDWORK2_COURIER_WRITER_V2_BOTS_JSON -cne '["hdworkopsbot-testing"]'){throw 'WEB_WRITER_SCOPE_REJECTED'}
   if($webEnv.COURIER_ENABLED -cne 'false' -or $webEnv.HDWORK2_TESTING_SOLVER_ENABLED -cne 'false'){throw 'WEB_EXTERNAL_SENDER_REJECTED'}
  }
  $child=New-Object Diagnostics.Process;$child.StartInfo=$info;[IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),'{"phase":"CHILD_START"}');[void]$child.Start();$childPid=$child.Id;$childStartedAtUtc=$child.StartTime.ToUniversalTime().ToString('o');
