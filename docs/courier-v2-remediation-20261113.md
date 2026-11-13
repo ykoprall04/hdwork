@@ -2,6 +2,8 @@
 
 Status: implementation and isolated rehearsal prepared; production deployment remains blocked. No production deployment, restart, route mutation, migration, GRANT, message update or Telegram activation was performed.
 
+Operational follow-up: [Windows production handoff procedure](courier-v2-windows-handoff.md) provides current read-only commands, real binding requirements, approval boundaries and compatible rollback. Latest follow-up observed a legacy owner without STOP binding and a production health deadline failure; earlier isolated health PASS does not supersede these production blockers.
+
 ## Changes and evidence
 
 - `e5b2400`: explicit production backend FIFO release and one-bot writer scope, including nested system stores. Actual production-loader composition tested with real isolated MySQL and exact scoped privileges.
