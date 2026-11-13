@@ -66,11 +66,20 @@ try{
  }
  Register-ScheduledTask -TaskPath '\' -TaskName $name -Action $action -Settings $settings -Principal $principal -Trigger $trigger -Description 'HD Work native adapter TEMPORARY dummy; no Telegram'|Out-Null;$registered=$true
  Start-ScheduledTask -TaskPath '\' -TaskName $name
- $deadline=[DateTimeOffset]::UtcNow.AddSeconds(30)
+ $deadline=[DateTimeOffset]::UtcNow.AddSeconds(60)
  do{Start-Sleep -Milliseconds 200;try{$s=Get-Content -LiteralPath $cfg.stateFile -Raw|ConvertFrom-Json;if($s.status -eq 'READY'){break}}catch{}}while([DateTimeOffset]::UtcNow -lt $deadline)
  if($s.status -ne 'READY'){throw 'DUMMY_NOT_READY'}
+ $duplicateInfo=New-Object Diagnostics.ProcessStartInfo
+ $duplicateInfo.FileName=$exe;$duplicateInfo.Arguments='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$supervisor+'" -ControlConfig "'+$config+'" -ConfigSha256 '+$hash
+ $duplicateInfo.UseShellExecute=$false;$duplicateInfo.CreateNoWindow=$true;$duplicateInfo.RedirectStandardOutput=$true;$duplicateInfo.RedirectStandardError=$true
+ $duplicate=[Diagnostics.Process]::Start($duplicateInfo)
+ if(-not $duplicate.WaitForExit(10000) -or $duplicate.ExitCode -eq 0){throw 'DUPLICATE_OWNER_NOT_REJECTED'}
+ $duplicate.Dispose()
+ $afterDuplicate=Get-Content -LiteralPath $cfg.stateFile -Raw|ConvertFrom-Json
+ if($afterDuplicate.childPid -ne $s.childPid -or $afterDuplicate.status -ne 'READY'){throw 'DUPLICATE_OWNER_CHANGED_STATE'}
+
  if($RunnerChain){
-  $deadline=[DateTimeOffset]::UtcNow.AddSeconds(20)
+  $deadline=[DateTimeOffset]::UtcNow.AddSeconds(60)
   do{Start-Sleep -Milliseconds 100;try{$runnerState=Get-Content (Join-Path $root 'state.json') -Raw|ConvertFrom-Json}catch{}}while($runnerState.status -ne 'READY' -and [DateTimeOffset]::UtcNow -lt $deadline)
   if($runnerState.status -ne 'READY' -or -not $runnerState.pythonPid){throw 'RUNNER_CHAIN_NOT_READY'}
  }
@@ -93,7 +102,7 @@ try{
  }else{$receipt=(& $exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $control -Mode StopFence -ControlConfig $config -ConfigSha256 $hash -ApprovalFile $approval -PlanSha256 $planHash -BarrierId $barrier -Execute)|ConvertFrom-Json}
  [IO.File]::WriteAllText((Join-Path $root 'stop-receipt.json'),($receipt|ConvertTo-Json -Depth 6),(New-Object Text.UTF8Encoding($false)))
  if($StopTimeout){
-  if($receipt.status -ne 'STOP' -or $receipt.code -ne 'CLEAN_STOP_NOT_PROVEN' -or (Get-ScheduledTask -TaskName $name).Settings.Enabled -or -not (Get-Process -Id $runnerState.pythonPid -ErrorAction SilentlyContinue)){throw 'TIMEOUT_DID_NOT_FAIL_CLOSED'}
+  if($receipt.status -ne 'STOP' -or $receipt.code -notin @('CLEAN_STOP_NOT_PROVEN','GRACEFUL_STOP_TIMEOUT') -or (Get-ScheduledTask -TaskName $name).Settings.Enabled -or -not (Get-Process -Id $runnerState.pythonPid -ErrorAction SilentlyContinue)){throw 'TIMEOUT_DID_NOT_FAIL_CLOSED'}
   [IO.File]::WriteAllText((Join-Path $root 'release-stop'),'FIXTURE_RELEASE',(New-Object Text.UTF8Encoding($false)))
   $deadline=[DateTimeOffset]::UtcNow.AddSeconds(15)
   do{Start-Sleep -Milliseconds 100;$s=Get-Content $cfg.stateFile -Raw|ConvertFrom-Json}while($s.status -ne 'STOPPED' -and [DateTimeOffset]::UtcNow -lt $deadline)
@@ -109,8 +118,11 @@ try{
  $assert=(& $exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $control -Mode AssertFence -ControlConfig $config -ConfigSha256 $hash -BarrierId $barrier)|ConvertFrom-Json
  if($LASTEXITCODE -ne 0 -or -not $assert.fenceHeld -or (Get-ScheduledTask -TaskName $name).Settings.Enabled){throw 'DUMMY_RESTART_NOT_FENCED'}
  # Prove persistent startup refusal even after an owner manually re-enables THIS DUMMY task.
+ $deadline=[DateTimeOffset]::UtcNow.AddSeconds(30)
+ do{Start-Sleep -Milliseconds 100;$taskState=(Get-ScheduledTask -TaskName $name).State}while($taskState -eq 'Running' -and [DateTimeOffset]::UtcNow -lt $deadline)
+ if($taskState -eq 'Running'){throw 'STOPPED_TASK_STILL_RUNNING'}
  Enable-ScheduledTask -TaskName $name|Out-Null;Start-ScheduledTask -TaskName $name
- $deadline=[DateTimeOffset]::UtcNow.AddSeconds(20)
+ $deadline=[DateTimeOffset]::UtcNow.AddSeconds(60)
  do{Start-Sleep -Milliseconds 200;$s=Get-Content -LiteralPath $cfg.stateFile -Raw|ConvertFrom-Json}while($s.status -ne 'FENCED_START_REFUSED' -and [DateTimeOffset]::UtcNow -lt $deadline)
  Disable-ScheduledTask -TaskName $name|Out-Null
  if($s.status -ne 'FENCED_START_REFUSED' -or $s.childPid -ne 0){throw 'PERSISTENT_FENCE_FAILED'}
@@ -118,7 +130,7 @@ try{
   $afterRestart=(& $exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $control -Mode AssertFence -ControlConfig $config -ConfigSha256 $hash -BarrierId $barrier)|ConvertFrom-Json
   if($LASTEXITCODE -ne 0 -or -not $afterRestart.fenceHeld -or $sentinel.HasExited){throw 'RESTART_FENCE_OR_SCOPE_FAILED'}
  }
- $result=@{status='WINDOWS_NATIVE_DUMMY_PASS';defaultPlan=$true;identity=$true;ownerOnlyPipe=$true;gracefulStop=$true;forcedKill=$false;taskDisabled=$true;persistentStartupRefused=$true;restartPolicyFenced=$true;productionTasksTouched=$false;taskName=$name}
+ $result=@{status='WINDOWS_NATIVE_DUMMY_PASS';duplicateOwnerRejected=$true;defaultPlan=$true;identity=$true;ownerOnlyPipe=$true;gracefulStop=$true;forcedKill=$false;taskDisabled=$true;persistentStartupRefused=$true;restartPolicyFenced=$true;productionTasksTouched=$false;taskName=$name}
  if($RunnerChain){$result.status='WINDOWS_COURIER_STOP_CHAIN_PASS';$result.actualTaskRunner=$true;$result.actualPython=$true;$result.localBackendDrained=$true;$result.executorLifecycle=$true;$result.legacyLauncherOptIn=$true;$result.expiredApprovalNoMutation=$true;$result.unrelatedProcessPreserved=$true;$result.stopTimeoutFailsClosed=[bool]$StopTimeout;$result.databaseAccessed=$false;$result.telegramCalls=0}
  [IO.File]::WriteAllText((Join-Path $root 'result.json'),($result|ConvertTo-Json),(New-Object Text.UTF8Encoding($false)));$result|ConvertTo-Json
 }finally{

@@ -1,3 +1,9 @@
+# Pembaruan 13 November 2026 - rencana terbaru
+
+Lihat [activation plan terbaru](D:/HDWork2-New/courier-v2-activation-20261113.md). Audit produksi baru: SENT 109, DEAD 18, QUEUED/SENDING 0; schema 015-017 dan grants runtime telah terverifikasi. Jangan ulang migrasi atau administrative18. Aktivasi tertahan: writer web aktif belum kompatibel FIFO dan belum mempunyai fence per bot. Kandidat supervisor dan flags-off telah diuji terisolasi, belum diinstal/diaktifkan. Catatan di bawah adalah riwayat, bukan instruksi aktivasi terkini.
+
+---
+
 # HD Work Courier v2 — development readiness
 
 New target: branch HEAD containing the three FIFO release commits, replacing

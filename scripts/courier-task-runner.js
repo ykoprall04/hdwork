@@ -6,6 +6,7 @@ function verify(file,expected){if(hash(regular(file))!==expected)throw Error('TA
 function configuration(file,expected){
  verify(file,expected);const value=JSON.parse(regular(file));
  if(value.version!==1||value.kind!=='HDWORK2_COURIER_AUTOSTART'||!path.isAbsolute(value.snapshot)||!path.isAbsolute(value.productionPlan)||!path.isAbsolute(value.pythonExecutable)||!path.isAbsolute(value.nodeExecutable)||!/^S-1-[0-9-]+$/.test(value.ownerSid)||!value.sourceHashes||Object.keys(value.sourceHashes).some(name=>name.split('/').includes('..')||path.isAbsolute(name)))throw Error('TASK_CONFIG_REJECTED');
+ if(value.runtimeMode!==undefined&&!['flags-off','delivery'].includes(value.runtimeMode))throw Error('TASK_RUNTIME_MODE_REJECTED');
  verify(value.productionPlan,value.productionPlanSha256);
  for(const [name,digest]of Object.entries(value.sourceHashes))verify(path.join(value.snapshot,name),digest);
  verify(path.join(value.snapshot,'service/environment.json'),value.environmentSha256);
@@ -22,7 +23,7 @@ async function run(argv=process.argv.slice(2)){
  const originalSpawn=cp.spawn,originalLog=console.log;
  let python,ready=false,ownerGone=false,forceTimer,heartbeat;
  const startedAt=new Date().toISOString();let status='STARTING';
- const record=code=>{log.emit('TASK_STATE',{status,reason:code});return save({status,code,nodePid:process.pid,pythonPid:python?.pid||null,startedAt,updatedAt:new Date().toISOString(),ownerSid:config.ownerSid,botId:config.botId,telegramBotId:config.telegramBotId,baseCommit:config.baseCommit,patchCommit:config.patchCommit,configSha256:argv[3],productionPlanSha256:config.productionPlanSha256,liveChatEndToEndVerified:false});};
+ const record=code=>{log.emit('TASK_STATE',{status,reason:code});return save({status,code,runtimeMode:config.runtimeMode||'delivery',nodePid:process.pid,pythonPid:python?.pid||null,startedAt,updatedAt:new Date().toISOString(),ownerSid:config.ownerSid,botId:config.botId,telegramBotId:config.telegramBotId,baseCommit:config.baseCommit,patchCommit:config.patchCommit,configSha256:argv[3],productionPlanSha256:config.productionPlanSha256,liveChatEndToEndVerified:false});};
  const stop=()=>{
   if(ownerGone)return;ownerGone=true;status='STOPPING';record('OWNER_STOP');
   if(python&&python.exitCode===null){python.stdin.end('STOP\n');if(process.env.HDWORK2_NATIVE_GRACEFUL_ONLY!=='true')forceTimer=setTimeout(()=>{if(python.exitCode===null)python.kill();},15000);}
@@ -40,8 +41,15 @@ async function run(argv=process.argv.slice(2)){
   // Output is drained by the owner; no raw output is persisted to disk.
   originalLog(value);
  };
- record('START_REQUESTED');heartbeat=setInterval(()=>record(ready?'IDENTITY_AND_LEASE_VERIFIED':'STARTING'),5000);heartbeat.unref();
- try{await require(path.join(config.snapshot,'scripts/run-production-live-chat-courier.js')).run(['--run-production-approved','--plan',config.productionPlan]);status='STOPPED';record('COURIER_STOPPED');}
+ record('START_REQUESTED');heartbeat=setInterval(()=>record(config.runtimeMode==='flags-off'?'FLAGS_OFF_NO_TRANSPORT':ready?'IDENTITY_AND_LEASE_VERIFIED':'STARTING'),5000);heartbeat.unref();
+ try{
+  if(config.runtimeMode==='flags-off'){
+   // Verify existing local pins only. No loader, DPAPI, backend, Python or Telegram import.
+   status='READY';record('FLAGS_OFF_NO_TRANSPORT');
+   if(!ownerGone)await new Promise(resolve=>{const check=setInterval(()=>{if(ownerGone){clearInterval(check);resolve();}},50);});
+   status='STOPPED';record('FLAGS_OFF_STOPPED');return;
+  }
+  await require(path.join(config.snapshot,'scripts/run-production-live-chat-courier.js')).run(['--run-production-approved','--plan',config.productionPlan]);status='STOPPED';record('COURIER_STOPPED');}
  catch(error){log.emit('TASK_FAILURE',{status:'ERROR'},error);status=ownerGone?'STOPPED':'FAILED';const code=/^(ER_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT|ECONNREFUSED|ETIMEDOUT|PRIVATE_DB_CONFIG_REJECTED|DPAPI_[A-Z_]+)$/.test(error.code||'')?error.code:'COURIER_TASK_FAILED';record(code);if(!ownerGone)process.exitCode=1;}
  finally{clearInterval(heartbeat);clearTimeout(forceTimer);cp.spawn=originalSpawn;console.log=originalLog;process.stdin.destroy();restoreOutput();await log.flush();}
 }

@@ -1,0 +1,82 @@
+{
+  "kind": "HDWORK2_CURRENT_ACTIVATION_PLAN",
+  "version": 2,
+  "executable": false,
+  "approvalRequested": false,
+  "observedAtUtc": "2026-11-13T07:41:23.115Z",
+  "botId": "hdworkopsbot-testing",
+  "baseline": {
+    "SENT": 109,
+    "DEAD": 18,
+    "QUEUED": 0,
+    "SENDING": 0,
+    "administrativeMarkersMissing": 18,
+    "activeWorkerLeases": 0
+  },
+  "schema": {
+    "versionsAlreadyApplied": [
+      15,
+      16,
+      17
+    ],
+    "action": "VERIFY_ONLY_NEVER_REAPPLY"
+  },
+  "grants": {
+    "writer": "PASS",
+    "courier": "PASS",
+    "action": "VERIFY_ONLY"
+  },
+  "administrative": {
+    "oldProcedureAllowed": false,
+    "reconciliationFile": "D:/HDWork2-New/courier-v2-manual-reconciliation-20261113.json",
+    "originalDecisionId": "DEC-20261112-01",
+    "mode": "RECORD_AFTER_MANUAL_STATE_CHANGE",
+    "statusTransitionsAllowed": false,
+    "fifoReleaseAllowed": false,
+    "productionRecorded": false
+  },
+  "runtime": {
+    "candidateMode": "flags-off",
+    "pythonAllowed": false,
+    "backendAllowed": false,
+    "send": false,
+    "poll": false,
+    "worker": false,
+    "deliveryRuntimeReady": false,
+    "productionInstalled": false
+  },
+  "webChangesAllowed": false,
+  "otherBotsMayBeControlled": false,
+  "rollback": {
+    "keepTaskDisabled": true,
+    "keepStartupFence": true,
+    "databaseRestoreAllowed": false,
+    "preserveManualDeadAndAudit": true,
+    "reason": "Existing backup restores 10 QUEUED and 8 DEAD; current live baseline is 18 DEAD"
+  },
+  "blockers": [
+    "Live web writer has no FIFO allocation support or bot-scoped cooperative writer fence; no web change is authorized",
+    "Administrative audit metadata remains unrecorded; marker-only recording requires proven writer quiescence",
+    "Delivery release source/configuration pins and no-send health binding must be completed after compatible writer/fence; staged runtime is flags-off only",
+    "A fresh coherent MySQL+SQLite recovery point requires writer quiescence; existing MySQL backup restore alone is not a paired current recovery point"
+  ],
+  "nextStages": [
+    "Prepare compatible bot-scoped writer and enforceable quiescence without affecting other bots; resolve permitted production change scope",
+    "Regenerate reviewed immutable delivery-release pins; retain flags-off and startup fence",
+    "After separate cutover approval: establish writer fence, recheck 109/18 and zero QUEUED/SENDING, create and rehearse paired current backup",
+    "Record 18 administrative markers and 18 audit entries atomically with current fingerprint; no status/attempt/lease/error/FIFO changes",
+    "Install only reviewed flags-off runtime; verify local pins, stopped transport, database/journal health; keep web deployment unchanged unless separately authorized",
+    "Request separate phase-1 Telegram activation approval only after blockers close"
+  ],
+  "sourceSha256": {
+    "ops/windows/courier-native-supervisor.ps1": "b245fb077e2a510215fd8e3045a888f0de08bdba9b96496b2d8fa3be47dc921e",
+    "scripts/courier-task-runner.js": "1025bd017ce551a7d377e9267ff43db6e132e61ca5dd6d36513c6cc1853d7de1",
+    "scripts/test-windows-courier-adapter.ps1": "f2ec417788b3716a03375a5d219d34d3fa758f29b64c85ea0e21d15645626697",
+    "scripts/prepare-current-courier-activation.ps1": "f9778669cceaf41fd266d4af13ae374f94ac8769f45f26223d7b757eb3d393a8",
+    "src/courier/manual-closure-reconciliation.js": "e10b35fe073077a3e0f2cd48c19359416d9a0f379474d9867163d5e0483e2edb",
+    "tests/courier-flags-off.test.cjs": "cec3e4a892597224908d85e3296fb0d8cf3d93f562ade81b90f5713d1da4671f",
+    "tests/manual-closure-mysql.cjs": "82ca9c8a5c87141d15a4efde15962c6db50319955492222d05f84d6d90dee894",
+    "tests/restore-existing-courier-backup.cjs": "d4262e5248e9d54f7686ab9d9c8baf2796f632c62e48090b0acadd9eb922ea9e"
+  },
+  "privatePreparationDirectory": "C:/ProgramData/HDWork2CourierV2Activation-27bddfe96ae3407cac57c7f8448c7751"
+}

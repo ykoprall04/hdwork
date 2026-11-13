@@ -16,8 +16,21 @@ function SaveState($status,$exitCode=$null){
  $row=@{version=1;protocol='HDWORK2_COOPERATIVE_OWNER_V1';status=$status;ownerPid=$PID;ownerSid=$sid;taskName=$cfg.taskName;configSha256=$ConfigSha256;pipeName=$cfg.pipeName;childPid=$childPid;childStartedAtUtc=$childStartedAtUtc;updatedAtUtc=[DateTimeOffset]::UtcNow.ToString('o');exitCode=$exitCode;forced=$false;previousStopClean=$previousStopClean}
  $temp=$cfg.stateFile+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
  [IO.File]::WriteAllText($temp,($row|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
- if(Test-Path -LiteralPath $cfg.stateFile){[IO.File]::Replace($temp,$cfg.stateFile,[NullString]::Value)}else{[IO.File]::Move($temp,$cfg.stateFile)}
+ # Windows readers can briefly hold a handle without FileShare.Delete.
+ # Preserve atomic replacement and tolerate that sharing violation, never truncate state.
+ $saved=$false
+ for($attempt=0;$attempt -lt 80;$attempt++){
+  try{if(Test-Path -LiteralPath $cfg.stateFile){[IO.File]::Replace($temp,$cfg.stateFile,[NullString]::Value)}else{[IO.File]::Move($temp,$cfg.stateFile)};$saved=$true;break}
+  catch [IO.IOException]{if($attempt -eq 79){throw};Start-Sleep -Milliseconds 25}
+ }
+ if(-not $saved){throw 'NATIVE_STATE_NOT_SAVED'}
 }
+# A Scheduled Task policy alone does not fence a second direct invocation.
+$ownerMutex=New-Object Threading.Mutex($false,('Global\HDWork2Courier-'+$cfg.taskName))
+$mutexHeld=$false
+try {
+ try {$mutexHeld=$ownerMutex.WaitOne(0)} catch [Threading.AbandonedMutexException] {throw 'NATIVE_PREVIOUS_OWNER_UNCLEAN'}
+ if(-not $mutexHeld){throw 'NATIVE_OWNER_ALREADY_RUNNING'}
 if(Test-Path -LiteralPath $cfg.fenceFile){
  if(Test-Path -LiteralPath $cfg.stateFile){try{$old=Get-Content -LiteralPath $cfg.stateFile -Raw|ConvertFrom-Json;$previousStopClean=$old.configSha256 -ceq $ConfigSha256 -and (($old.status -ceq 'STOPPED' -and $null -ne $old.exitCode -and $old.exitCode -eq 0) -or $old.previousStopClean -eq $true)}catch{}}
  SaveState 'FENCED_START_REFUSED';exit 0
@@ -53,7 +66,7 @@ try{
    SaveState 'STOPPED' $child.ExitCode
    $writer.WriteLine((@{status='STOPPED';clean=($child.ExitCode -eq 0);forced=$false;childExitCode=$child.ExitCode;configSha256=$ConfigSha256;barrierId=$request.barrierId}|ConvertTo-Json -Compress));break
   }
-  SaveState 'STOP_TIMEOUT';$writer.WriteLine('{"status":"STOP_TIMEOUT","clean":false,"forced":false}')
+  SaveState 'STOP_TIMEOUT';try{$writer.WriteLine('{"status":"STOP_TIMEOUT","clean":false,"forced":false}')}catch{}
   # Keep ownership after timeout. Never orphan/kill a possibly active sender.
   $server.Dispose();$server=$null;$child.WaitForExit();break
  }
@@ -67,3 +80,5 @@ try{
  if($server){$server.Dispose()}
  if($child -and $child.HasExited){$child.Dispose()}
 }
+
+} finally {if($mutexHeld){$ownerMutex.ReleaseMutex()};$ownerMutex.Dispose()}
