@@ -17,7 +17,7 @@ async function createWindowsHost(plan,context,{bindings}={}){
  const infra=plan.infrastructure;
  if(!infra?.native||!infra.bindings)throw fail('NATIVE_AND_DATABASE_BINDINGS_REQUIRED');
  if(sha(regular(infra.bindings.file))!==infra.bindings.sha256)throw fail('HOST_BINDINGS_PIN_MISMATCH');
- const native=nativeClient({source:plan.source,configFile:infra.native.file,configSha256:infra.native.sha256,approvalFile:context.approvalFile,planSha256:context.planSha256});
+ const native=createCourierLifecycle(plan,context);
  if(native.config.targetCommit!==plan.targetCommit)throw fail('NATIVE_TARGET_MISMATCH');
  bindings??=await require(infra.bindings.file).create(plan,context);
  for(const method of ['inspect','quiesceWriters','assertWritersQuiescent','backupConfiguration','schema','grants','databasePool','installFlagsOff','health','rollbackRuntime'])if(typeof bindings[method]!=='function')throw fail('HOST_CAPABILITY_MISSING');
@@ -44,4 +44,12 @@ async function createWindowsHost(plan,context,{bindings}={}){
   async close(){await bindings.close?.();} // Closing DB handles never removes the fence/re-enables a task.
  };
 }
-module.exports={nativeClient,createWindowsHost};
+// Standalone lifecycle capability shared by the executor and isolated Windows test.
+// Does not load database, credentials, Telegram, writer or installer bindings.
+function createCourierLifecycle(plan,context={}){
+ const item=plan.infrastructure?.native;if(!item)throw fail('PINNED_NATIVE_CONFIG_REQUIRED');
+ const client=nativeClient({source:plan.source,configFile:item.file,configSha256:item.sha256,approvalFile:context.approvalFile,planSha256:context.planSha256});
+ if(client.config.targetCommit!==plan.targetCommit)throw fail('NATIVE_TARGET_MISMATCH');
+ return client;
+}
+module.exports={nativeClient,createWindowsHost,createCourierLifecycle};

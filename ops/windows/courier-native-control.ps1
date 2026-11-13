@@ -13,8 +13,17 @@ try{
  foreach($rule in (Get-Acl -LiteralPath $root).Access){$identity=$rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value;if($rule.AccessControlType -eq 'Allow' -and ([int]$rule.FileSystemRights -band [int][Security.AccessControl.FileSystemRights]::Write) -and $identity -notin @($owner,'S-1-5-18','S-1-5-32-544')){Reject 'UNSAFE_CONTROL_DIRECTORY_ACL'}}
  foreach($file in @($cfg.stateFile,$cfg.fenceFile)){if(-not ([IO.Path]::GetFullPath($file)).StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){Reject 'CONTROL_PATH_ESCAPE'}}
  if((HashFile $cfg.supervisorScript) -cne $cfg.supervisorSha256 -or (HashFile $cfg.childCodeFile) -cne $cfg.childCodeSha256){Reject 'NATIVE_SOURCE_CHANGED'}
+ $launcher=$cfg.supervisorScript
+ if($cfg.launcherScript){if((HashFile $cfg.launcherScript) -cne $cfg.launcherSha256){Reject 'NATIVE_LAUNCHER_CHANGED'};$launcher=$cfg.launcherScript}
  $task=Get-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName
- if(@($task.Actions).Count -ne 1 -or -not $task.Actions[0].Arguments.Contains('-ControlConfig') -or -not $task.Actions[0].Arguments.Contains($ControlConfig) -or -not $task.Actions[0].Arguments.Contains($ConfigSha256) -or -not $task.Actions[0].Arguments.Contains($cfg.supervisorScript)){Reject 'LEGACY_OWNER_NO_COOPERATIVE_CONTROL'}
+ if(@($task.Actions).Count -ne 1 -or -not $task.Actions[0].Arguments.Contains('-ControlConfig') -or -not $task.Actions[0].Arguments.Contains($ControlConfig) -or -not $task.Actions[0].Arguments.Contains($ConfigSha256) -or -not $task.Actions[0].Arguments.Contains($launcher)){Reject 'LEGACY_OWNER_NO_COOPERATIVE_CONTROL'}
+ $expectedExecutable=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+ $expectedAction='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$launcher+'" -ControlConfig "'+$ControlConfig+'" -ConfigSha256 '+$ConfigSha256
+ if($cfg.launcherScript){
+  if($cfg.childArguments.Count -ne 5 -or $cfg.childArguments[0] -cne $cfg.childCodeFile -or $cfg.childArguments[1] -cne '--config' -or $cfg.childArguments[3] -cne '--config-sha256'){Reject 'NATIVE_RUNTIME_BINDING_MISMATCH'}
+  $expectedAction='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$launcher+'" -Config "'+$cfg.childArguments[2]+'" -ConfigSha256 '+$cfg.childArguments[4]+' -ControlConfig "'+$ControlConfig+'" -ControlConfigSha256 '+$ConfigSha256
+ }
+ if($task.Actions[0].Execute -ine $expectedExecutable -or $task.Actions[0].Arguments -cne $expectedAction){Reject 'TASK_ACTION_MISMATCH'}
  $principal=[string]$task.Principal.UserId
  if($principal -notmatch '^S-1-'){$principal=(New-Object Security.Principal.NTAccount($principal)).Translate([Security.Principal.SecurityIdentifier]).Value}
  if($principal -cne $owner){Reject 'TASK_OWNER_MISMATCH'}
@@ -36,6 +45,7 @@ try{
  if($Mode -eq 'AssertFence'){
   $f=Get-Content -LiteralPath $cfg.fenceFile -Raw|ConvertFrom-Json
   if($task.Settings.Enabled -or $childAlive -or $descendants.Count -or $f.configSha256 -cne $ConfigSha256 -or $f.barrierId -cne $BarrierId){Reject 'FENCE_OR_QUIESCENCE_LOST'}
+  if(-not (($state.status -ceq 'STOPPED' -and $null -ne $state.exitCode -and $state.exitCode -eq 0) -or ($state.status -ceq 'FENCED_START_REFUSED' -and $state.previousStopClean -eq $true))){Reject 'CLEAN_EXIT_EVIDENCE_REQUIRED'}
   Emit @{kind='HDWORK2_CUTOVER_BARRIER';barrierId=$BarrierId;courierStopped=$true;allOwnedPidsGone=$true;fenceHeld=$true;graceful=$true;forced=$false;observedAtUtc=[DateTimeOffset]::UtcNow.ToString('o')};exit 0
  }
  if(-not $Execute){Emit @{status='PLAN_ONLY';taskName=$cfg.taskName;operation='DISABLE_EXACT_TASK_THEN_COOPERATIVE_STOP';changed=$false};exit 0}

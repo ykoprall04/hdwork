@@ -1,5 +1,10 @@
 # Final infrastructure readiness, 2026-11-13
 
+STOP-only follow-up: new opt-in legacy launcher -> native supervisor -> actual
+Node/Python fixture chain PASS, including timeout/no-kill and persistent fence.
+See `COURIER-STOP-READINESS.md`. This is not an in-place upgrade of the live owner
+and does not clear the initial production retirement/bootstrap or other gates.
+
 Current result: NOT READY for production cutover. See
 `INFRASTRUCTURE-READINESS.md` for new evidence and approval gates; the historical
 administrative18 implementation below is unchanged. Native dummy adapter PASS;

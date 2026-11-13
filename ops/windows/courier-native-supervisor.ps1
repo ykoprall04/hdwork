@@ -3,6 +3,7 @@
 param([Parameter(Mandatory=$true)][string]$ControlConfig,[Parameter(Mandatory=$true)][string]$ConfigSha256)
 $ErrorActionPreference='Stop'
 $child=$null;$server=$null;$requested=$false;$childStartedAtUtc=$null;$childPid=0;$phase='START'
+$previousStopClean=$false
 function HashFile($p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 if((HashFile $ControlConfig) -cne $ConfigSha256){throw 'CONTROL_CONFIG_CHANGED'}
 $cfg=Get-Content -LiteralPath $ControlConfig -Raw|ConvertFrom-Json
@@ -12,12 +13,15 @@ $root=[IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ControlConfig))
 foreach($file in @($cfg.stateFile,$cfg.fenceFile)){if(-not ([IO.Path]::GetFullPath($file)).StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'CONTROL_PATH_ESCAPE'}}
 if((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'CONTROL_DIRECTORY_LINK'}
 function SaveState($status,$exitCode=$null){
- $row=@{version=1;protocol='HDWORK2_COOPERATIVE_OWNER_V1';status=$status;ownerPid=$PID;ownerSid=$sid;taskName=$cfg.taskName;configSha256=$ConfigSha256;pipeName=$cfg.pipeName;childPid=$childPid;childStartedAtUtc=$childStartedAtUtc;updatedAtUtc=[DateTimeOffset]::UtcNow.ToString('o');exitCode=$exitCode;forced=$false}
+ $row=@{version=1;protocol='HDWORK2_COOPERATIVE_OWNER_V1';status=$status;ownerPid=$PID;ownerSid=$sid;taskName=$cfg.taskName;configSha256=$ConfigSha256;pipeName=$cfg.pipeName;childPid=$childPid;childStartedAtUtc=$childStartedAtUtc;updatedAtUtc=[DateTimeOffset]::UtcNow.ToString('o');exitCode=$exitCode;forced=$false;previousStopClean=$previousStopClean}
  $temp=$cfg.stateFile+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
  [IO.File]::WriteAllText($temp,($row|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
  if(Test-Path -LiteralPath $cfg.stateFile){[IO.File]::Replace($temp,$cfg.stateFile,[NullString]::Value)}else{[IO.File]::Move($temp,$cfg.stateFile)}
 }
-if(Test-Path -LiteralPath $cfg.fenceFile){SaveState 'FENCED_START_REFUSED';exit 0}
+if(Test-Path -LiteralPath $cfg.fenceFile){
+ if(Test-Path -LiteralPath $cfg.stateFile){try{$old=Get-Content -LiteralPath $cfg.stateFile -Raw|ConvertFrom-Json;$previousStopClean=$old.configSha256 -ceq $ConfigSha256 -and (($old.status -ceq 'STOPPED' -and $null -ne $old.exitCode -and $old.exitCode -eq 0) -or $old.previousStopClean -eq $true)}catch{}}
+ SaveState 'FENCED_START_REFUSED';exit 0
+}
 if((HashFile $cfg.childCodeFile) -cne $cfg.childCodeSha256 -or (HashFile $cfg.supervisorScript) -cne $cfg.supervisorSha256){throw 'NATIVE_SOURCE_DRIFT'}
 if([IO.Path]::GetFileName($cfg.childExecutable) -cne 'node.exe' -or $cfg.childArguments.Count -lt 1 -or $cfg.childArguments[0] -cne $cfg.childCodeFile){throw 'NATIVE_CHILD_REJECTED'}
 foreach($arg in $cfg.childArguments){if($arg.Contains('"') -or $arg.Contains("`r") -or $arg.Contains("`n")){throw 'CHILD_ARGUMENT_REJECTED'}}
