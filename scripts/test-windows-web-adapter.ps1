@@ -56,7 +56,7 @@ $hash=(Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash.ToLowerInvarian
 $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $action=New-ScheduledTaskAction -Execute $exe -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$supervisor+'" -ControlConfig "'+$config+'" -ConfigSha256 '+$hash) -WorkingDirectory $root
 if($RunnerChain){$action=New-ScheduledTaskAction -Execute $exe -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$cfg.launcherScript+'" -Config "'+$taskConfig+'" -ConfigSha256 '+(Get-FileHash $taskConfig).Hash.ToLowerInvariant()+' -ControlConfig "'+$config+'" -ControlConfigSha256 '+$hash) -WorkingDirectory $root}
-$settings=New-ScheduledTaskSettingsSet -RestartCount 2 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable
+$settings=New-ScheduledTaskSettingsSet -Priority 4 -RestartCount 2 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable
 $principal=New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
 $trigger=New-ScheduledTaskTrigger -AtLogOn -User $sid
 $registered=$false;$stopped=$false;$sentinel=$null
