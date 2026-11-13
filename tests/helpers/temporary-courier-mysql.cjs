@@ -10,6 +10,6 @@ async function start(parent){
  let c;for(let i=0;i<60;i++){if(child.exitCode!==null)throw Error('FIXTURE_STOPPED');try{c=await mysql.createConnection({socketPath,user:'root',password:'',dateStrings:true,timezone:'Z',connectTimeout:500});break;}catch{await wait(500);}}
  if(!c)throw Error('FIXTURE_NOT_READY');const [[t]]=await c.query('SELECT @@datadir AS dir,@@skip_networking AS offline');assert.equal(path.resolve(t.dir).toLowerCase(),path.resolve(data).toLowerCase());assert.equal(Number(t.offline),1);
  const pool=mysql.createPool({socketPath,user:'root',password:'',database:'hdwork2',dateStrings:true,timezone:'Z',connectionLimit:3});
- return {root,data,pipe,socketPath,c,pool,env,async stop(){await pool.end();try{await c.query('SHUTDOWN');}catch{}await c.end().catch(()=>{});for(let i=0;i<30&&child.exitCode===null;i++)await wait(200);if(child.exitCode===null){child.kill();throw Error('FIXTURE_FORCED_STOP');}fs.closeSync(log);}};
+ return {root,data,pipe,socketPath,c,pool,env,async stop(){await pool.end();try{await c.query('SHUTDOWN');}catch{}await c.end().catch(()=>{});for(let i=0;i<300&&child.exitCode===null;i++)await wait(200);if(child.exitCode===null)throw Error('FIXTURE_GRACEFUL_STOP_TIMEOUT');fs.closeSync(log);}};
 }
 module.exports={start,base};
