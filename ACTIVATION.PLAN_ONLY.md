@@ -1,3 +1,28 @@
+# Infrastructure amendment, 2026-11-13 (PLAN ONLY)
+
+STOP: current legacy task has no external cooperative channel; do not use task
+termination or process kill. Review/approve a bootstrap to the new owner-only
+supervisor and persistent task/startup fence before cutover can be scheduled.
+Pinned owner bindings must cover writer quiescence, DB capabilities, existing
+owner login-path backup configuration, exact flags-off install, TLS health and
+runtime/config rollback. No placeholder binding is a production adapter.
+Run owner metadata preflight `database/manual/018_infrastructure_preflight.readonly.sql`;
+1142 is UNKNOWN, never absence. See `INFRASTRUCTURE-READINESS.md`.
+
+Regenerate pins from new clean SHA and include native config+owner bindings
+through `prepare-courier-cutover.js --infrastructure <ABSOLUTE_PINNED_MAP_JSON>`.
+Without both pinned entries hostAdapterReady remains false. Default executor
+is offline PLAN. Real invocation additionally requires `--approval <ABSOLUTE_FILE>`
+and `--execute`; approval must bind new SHA, plan SHA, decision/native config SHA,
+operator, scope CUTOVER_FLAGS_OFF_ONLY, approved=true and expiry within1hour.
+Never reuse baseline7f2b010 plan or approvals. Recheck cohort after stopped fence.
+Paired backup module uses SQLite backup API and mysqldump single-transaction;
+restore targets only a verified owned TCP-off temporary server with absent DB.
+Production pair requires all writers fenced throughout; checksums+counts+restore
+evidence are mandatory. Failure after closure retains sender fence and admin
+history; runtime rollback only. Schema/data restoration requires separate review.
+Separate FIFO/scheduler/separateIo activation approvals remain mandatory.
+
 # DEC-20261112-01 — commands PLAN ONLY, not executed
 
 Source is the NEW commit containing this file, not f399b0d. Regenerate plan/pins

@@ -41,7 +41,7 @@ async function main(){
   async function reset(){for(const e of entries)await c.execute('UPDATE hd2_courier_outbox SET state=?,administrative_closure=NULL,fifo_release=NULL WHERE id=?',[e.state,e.id]);await c.execute("UPDATE hd2_courier_outbox SET state='SENT' WHERE id IN (?,?)",[same,other]);}
   peer=await start(work);let rollbackCount=0,healthMode='ok',backupNumber=0;
   const receiptRows=async connection=>{const [[x]]=await connection.query("SELECT (SELECT COUNT(*) FROM hdwork2.hd2_courier_outbox) AS outbox,(SELECT COUNT(*) FROM hdwork2.hd2_orders) AS orders,(SELECT COUNT(*) FROM hdwork2.hd2_audit) AS audit");return x;};
-  const plan={targetCommit:'a'.repeat(40),releaseDirectory:work,backend:{sha256:'b'.repeat(64)},frontend:{sha256:'c'.repeat(64)}};
+  const plan={targetCommit:'a'.repeat(40),decisionId:allow.decisionId,releaseDirectory:work,backend:{sha256:'b'.repeat(64)},frontend:{sha256:'c'.repeat(64)}};
   const host={
    async inspect(){return {schemaMetadataKnown:true,oldAndNewClaimOnlyQueued:true,ackPending:0,otherQueued:0,otherSending:0,duplicateInstances:false,candidates:(await readRows()).map(r=>({...r,leaseActive:0}))};},
    async stopClean(){return {kind:'HDWORK2_CUTOVER_BARRIER',barrierId:randomUUID(),courierStopped:true,writersQuiesced:true,allOwnedPidsGone:true,fenceHeld:true,graceful:true,forced:false};},
@@ -61,7 +61,7 @@ async function main(){
    async health(){return {healthy:healthMode==='ok',pinsMatch:true,tlsPinned:true,courierStopped:true,externalDeliveryPossible:healthMode==='external'};},
    async rollbackRuntime(){rollbackCount++;assert.equal((await readRows()).filter(r=>r.closure).length,18);return {runtimeRestored:true,courierStopped:true,databaseRestored:false,administrativeClosuresPreserved:true,flagsOff:true};}
   };
-  await reset();const execute=()=>executeCutover({plan,allowlist:allow,planSha256:'d'.repeat(64)},host,{execute:true});
+  await reset();const execute=()=>executeCutover({plan,allowlist:allow,planSha256:'d'.repeat(64)},host,{execute:true,approval:{kind:'HDWORK2_OPERATOR_CUTOVER_APPROVAL',approved:true,scope:'CUTOVER_FLAGS_OFF_ONLY',operator:'Fixture',decisionId:allow.decisionId,targetCommit:plan.targetCommit,planSha256:'d'.repeat(64),expiresAtUtc:new Date(Date.now()+600000).toISOString()}});
   const success=await execute();assert.equal(success.status,'INSTALLED_FLAGS_OFF_AWAITING_SEPARATE_PHASE_APPROVAL');assert.deepEqual(success.flags,FLAGS);assert.deepEqual(success.stages.map(x=>x.name),['QUEUE_GATE_PASS','CLEAN_STOP_VERIFIED','PAIRED_BACKUP_AND_RESTORE_VERIFIED','SCHEMA_015_016_017_VERIFIED','GRANTS_VERIFIED','ADMINISTRATIVE_18_CLOSED_FIFO_UNCHANGED','EXACT_SOURCE_INSTALLED_FLAGS_OFF','FLAGS_OFF_HEALTH_PASS']);checks.executorOrderAndRealTemporaryBackupRestore='PASS';
   await reset();healthMode='fail';const failed=await execute();assert.equal(failed.status,'STOP');assert.equal(rollbackCount,1);assert.equal((await readRows()).filter(r=>r.closure).length,18);checks.automaticRuntimeRollbackPreservesAdminAuditAndStopsSender='PASS';
   await reset();healthMode='external';const external=await execute();assert.equal(external.code,'EXTERNAL_DELIVERY_RISK_STOP');assert.equal(rollbackCount,1);checks.externalEffectRiskStopsWithoutDataRewind='PASS';

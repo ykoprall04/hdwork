@@ -25,7 +25,7 @@ async function run(argv=process.argv.slice(2)){
  const record=code=>{log.emit('TASK_STATE',{status,reason:code});return save({status,code,nodePid:process.pid,pythonPid:python?.pid||null,startedAt,updatedAt:new Date().toISOString(),ownerSid:config.ownerSid,botId:config.botId,telegramBotId:config.telegramBotId,baseCommit:config.baseCommit,patchCommit:config.patchCommit,configSha256:argv[3],productionPlanSha256:config.productionPlanSha256,liveChatEndToEndVerified:false});};
  const stop=()=>{
   if(ownerGone)return;ownerGone=true;status='STOPPING';record('OWNER_STOP');
-  if(python&&python.exitCode===null){python.stdin.end('STOP\n');forceTimer=setTimeout(()=>{if(python.exitCode===null)python.kill();},15000);}
+  if(python&&python.exitCode===null){python.stdin.end('STOP\n');if(process.env.HDWORK2_NATIVE_GRACEFUL_ONLY!=='true')forceTimer=setTimeout(()=>{if(python.exitCode===null)python.kill();},15000);}
   if(ready)setImmediate(()=>process.emit('SIGTERM'));
  };
  process.stdin.once('end',stop);process.stdin.on('data',data=>{if(data.toString('utf8').includes('STOP'))stop();});process.stdin.resume();

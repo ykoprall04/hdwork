@@ -14,7 +14,7 @@ async function run(argv=process.argv.slice(2)){
  let backend,child,backendEnv,pythonEnv,childDone,closing=false,stopPromise;
  const stop=()=>stopPromise||=(async()=>{
   closing=true;
-  if(child&&child.exitCode===null){child.stdin.end('STOP\n');const timer=setTimeout(()=>child.kill(),15000);try{await childDone;}finally{clearTimeout(timer);}}
+  if(child&&child.exitCode===null){child.stdin.end('STOP\n');const timer=process.env.HDWORK2_NATIVE_GRACEFUL_ONLY==='true'?null:setTimeout(()=>child.kill(),15000);try{await childDone;}finally{clearTimeout(timer);}}
   await backend?.close();
   if(backendEnv)clearSecrets(backendEnv);if(pythonEnv)clearSecrets(pythonEnv);
  })();

@@ -9,6 +9,9 @@ function regular(file){const abs=path.resolve(file),s=fs.lstatSync(abs);if(!s.is
 function fileSha(file){const s=fs.lstatSync(file);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||fs.realpathSync(file).toLowerCase()!==path.resolve(file).toLowerCase())throw fail('UNSAFE_BACKUP_FILE');const h=crypto.createHash('sha256'),fd=fs.openSync(file,'r'),buffer=Buffer.alloc(65536);try{let n;while((n=fs.readSync(fd,buffer,0,buffer.length,null)))h.update(buffer.subarray(0,n));return h.digest('hex');}finally{buffer.fill(0);fs.closeSync(fd);}}
 function within(root,file){const p=path.resolve(root,file);if(!p.toLowerCase().startsWith(path.resolve(root).toLowerCase()+path.sep)||file.split(/[\\/]/).includes('..'))throw fail('ARTIFACT_PATH_ESCAPE');return p;}
 function assertFlagsOff(flags){if(canonical(flags)!==canonical(FLAGS))throw fail('FLAGS_NOT_OFF');}
+function verifyApproval(a,p,planSha){
+ if(!a||a.kind!=='HDWORK2_OPERATOR_CUTOVER_APPROVAL'||a.approved!==true||a.scope!=='CUTOVER_FLAGS_OFF_ONLY'||a.targetCommit!==p.targetCommit||a.decisionId!==p.decisionId||a.planSha256!==planSha||! /^[A-Za-z0-9_.@-]{1,64}$/.test(a.operator||'')||!Number.isFinite(Date.parse(a.expiresAtUtc))||Date.parse(a.expiresAtUtc)<=Date.now()||Date.parse(a.expiresAtUtc)>Date.now()+3600000||p.infrastructure?.native&&a.nativeConfigSha256!==p.infrastructure.native.sha256)throw fail('EXPLICIT_OPERATOR_APPROVAL_REQUIRED');
+}
 async function verifyPlan(file,expectedSha,expectedHead){
  const bytes=regular(file);if(sha(bytes)!==expectedSha)throw fail('PLAN_PIN_MISMATCH');const p=JSON.parse(bytes);
  if(p.version!==1||p.kind!=='HDWORK2_COURIER_CUTOVER'||! /^[a-f0-9]{40}$/.test(expectedHead||'')||p.targetCommit!==expectedHead||!path.isAbsolute(p.source)||!path.isAbsolute(p.releaseDirectory))throw fail('EXACT_TARGET_REQUIRED');
@@ -24,6 +27,7 @@ async function verifyPlan(file,expectedSha,expectedHead){
  const allowBytes=regular(within(p.releaseDirectory,p.allowlist.file));if(sha(allowBytes)!==p.allowlist.fileSha256)throw fail('ALLOWLIST_FILE_PIN_MISMATCH');const allowlist=JSON.parse(allowBytes);
  if(validateAllowlist(allowlist)!==p.allowlist.logicalSha256||p.decisionId!==allowlist.decisionId)throw fail('ALLOWLIST_LOGICAL_PIN_MISMATCH');
  if(p.hostAdapter){if(!path.isAbsolute(p.hostAdapter.file)||sha(regular(p.hostAdapter.file))!==p.hostAdapter.sha256)throw fail('HOST_ADAPTER_PIN_MISMATCH');}
+ for(const item of Object.values(p.infrastructure||{}))if(!path.isAbsolute(item.file||'')||sha(regular(item.file))!==item.sha256)throw fail('INFRASTRUCTURE_PIN_MISMATCH');
  return {plan:p,allowlist,planSha256:expectedSha};
 }
 function queueGate(inspect,a){
@@ -38,17 +42,19 @@ function pairedReceipt(r,barrier,a,seal,root){
   const x=r[name];if(!x||x.integrityVerified!==true||!x.rowCounts||!Object.keys(x.rowCounts).length||canonical(x.rowCounts)!==canonical(x.restoredRowCounts)||! /^[a-f0-9]{64}$/.test(x.sha256||'')||root&&within(root,path.relative(root,x.file))!==path.resolve(x.file)||fileSha(x.file)!==x.sha256)throw fail('BACKUP_INTEGRITY_OR_RESTORE_MISMATCH');
  }
 }
-async function executeCutover(verified,host,{execute=false,save=()=>{}}={}){
+async function executeCutover(verified,host,{execute=false,approval,save=()=>{}}={}){
  const {plan:p,allowlist:a,planSha256}=verified,seal=validateAllowlist(a),journal={status:'PLAN_ONLY',targetCommit:p.targetCommit,planSha256,decisionId:a.decisionId,stages:[],productionChanged:execute?null:false};
  if(!execute)return journal;
  if(!host)throw fail('PINNED_OWNER_HOST_ADAPTER_REQUIRED');
  const stage=(name,evidence)=>{journal.stages.push({name,at:new Date().toISOString(),evidence});save(journal);};
  let stopped=false,closureCommitted=false,barrier,backup;
  try{
+  verifyApproval(approval,p,planSha256);
   queueGate(await host.inspect({allowlist:a}),a);stage('QUEUE_GATE_PASS');
   barrier=await host.stopClean({decisionId:a.decisionId,allowlistSha256:seal});
   if(!barrier||barrier.kind!=='HDWORK2_CUTOVER_BARRIER'||barrier.graceful!==true||barrier.forced||!barrier.courierStopped||!barrier.writersQuiesced||!barrier.allOwnedPidsGone||!barrier.fenceHeld)throw fail('CLEAN_STOP_NOT_PROVEN');
   stopped=true;stage('CLEAN_STOP_VERIFIED',{barrierId:barrier.barrierId});
+  queueGate(await host.inspect({allowlist:a,quiescent:true}),a); // Catch enqueues racing with the initial stop/fence.
   backup=await host.backupPair({barrier,allowlist:a});pairedReceipt(backup,barrier,a,seal,p.releaseDirectory);stage('PAIRED_BACKUP_AND_RESTORE_VERIFIED');
   const schema=await host.schema({versions:[15,16,17],barrier,backup});if(schema.exact!==true||schema.versions?.join(',')!=='15,16,17')throw fail('SCHEMA_NOT_EXACT');stage('SCHEMA_015_016_017_VERIFIED');
   const grants=await host.grants({barrier});if(grants.exact!==true||grants.deleteAdded||grants.excessive)throw fail('GRANTS_NOT_MINIMUM');stage('GRANTS_VERIFIED');
@@ -73,4 +79,4 @@ async function executeCutover(verified,host,{execute=false,save=()=>{}}={}){
   save(journal);return journal;
  }
 }
-module.exports={FLAGS,sha,verifyPlan,executeCutover,queueGate,pairedReceipt,regular,within};
+module.exports={FLAGS,sha,verifyPlan,verifyApproval,executeCutover,queueGate,pairedReceipt,regular,within};
