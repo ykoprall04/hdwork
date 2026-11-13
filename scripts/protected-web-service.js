@@ -5,7 +5,7 @@ async function run(){
  let stage='CONFIG';
  try { return await runStartup(); }
  catch(error){
-  const known=/^[A-Z0-9_]+$/.test(error?.code||'')?error.code:null;
+  const known=/^(?:EACCES|EPERM|ENOENT|EADDRINUSE|ECONNREFUSED|ETIMEDOUT|ECONNRESET|ER_[A-Z0-9_]+)$/.test(error?.code||'')?error.code:null;
   const code=known||('WEB_STAGE_'+stage+'_FAILED');
   console.error(JSON.stringify({status:'FAILED',code}));
   process.exitCode=1;
