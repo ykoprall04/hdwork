@@ -18,6 +18,7 @@ function prepare({source,directory,runtimeConfigFile,runtimeConfigSha256}){
  const plan={...JSON.parse(fs.readFileSync(original.productionPlan)),deliveryMode:'fifo-ack-v2',routingMode:'database',fifoRelease:true};require('../../src/config/production-courier').validate(plan);
  const planFile=path.join(directory,'production-plan.candidate.json');fs.writeFileSync(planFile,JSON.stringify(plan,null,2));
  const runtime={...original,snapshot,productionPlan:planFile,productionPlanSha256:sha(planFile),sourceHashes,environmentSha256:sha(path.join(snapshot,'service/environment.json')),encryptedBundleSha256:sha(path.join(snapshot,'service/secrets.dpapi')),baseCommit:commit,patchCommit:commit,runtimeMode:'flags-off'};
+ runtime.binaryHashes={nodeExecutable:sha(runtime.nodeExecutable),pythonExecutable:sha(runtime.pythonExecutable)};
  const configFile=path.join(directory,'runtime.candidate.json');fs.writeFileSync(configFile,JSON.stringify(runtime,null,2));
  fs.writeFileSync(path.join(directory,'startup.fence.json'),JSON.stringify({reason:'PREPARATION_ONLY_NO_APPROVAL',targetCommit:commit}));
  require('../courier-task-runner').configuration(configFile,sha(configFile));

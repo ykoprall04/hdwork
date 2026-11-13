@@ -11,6 +11,7 @@ function configuration(file,expected){
  for(const [name,digest]of Object.entries(value.sourceHashes))verify(path.join(value.snapshot,name),digest);
  verify(path.join(value.snapshot,'service/environment.json'),value.environmentSha256);
  verify(path.join(value.snapshot,'service/secrets.dpapi'),value.encryptedBundleSha256);
+ if(value.binaryHashes){for(const name of ['nodeExecutable','pythonExecutable']){const digest=value.binaryHashes[name];if(!/^[a-f0-9]{64}$/.test(digest||''))throw Error('TASK_BINARY_PIN_REQUIRED');const h=crypto.createHash('sha256'),fd=fs.openSync(value[name],'r'),buffer=Buffer.alloc(1024*1024);try{let n;while((n=fs.readSync(fd,buffer,0,buffer.length,null)))h.update(buffer.subarray(0,n));}finally{fs.closeSync(fd);}if(h.digest('hex')!==digest)throw Error('TASK_BINARY_DRIFT');}}
  return value;
 }
 function stateWriter(file){return value=>{const temp=file+'.'+crypto.randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(value,null,2)+'\n',{flag:'wx',mode:0o600});fs.renameSync(temp,file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}};}

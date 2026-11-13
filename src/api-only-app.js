@@ -7,8 +7,9 @@ function apiError(error,_req,res,_next){
   const message={403:'Origin tidak diizinkan',413:'Ukuran permintaan terlalu besar',400:'Format permintaan tidak valid',500:'Permintaan tidak dapat diproses'}[status];
   return res.status(status).json({success:false,message});
 }
-function createApiOnlyApp(env = process.env) {
+function createApiOnlyApp(env = process.env,{readinessCheck}={}) {
   const app = express();
+  const readiness=require('./config/readiness-probe').create({check:readinessCheck||(()=>require('./config/local-database-check').checkRuntimeDatabases())});
   app.disable('x-powered-by');
   if(env.HDWORK2_EDGE_AUTH_MODE==='application-session')app.use(require('./middlewares/application-session-boundary').applicationSessionBoundary);
   app.use(cors(corsOptions(env)));
@@ -20,7 +21,7 @@ function createApiOnlyApp(env = process.env) {
   app.get('/health', (_req, res) => res.json({ ok: true, mode: 'api-only' }));
   app.get('/ready', createRateLimit({limit:10,windowMs:60000}), async (_req,res) => {
     res.set('Cache-Control','no-store');
-    try { res.json(await require('./config/local-database-check').checkRuntimeDatabases()); }
+    try { res.json(await readiness.probe()); }
     catch { res.status(503).json({ok:false,message:'Database/schema belum siap'}); }
   });
   app.use('/api/auth', (env.HDWORK2_AUTH_V2 === 'true' ? require('./access/routes') : require('./routes/auth.routes')));
