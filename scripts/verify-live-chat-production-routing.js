@@ -1,6 +1,6 @@
 // Read-only Telegram metadata verification. No send/poll/webhook change/DB/service operation.
-const fs=require('node:fs/promises'),path=require('node:path'),https=require('node:https'),{createHash}=require('node:crypto');
-const methods=new Set(['getMe','getChat','getChatMember','getWebhookInfo']);
+const fs=require('node:fs/promises'),path=require('node:path'),{createHash}=require('node:crypto');
+const {telegram,metadataDiagnostics}=require('./lib/telegram-metadata.cjs');
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 function fail(code){throw Error(code);}
 function candidate(input){
@@ -30,12 +30,6 @@ async function resolveIdentity(repo,expected,sourceFile){
  if(identities.size!==1){const e=Error(identities.size?'AMBIGUOUS_EXISTING_INTERNAL_COURIER_ID':'EXISTING_INTERNAL_COURIER_ID_NOT_FOUND');e.inventory=inventory;throw e;}
  return [...identities.values()][0];
 }
-async function telegram(token,method,body={}){
- if(!methods.has(method))fail('TELEGRAM_READ_ONLY_METHOD_REQUIRED');const bytes=Buffer.from(JSON.stringify(body));
- return new Promise((resolve,reject)=>{const request=https.request({hostname:'api.telegram.org',path:'/bot'+token+'/'+method,method:'POST',headers:{'Content-Type':'application/json','Content-Length':bytes.length},timeout:10000},res=>{
-  let size=0;const chunks=[];res.on('data',b=>{size+=b.length;if(size>131072){for(const c of chunks)c.fill(0);res.destroy();reject(Error('TELEGRAM_METADATA_TOO_LARGE'));}else chunks.push(b);});res.once('error',()=>reject(Error('TELEGRAM_METADATA_UNAVAILABLE')));res.once('end',()=>{try{const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(res.statusCode!==200||data.ok!==true){const c=Number(data.error_code||res.statusCode);throw Error([400,401,403,409,429].includes(c)?'TELEGRAM_API_'+c:'TELEGRAM_METADATA_UNAVAILABLE');}resolve(data.result);}catch(e){reject(Error(/^TELEGRAM_API_\d{3}$/.test(e.message)?e.message:'TELEGRAM_METADATA_UNAVAILABLE'));}finally{for(const c of chunks)c.fill(0);}});
- });request.once('error',()=>reject(Error('TELEGRAM_METADATA_UNAVAILABLE')));request.once('timeout',()=>request.destroy());request.end(bytes);});
-}
 function canSend(chat,member){
  if(['administrator','creator'].includes(member.status))return true;
  if(member.status==='member')return chat.permissions?.can_send_messages===true;
@@ -50,7 +44,7 @@ async function verify({input,identity,readToken,call=telegram,now=Date.now}){
    try{const chat=await call(token,'getChat',{chat_id:g.chatId});if(String(chat?.id)!==g.chatId||!['group','supergroup'].includes(chat.type)||chat.is_forum===true)fail('GROUP_ID_TYPE_OR_NON_TOPIC_MISMATCH');
     phase='getChatMember';const member=await call(token,'getChatMember',{chat_id:g.chatId,user_id:Number(expected.telegramBotId)});if(String(member?.user?.id)!==expected.telegramBotId||member.user.is_bot!==true)fail('GROUP_MEMBERSHIP_IDENTITY_MISMATCH');
     results.push({...g,status:canSend(chat,member)?'PASS':'BLOCKED_BOT_CANNOT_SEND_TEXT',memberStatus:member.status});
-   }catch(e){results.push({...g,phase,status:/^[A-Z0-9_]+$/.test(e.message)?e.message:'TELEGRAM_GROUP_CHECK_FAILED'});}
+   }catch(e){results.push({...g,phase,status:/^[A-Z0-9_]+$/.test(e.message)?e.message:'TELEGRAM_GROUP_CHECK_FAILED',...(metadataDiagnostics(e)?{metadata:metadataDiagnostics(e)}:{})});}
   }
   const webhook=await call(token,'getWebhookInfo',{}),routingPass=results.every(g=>g.status==='PASS');
   return {status:routingPass?'ROUTING_VERIFIED_NO_MESSAGES':'BLOCKED_GROUP_ACCESS',checkedAt:new Date(now()).toISOString(),telegramBotId:expected.telegramBotId,botUsername:me.username,internalBotId:identity.botId,internalIdSourceHash:identity.sourceHash,sourcePlanEnabled:identity.sourceEnabled===true,configuredCourierPort:Number.isSafeInteger(identity.port)?identity.port:null,source:expected.source,operator:expected.operator,groups:results,webhookConfigured:Boolean(webhook?.url),pendingTelegramUpdates:Number.isSafeInteger(webhook?.pending_update_count)?webhook.pending_update_count:null,courierRuntimeVerified:false,pollerOwnershipVerified:false,activationReady:false,blockingReasons:['COURIER_OWNER_LEASE_AND_ACTIVATION_BOUNDARY_NOT_VERIFIED',...(webhook?.url?['EXISTING_WEBHOOK_REQUIRES_OWNER_REVIEW']:[])],messagesSent:0,updatesConsumed:false,productionConfigurationChanged:false};
@@ -80,5 +74,5 @@ async function run({argv=process.argv.slice(2),repo=path.resolve(__dirname,'..')
  const result=await verify({input:expected,identity,readToken:readToken||require('../src/config/private-database-env').readPrivateDpapi,call});if(args['--courier-db-read-only']==='yes')result.courier=await courierMetadata({identity,readSecret:readSecret||require('../src/config/private-database-env').readPrivateDpapi,connect});if(sha(await regular(identity.file))!==identity.sourceHash)fail('COURIER_IDENTITY_PLAN_CHANGED_DURING_VERIFICATION');
  await fs.writeFile(output,JSON.stringify(result,null,2)+'\n',{flag:'wx',mode:0o600});report(result);return result;
 }
-if(require.main===module)run().catch(e=>{const protectedCodes=['PRIVATE_DB_CONFIG_REJECTED','DPAPI_FILE_READ_FAILED','DPAPI_UNPROTECT_FAILED','DPAPI_MEMORY_READ_FAILED','DPAPI_PIPE_FAILED','DPAPI_DECRYPT_FAILED','DPAPI_TIMEOUT'];const safe=/^[A-Z0-9_]+$/.test(e.message)?e.message:protectedCodes.includes(e.code)?e.code:['EACCES','EPERM'].includes(e.code)?'PROTECTED_SOURCE_ACCESS_DENIED':'PRODUCTION_ROUTING_CHECK_FAILED';console.error(JSON.stringify({status:'BLOCKED',code:safe,inventory:e.inventory,messagesSent:0,productionConfigurationChanged:false}));process.exitCode=1;});
+if(require.main===module)run().catch(e=>{const protectedCodes=['PRIVATE_DB_CONFIG_REJECTED','DPAPI_FILE_READ_FAILED','DPAPI_UNPROTECT_FAILED','DPAPI_MEMORY_READ_FAILED','DPAPI_PIPE_FAILED','DPAPI_DECRYPT_FAILED','DPAPI_TIMEOUT'];const safe=/^[A-Z0-9_]+$/.test(e.message)?e.message:protectedCodes.includes(e.code)?e.code:['EACCES','EPERM'].includes(e.code)?'PROTECTED_SOURCE_ACCESS_DENIED':'PRODUCTION_ROUTING_CHECK_FAILED';console.error(JSON.stringify({status:'BLOCKED',code:safe,inventory:e.inventory,...(metadataDiagnostics(e)?{metadata:metadataDiagnostics(e)}:{}),messagesSent:0,productionConfigurationChanged:false}));process.exitCode=1;});
 module.exports={candidate,resolveIdentity,verify,canSend,telegram,courierMetadata,run};
