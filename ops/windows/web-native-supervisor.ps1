@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$ControlConfig,[Parameter(Mandatory=$true)][string]$ConfigSha256)
 $ErrorActionPreference='Stop'
-$child=$null;$server=$null;$requested=$false;$childStartedAtUtc=$null;$childPid=0;$phase='START'
+$child=$null;$server=$null;$requested=$false;$childStartedAtUtc=$null;$childPid=0;$phase='START';$stderrCapture=$null;$stderrHandler=$null
 $previousStopClean=$false
 function HashFile($p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 if((HashFile $ControlConfig) -cne $ConfigSha256){throw 'CONTROL_CONFIG_CHANGED'}
@@ -40,6 +40,61 @@ if([IO.Path]::GetFileName($cfg.childExecutable) -cne 'node.exe' -or $cfg.childAr
 if($cfg.taskName -in @('HDWork2-Web','HDWork2-Web-Standby','HDWork2-Web-Rollback') -and ((HashFile $cfg.childExecutable) -cne $cfg.childExecutableSha256 -or ([IO.Path]::GetFileName($cfg.childCodeFile) -cne 'protected-web-service.js' -or $cfg.childArguments.Count -ne 1))){throw 'WEB_CHILD_REJECTED'}
 foreach($arg in $cfg.childArguments){if($arg.Contains('"') -or $arg.Contains("`r") -or $arg.Contains("`n")){throw 'CHILD_ARGUMENT_REJECTED'}}
 try{
+ # DataReceived runs on a CLR worker thread, without a PowerShell runspace.
+ # Parse only bounded FAILED JSON frames and persist exactly two allowlisted fields.
+ if(-not ('HDWork2.WebStartupStderrCaptureV1' -as [type])){
+  Add-Type -ReferencedAssemblies @('System.dll','System.Core.dll','System.Web.Extensions.dll') -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Web.Script.Serialization;
+namespace HDWork2 {
+ public sealed class WebStartupStderrCaptureV1 {
+  private readonly string path;
+  private readonly object gate = new object();
+  private bool saved;
+  private static readonly HashSet<string> codes = new HashSet<string>(StringComparer.Ordinal) {
+   "WEB_STARTUP_FAILED", "PROTECTED_WEB_START_FAILED", "PRIVATE_DB_CONFIG_REJECTED",
+   "EACCES", "EPERM", "ENOENT", "EADDRINUSE", "ECONNREFUSED", "ETIMEDOUT", "ECONNRESET",
+   "ENOSPC", "EMFILE", "ENFILE", "EIO", "MODULE_NOT_FOUND", "ERR_MODULE_NOT_FOUND",
+   "ERR_DLOPEN_FAILED", "ERR_PACKAGE_PATH_NOT_EXPORTED", "ERR_REQUIRE_ESM",
+   "ERR_INVALID_ARG_TYPE", "ERR_INVALID_ARG_VALUE", "ER_ACCESS_DENIED_ERROR",
+   "ER_DBACCESS_DENIED_ERROR", "ER_TABLEACCESS_DENIED_ERROR", "ER_SPECIFIC_ACCESS_DENIED_ERROR",
+   "ER_BAD_DB_ERROR", "ER_BAD_FIELD_ERROR", "ER_NO_SUCH_TABLE", "ER_CON_COUNT_ERROR",
+   "ER_USER_LIMIT_REACHED", "ER_LOCK_WAIT_TIMEOUT", "ER_LOCK_DEADLOCK",
+   "DPAPI_TIMEOUT", "DPAPI_FILE_READ_FAILED", "DPAPI_UNPROTECT_FAILED",
+   "DPAPI_MEMORY_READ_FAILED", "DPAPI_PIPE_FAILED", "DPAPI_DECRYPT_FAILED"
+  };
+  public WebStartupStderrCaptureV1(string outputPath) { path = outputPath; }
+  public DataReceivedEventHandler Handler { get { return Receive; } }
+  private void Receive(object sender, DataReceivedEventArgs args) {
+   if (String.IsNullOrEmpty(args.Data) || args.Data.Length > 4096) return;
+   string temporary = null;
+   try {
+    var parser = new JavaScriptSerializer { MaxJsonLength = 4096, RecursionLimit = 4 };
+    var frame = parser.DeserializeObject(args.Data) as Dictionary<string, object>;
+    object status, value;
+    if (frame == null || !frame.TryGetValue("status", out status) ||
+        !String.Equals(status as string, "FAILED", StringComparison.Ordinal)) return;
+    string code = frame.TryGetValue("code", out value) ? value as string : null;
+    if (code == null || !codes.Contains(code)) code = "WEB_STARTUP_FAILED";
+    lock (gate) {
+     if (saved) return;
+     temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+     File.WriteAllText(temporary, "{\"status\":\"FAILED\",\"code\":\"" + code + "\"}", new UTF8Encoding(false));
+     if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
+     temporary = null;
+     saved = true; // Preserve the first failure, not a later cleanup error.
+    }
+   } catch { /* Never persist raw input/exception messages or fail the owner from a reader thread. */ }
+   finally { if (temporary != null) { try { File.Delete(temporary); } catch {} } }
+  }
+ }
+}
+'@
+ }
  [IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),'{"phase":"CHILD_PREPARE"}')
  $info=New-Object Diagnostics.ProcessStartInfo
  $info.FileName=$cfg.childExecutable;$info.Arguments=(@($cfg.childArguments|ForEach-Object {'"'+$_+'"'}) -join ' ');$info.WorkingDirectory=$cfg.childWorkingDirectory
@@ -56,12 +111,15 @@ try{
   if($webEnv.HDWORK2_COURIER_WRITER_V2_BOTS_JSON -cne '["hdworkopsbot-testing"]'){throw 'WEB_WRITER_SCOPE_REJECTED'}
   if($webEnv.COURIER_ENABLED -cne 'false' -or $webEnv.HDWORK2_TESTING_SOLVER_ENABLED -cne 'false'){throw 'WEB_EXTERNAL_SENDER_REJECTED'}
  }
- $child=New-Object Diagnostics.Process;$child.StartInfo=$info;[IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),'{"phase":"CHILD_START"}');[void]$child.Start();$childPid=$child.Id;$childStartedAtUtc=$child.StartTime.ToUniversalTime().ToString('o');
+ $child=New-Object Diagnostics.Process;$child.StartInfo=$info
+ $stderrCapture=New-Object HDWork2.WebStartupStderrCaptureV1((Join-Path ([IO.Path]::GetDirectoryName($cfg.stateFile)) 'child-startup-error.json'))
+ $stderrHandler=$stderrCapture.Handler;$child.add_ErrorDataReceived($stderrHandler)
+ [IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),'{"phase":"CHILD_START"}');[void]$child.Start();$childPid=$child.Id;$childStartedAtUtc=$child.StartTime.ToUniversalTime().ToString('o');
+ $child.BeginOutputReadLine();$child.BeginErrorReadLine()
  if($cfg.secretBundleFile){
   Add-Type -AssemblyName System.Security
   $plain=$null;try{$plain=[Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($cfg.secretBundleFile),$null,[Security.Cryptography.DataProtectionScope]::LocalMachine);$child.StandardInput.WriteLine([Text.Encoding]::UTF8.GetString($plain));$child.StandardInput.Flush()}finally{if($plain){[Array]::Clear($plain,0,$plain.Length)}}
  }
- $child.BeginOutputReadLine();$child.BeginErrorReadLine()
  $security=New-Object IO.Pipes.PipeSecurity
  foreach($account in @($sid,'S-1-5-18','S-1-5-32-544')){$security.AddAccessRule((New-Object IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier($account)),[IO.Pipes.PipeAccessRights]::ReadWrite,[Security.AccessControl.AccessControlType]::Allow)))}
  while(-not $child.HasExited){
@@ -86,7 +144,7 @@ try{
   # Keep ownership after timeout. Never orphan/kill a possibly active sender.
   $server.Dispose();$server=$null;$child.WaitForExit();break
  }
- if($child.HasExited){SaveState $(if($requested){'STOPPED'}else{'CHILD_EXITED'}) $child.ExitCode}
+ if($child.HasExited){$child.WaitForExit();SaveState $(if($requested){'STOPPED'}else{'CHILD_EXITED'}) $child.ExitCode}
 }catch{
  $failure=@{phase=$phase;type=$_.Exception.GetType().Name;code=($_.FullyQualifiedErrorId -split ',')[0]}
  try{[IO.File]::WriteAllText((Join-Path $root 'failure.metadata.json'),($failure|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)));SaveState 'CONTROL_FAILED'}catch{}
@@ -94,7 +152,7 @@ try{
  throw 'NATIVE_OWNER_CONTROL_FAILED'
 }finally{
  if($server){$server.Dispose()}
- if($child -and $child.HasExited){$child.Dispose()}
+ if($child -and $child.HasExited){$child.WaitForExit();if($stderrHandler){$child.remove_ErrorDataReceived($stderrHandler)};$child.Dispose()}
 }
 
 } finally {if($mutexHeld){$ownerMutex.ReleaseMutex()};$ownerMutex.Dispose()}
