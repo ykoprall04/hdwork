@@ -1,6 +1,6 @@
 function createStore(pool) {
  const store={
- async tx(run){const c=await pool.getConnection();try{await c.beginTransaction();const value=await run(createStore(c));await c.commit();return value;}catch(e){await c.rollback();throw e;}finally{c.release();}},
+ async tx(run){return require('../operations/transaction-gate').run(async()=>{const c=await pool.getConnection();try{await c.beginTransaction();const value=await run(createStore(c));await c.commit();return value;}catch(e){await c.rollback();throw e;}finally{c.release();}});},
  async lock(){await pool.query('SELECT id FROM hd2_auth_guard WHERE id=1 FOR UPDATE');},
  async user(id){const [[r]]=await pool.query('SELECT id,name,username,password_hash,role,city_id,is_active,approval_status FROM users WHERE id=?',[id]);return r;},
  async username(name){const [[r]]=await pool.query('SELECT id,name,username,password_hash,role,city_id,is_active,approval_status FROM users WHERE username=?',[name]);return r;},

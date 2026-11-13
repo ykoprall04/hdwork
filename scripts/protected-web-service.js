@@ -11,9 +11,17 @@ async function run(){
  const testingScope=require('../src/operations/testing-solver-scope').configuration(env);
  const {bootstrap,validateOperationalBundle}=require('./office-web-service');
  const secrets=await bootstrap(process.stdin,{validate:value=>require('../src/config/protected-service-bundle').validateProtectedBundle(value,env,{validateOperationalBundle})});
- let app,pool,closing=false,leaseEnded=false;
- const save=status=>fs.writeFileSync(path.join(home,'state/state.json'),JSON.stringify({status,pid:process.pid,origin:env.HDWORK2_PUBLIC_ORIGIN,readOnly:env.HDWORK2_LOCAL_READ_ONLY==='true',pools:require('../src/config/operational-pools').status(),courier:false,testingSolver:!!testingScope,testingSenderOnly:!!testingScope,updatedAt:new Date().toISOString()}));
- const close=async()=>{if(closing)return;closing=true;try{await require('../src/config/testing-solver-runtime').close();if(app)await app.close();else if(pool)await pool.end();await require('../src/config/operational-pools').close();}finally{save('STOPPED');process.stdin.destroy();}};
+ let app,pool,closing=false,leaseEnded=false,drainReceipt;
+ const save=status=>fs.writeFileSync(path.join(home,'state/state.json'),JSON.stringify({status,drainReceipt,pid:process.pid,origin:env.HDWORK2_PUBLIC_ORIGIN,readOnly:env.HDWORK2_LOCAL_READ_ONLY==='true',pools:require('../src/config/operational-pools').status(),courier:false,testingSolver:!!testingScope,testingSenderOnly:!!testingScope,updatedAt:new Date().toISOString()}));
+ const close=async()=>{if(closing)return;closing=true;
+  if(app){
+   save('DRAINING');
+   for(;;){try{drainReceipt=await app.close({timeoutMs:30000});break;}catch(error){if(error.code!=='WEB_DRAIN_TIMEOUT')throw error;save('DRAIN_TIMEOUT');}}
+  }
+  await require('../src/config/testing-solver-runtime').close();
+  if(!app&&pool)await pool.end();
+  await require('../src/config/operational-pools').close();save('STOPPED');process.stdin.destroy();
+ };
  process.stdin.once('end',()=>{leaseEnded=true;if(app)void close();});
  try{
   Object.assign(process.env,{DB_PASSWORD:secrets.authPassword,JWT_SECRET:secrets.signingSecret});

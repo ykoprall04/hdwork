@@ -21,7 +21,8 @@ class MysqlStore {
     this.boundarySql = this.activationBoundary ? ' AND created_at>?' : '';
     this.boundaryParams = this.activationBoundary ? [this.activationBoundary.sql] : [];
   }
-  async transaction(run) {
+  transaction(run) { return require('../operations/transaction-gate').run(()=>this.transactionBody(run)); }
+  async transactionBody(run) {
     const connection = await observe('MYSQL_POOL_ACQUIRE',{},()=>this.pool.getConnection());
     let liveDirty=false;
     const execute=connection.execute;

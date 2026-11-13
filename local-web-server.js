@@ -1,6 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 async function startLocalWeb(env = process.env) {
+  const drain=require('./src/config/web-drain').create();
   const root = __dirname;
   const config = require('./src/config/api-only-startup').validateApiOnlyConfig(env);
   const port = Number(env.LOCAL_HTTPS_PORT || 8443);
@@ -13,7 +14,7 @@ async function startLocalWeb(env = process.env) {
   if (!fs.existsSync(path.join(dist, 'index.html'))) throw Error('Build frontend terlebih dahulu');
   if(env.LOCAL_WEB_DIST&&fs.realpathSync(dist).toLowerCase()!==dist.toLowerCase())throw Error('Candidate build symlink rejected');
   const server = require('./src/local-web').createLocalWeb({
-    cert: fs.readFileSync(path.resolve(root, env.LOCAL_TLS_CERT || '.local/tls/localhost.crt')),
+    drain,cert: fs.readFileSync(path.resolve(root, env.LOCAL_TLS_CERT || '.local/tls/localhost.crt')),
     key: fs.readFileSync(path.resolve(root, env.LOCAL_TLS_KEY || '.local/tls/localhost.key')),
     dist, apiPort: config.port,allowedHosts:origin.allowedHosts,applicationSessionOnly:env.HDWORK2_EDGE_AUTH_MODE==='application-session',
   });
@@ -22,11 +23,11 @@ async function startLocalWeb(env = process.env) {
   catch (error) { await pool.end(); throw error; }
   let api;
   try {
-    api = await require('./api-only-server').startApiOnly();
+    api = await require('./api-only-server').startApiOnly({drain});
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   } catch (error) { if (api) await new Promise(resolve => api.close(resolve)); await pool.end(); throw error; }
-  const close = async () => { server.closeAllConnections(); api.closeAllConnections(); await Promise.all([new Promise(r => server.close(r)), new Promise(r => api.close(r))]); await pool.end(); };
-  return { server, api, close, port };
+  const close = options => drain.close({...options,closePools:()=>pool.end()});
+  return { server, api, close, port,drain };
 }
 if (require.main === module) {
   require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
