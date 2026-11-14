@@ -18,6 +18,23 @@ function SafeDiagnostic([string]$value){
  return ($value -replace '\b\d{6,12}:[A-Za-z0-9_-]{30,}\b','[REDACTED_TOKEN]' -replace '(?i)(password|token|secret)(\s*[=:]\s*)\S+','$1$2[REDACTED]')
 }
 function SetJsonProperty($object,[string]$name,$value){$property=$object.PSObject.Properties[$name];if($property){$property.Value=$value}else{$object|Add-Member -NotePropertyName $name -NotePropertyValue $value -Force}}
+function SameProcess($process,$identity){
+ if(-not $process -or $process.Name -cne $identity.name -or [int]$process.ProcessId -ne [int]$identity.pid){return $false}
+ try{return ([Math]::Abs(($process.CreationDate.ToUniversalTime()-[DateTimeOffset]::Parse($identity.createdUtc).UtcDateTime).TotalSeconds) -le 2)}catch{return $false}
+}
+function WaitUntilExit([scriptblock]$isAlive,[int]$timeoutMs,[string]$code,[int]$pollMs=100){
+ $until=[DateTimeOffset]::UtcNow.AddMilliseconds($timeoutMs)
+ do{if(-not (& $isAlive)){return};if($pollMs -gt 0){Start-Sleep -Milliseconds $pollMs}}while([DateTimeOffset]::UtcNow -lt $until)
+ if(& $isAlive){Fail $code}
+}
+function RetryTransientHealth([scriptblock]$probe,[int]$attempts=5,[int]$delayMs=1000){
+ for($attempt=1;$attempt -le $attempts;$attempt++){
+  try{& $probe;return}
+  catch{$message=$_.Exception.Message;if($attempt -ge $attempts -or $message -notmatch '^WEB_HEALTH_FAILED_(ECONNREFUSED|ECONNRESET|ETIMEDOUT|HEALTH_DEADLINE)$'){throw};Write-Host ('WEB_HEALTH_RETRY attempt='+$attempt+' reason='+$message);if($delayMs -gt 0){Start-Sleep -Milliseconds $delayMs}}
+ }
+ Fail 'WEB_HEALTH_RETRIES_EXHAUSTED'
+}
+function RollbackHealthFailureState([string]$taskState,[bool]$enabled){if($taskState -eq 'Running' -and $enabled){return 'ROLLED_BACK_WEB_READY_HEALTH_FAILED_TASK_PRESERVED'};return $null}
 function WebPath([string]$path){
  $p=$path.Replace('\','/')
  if($p -match '^(src/courier/|src/b2c-workflow/|src/config/production-courier\.js$|courier[-_]|courier_bot/|contracts/|docs/|tests/|scripts/hdwork-web-update\.ps1$|hdwork-update\.cmd$)'){return $false}
@@ -37,7 +54,13 @@ function MockTests{
  foreach($p in @('src/courier/groups.js','src/b2c-workflow/workflow.js','courier_bot/courier/groups.py','contracts/b2c-commands.json','docs/release.md','tests/web.test.js','scripts/hdwork-web-update.ps1')){Need (-not (WebPath $p)) 'MOCK_COMPONENT_ISOLATION_FAILED';$n++}
  try{[void](WebPath 'database/migrations/018.sql');Fail 'MOCK_MIGRATION_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW') 'MOCK_MIGRATION_GUARD_FAILED';$n++}
  $tmp=Join-Path $env:TEMP ('hdwork-web-update-mock-'+[Guid]::NewGuid().ToString('N'));[void][IO.Directory]::CreateDirectory($tmp)
- try{$f=Join-Path $tmp 'service.js';[IO.File]::WriteAllText($f,'old');$old=[IO.File]::ReadAllBytes($f);Atomic $f ([Text.Encoding]::UTF8.GetBytes('new'));Need ([IO.File]::ReadAllText($f) -eq 'new') 'MOCK_APPLY_FAILED';$n++;Atomic $f $old;Need ([IO.File]::ReadAllText($f) -eq 'old') 'MOCK_ROLLBACK_FAILED';$n++;$mockDist=Join-Path $tmp 'frontend/dist';$nested=Join-Path $mockDist 'assets/app.js';[void][IO.Directory]::CreateDirectory((Split-Path -Parent $nested));[IO.File]::WriteAllText($nested,'asset');$releaseManifest=Join-Path $mockDist 'release-manifest.json';[IO.File]::WriteAllText($releaseManifest,'{}');Need ((RelativePath $mockDist $nested) -eq 'assets/app.js') 'MOCK_RELATIVE_PATH_FAILED';$n++;try{[void](RelativePath (Join-Path $mockDist 'assets') $f);Fail 'MOCK_RELATIVE_PATH_ESCAPE_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_RELEASE_PATH_OUTSIDE_ROOT') 'MOCK_RELATIVE_PATH_GUARD_FAILED';$n++};$mockPayload=Join-Path $tmp 'payload';Get-ChildItem -LiteralPath $mockDist -File -Recurse|Where-Object{$_.Name -ne 'release-manifest.json'}|ForEach-Object{$rel='frontend/dist/'+(RelativePath $mockDist $_.FullName);$to=Join-Path $mockPayload $rel;[void][IO.Directory]::CreateDirectory((Split-Path -Parent $to));Copy-Item -LiteralPath $_.FullName -Destination $to};Need ([IO.File]::ReadAllText((Join-Path $mockPayload 'frontend/dist/assets/app.js')) -eq 'asset') 'MOCK_FRONTEND_PACKAGE_COPY_FAILED';$n++;Need (-not(Test-Path -LiteralPath (Join-Path $mockPayload 'frontend/dist/release-manifest.json'))) 'MOCK_FRONTEND_MANIFEST_SHOULD_NOT_BE_DEPLOYED';$n++;$safe=SafeDiagnostic 'failed token=123456:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_1234';Need ($safe -notmatch '123456:') 'MOCK_DIAGNOSTIC_REDACTION_FAILED';$n++;$json=[pscustomobject]@{targetCommit='old'};SetJsonProperty $json 'webTargetCommit' 'new';Need ($json.webTargetCommit -eq 'new') 'MOCK_JSON_PROPERTY_ADD_FAILED';$n++;SetJsonProperty $json 'webTargetCommit' 'next';Need ($json.webTargetCommit -eq 'next') 'MOCK_JSON_PROPERTY_UPDATE_FAILED';$n++}finally{Remove-Item -LiteralPath $tmp -Recurse -Force}
+ try{$f=Join-Path $tmp 'service.js';[IO.File]::WriteAllText($f,'old');$old=[IO.File]::ReadAllBytes($f);Atomic $f ([Text.Encoding]::UTF8.GetBytes('new'));Need ([IO.File]::ReadAllText($f) -eq 'new') 'MOCK_APPLY_FAILED';$n++;Atomic $f $old;Need ([IO.File]::ReadAllText($f) -eq 'old') 'MOCK_ROLLBACK_FAILED';$n++;$mockDist=Join-Path $tmp 'frontend/dist';$nested=Join-Path $mockDist 'assets/app.js';[void][IO.Directory]::CreateDirectory((Split-Path -Parent $nested));[IO.File]::WriteAllText($nested,'asset');$releaseManifest=Join-Path $mockDist 'release-manifest.json';[IO.File]::WriteAllText($releaseManifest,'{}');Need ((RelativePath $mockDist $nested) -eq 'assets/app.js') 'MOCK_RELATIVE_PATH_FAILED';$n++;try{[void](RelativePath (Join-Path $mockDist 'assets') $f);Fail 'MOCK_RELATIVE_PATH_ESCAPE_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_RELEASE_PATH_OUTSIDE_ROOT') 'MOCK_RELATIVE_PATH_GUARD_FAILED';$n++};$mockPayload=Join-Path $tmp 'payload';Get-ChildItem -LiteralPath $mockDist -File -Recurse|Where-Object{$_.Name -ne 'release-manifest.json'}|ForEach-Object{$rel='frontend/dist/'+(RelativePath $mockDist $_.FullName);$to=Join-Path $mockPayload $rel;[void][IO.Directory]::CreateDirectory((Split-Path -Parent $to));Copy-Item -LiteralPath $_.FullName -Destination $to};Need ([IO.File]::ReadAllText((Join-Path $mockPayload 'frontend/dist/assets/app.js')) -eq 'asset') 'MOCK_FRONTEND_PACKAGE_COPY_FAILED';$n++;Need (-not(Test-Path -LiteralPath (Join-Path $mockPayload 'frontend/dist/release-manifest.json'))) 'MOCK_FRONTEND_MANIFEST_SHOULD_NOT_BE_DEPLOYED';$n++;$safe=SafeDiagnostic 'failed token=123456:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_1234';Need ($safe -notmatch '123456:') 'MOCK_DIAGNOSTIC_REDACTION_FAILED';$n++;$json=[pscustomobject]@{targetCommit='old'};SetJsonProperty $json 'webTargetCommit' 'new';Need ($json.webTargetCommit -eq 'new') 'MOCK_JSON_PROPERTY_ADD_FAILED';$n++;SetJsonProperty $json 'webTargetCommit' 'next';Need ($json.webTargetCommit -eq 'next') 'MOCK_JSON_PROPERTY_UPDATE_FAILED';$n++;
+  $identity=[pscustomobject]@{pid=15;name='powershell.exe';createdUtc=[DateTimeOffset]::UtcNow.ToString('o')};$same=[pscustomobject]@{ProcessId=15;Name='powershell.exe';CreationDate=[DateTime]::UtcNow};Need (SameProcess $same $identity) 'MOCK_OWNER_IDENTITY_MATCH_FAILED';$n++;$reused=[pscustomobject]@{ProcessId=15;Name='powershell.exe';CreationDate=[DateTime]::UtcNow.AddMinutes(-2)};Need (-not(SameProcess $reused $identity)) 'MOCK_OWNER_PID_REUSE_NOT_DETECTED';$n++;
+  $script:mockExitProbes=0;WaitUntilExit { $script:mockExitProbes++;$script:mockExitProbes -lt 3 } 1000 'MOCK_OWNER_EXIT_TIMEOUT' 0;Need ($script:mockExitProbes -eq 3) 'MOCK_OWNER_EXIT_WAIT_FAILED';$n++;
+  $script:mockHealthProbes=0;RetryTransientHealth { $script:mockHealthProbes++;if($script:mockHealthProbes -lt 3){throw 'WEB_HEALTH_FAILED_ECONNREFUSED'} } 4 0;Need ($script:mockHealthProbes -eq 3) 'MOCK_TRANSIENT_HEALTH_RETRY_FAILED';$n++;
+  $script:mockHealthProbes=0;try{RetryTransientHealth { $script:mockHealthProbes++;throw 'WEB_HEALTH_FAILED_CERTIFICATE_REJECTED' } 4 0;Fail 'MOCK_PERMANENT_HEALTH_FAILURE_RETRIED'}catch{Need ($_.Exception.Message -eq 'WEB_HEALTH_FAILED_CERTIFICATE_REJECTED' -and $script:mockHealthProbes -eq 1) 'MOCK_PERMANENT_HEALTH_RETRY_GUARD_FAILED';$n++}
+  Need ((RollbackHealthFailureState 'Running' $true) -eq 'ROLLED_BACK_WEB_READY_HEALTH_FAILED_TASK_PRESERVED') 'MOCK_READY_OLD_TASK_NOT_PRESERVED';$n++;Need ($null -eq (RollbackHealthFailureState 'Disabled' $false)) 'MOCK_FAILED_ROLLBACK_MISLABELED_PRESERVED';$n++
+ }finally{Remove-Item -LiteralPath $tmp -Recurse -Force}
  Write-Output ('MOCK_PASS checks='+$n+' webRuntimeChanged=false courierTouched=false')
 }
 function GetActiveWeb{
@@ -54,13 +77,24 @@ function GetActiveWeb{
  Need ((Invoke-CimMethod -InputObject $proc -MethodName GetOwnerSid).Sid -eq 'S-1-5-19') 'WEB_PROCESS_OWNER_REJECTED'
  return [pscustomobject]@{Task=$x.task;ConfigPath=$x.configPath;ConfigSha=$x.configSha;Config=$cfg;State=$state;Runtime=[IO.Path]::GetFullPath($cfg.childWorkingDirectory)}
 }
+function GetWebOwnerIdentity($web){
+ $ownerPid=[int]$web.State.ownerPid;$process=Get-CimInstance Win32_Process -Filter ('ProcessId='+$ownerPid)
+ Need ($process -and $process.Name -eq 'powershell.exe') 'WEB_OWNER_PROCESS_IDENTITY_REJECTED'
+ Need ($process.CommandLine.Contains([string]$web.Config.supervisorScript) -and $process.CommandLine.Contains([string]$web.ConfigPath) -and $process.CommandLine.Contains([string]$web.ConfigSha)) 'WEB_OWNER_PROCESS_COMMAND_REJECTED'
+ Need ((Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid).Sid -eq 'S-1-5-19') 'WEB_OWNER_PROCESS_OWNER_REJECTED'
+ return [pscustomobject]@{pid=$ownerPid;name=[string]$process.Name;createdUtc=$process.CreationDate.ToUniversalTime().ToString('o')}
+}
+function WaitWebOwnerExit($identity){
+ WaitUntilExit { $process=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$identity.pid);SameProcess $process $identity } 30000 'WEB_OLD_OWNER_EXIT_TIMEOUT' 100
+}
 function Health($web,[string]$receipt){
  $envPath=Join-Path $web.Runtime 'service/environment.json';$e=Get-Content -LiteralPath $envPath -Raw|ConvertFrom-Json
  $api=[int]$e.PORT;$tls=[int]$e.LOCAL_HTTPS_PORT;$ca=if($e.LOCAL_TLS_CA){[string]$e.LOCAL_TLS_CA}else{'.local/tls/ca.crt'}
  if(-not [IO.Path]::IsPathRooted($ca)){$ca=Join-Path $web.Runtime $ca}
  Need (Test-Path -LiteralPath $ca) 'WEB_HEALTH_CA_MISSING'
- & node (Join-Path $root 'scripts/check-web-health.cjs') $api $tls $ca $receipt
- if($LASTEXITCODE -ne 0){Fail 'WEB_HEALTH_FAILED'}
+ $output=@(& node (Join-Path $root 'scripts/check-web-health.cjs') $api $tls $ca $receipt 2>&1);$exitCode=$LASTEXITCODE
+ if($exitCode -ne 0){$text=($output|ForEach-Object{[string]$_}) -join ' ';$reason='HEALTH_PROBE_FAILED';if($text -match '\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|HEALTH_DEADLINE)\b'){$reason=$Matches[1]};Fail ('WEB_HEALTH_FAILED_'+$reason)}
+ $output|ForEach-Object{Write-Output $_}
 }
 function Control([string]$script,[string]$mode,[string]$config,[string]$sha,[string]$approval,[string]$plan,[string]$barrier){
  $controlArgs=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$script,'-Mode',$mode,'-ControlConfig',$config,'-ConfigSha256',$sha)
@@ -102,12 +136,13 @@ function Main{
  $script:WebUpdatePhase='READ_ACTIVE_WEB_TASK';Write-Output 'READING_ACTIVE_WEB_TASK';$web=GetActiveWeb;$activeCommit=if($web.Config.webTargetCommit){[string]$web.Config.webTargetCommit}else{[string]$web.Config.targetCommit};$ancestor=& git -C $root merge-base --is-ancestor $activeCommit $target;if($LASTEXITCODE -ne 0){Fail 'ACTIVE_WEB_PIN_NOT_ANCESTOR_OF_MAIN'}
  $changed=@((InvokeGit @('diff','--name-only',($activeCommit+'..'+$target))).Split([Environment]::NewLine,[StringSplitOptions]::RemoveEmptyEntries));$webPaths=@();foreach($p in $changed){if(WebPath $p){$webPaths+=,$p}}
  if($DryRun){Write-Output ('DRY_RUN target='+$target+' webChanges='+$webPaths.Count+' activeTask='+$web.Task.TaskName+' runtimeChanged=false courierTouched=false');return}
- if($webPaths.Count -eq 0){$receipt=Join-Path $env:TEMP ('hdwork-web-health-'+[Guid]::NewGuid().ToString('N')+'.json');Health $web $receipt;$h=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json;Remove-Item -LiteralPath $receipt -Force;Write-Output ('SUCCESS commit='+$target+' activeWebPin='+$activeCommit+' web=UNCHANGED health=PASS courier=UNTOUCHED rounds='+$h.rounds.Count);return}
+ if($webPaths.Count -eq 0){$receipt=Join-Path $env:TEMP ('hdwork-web-health-'+[Guid]::NewGuid().ToString('N')+'.json');RetryTransientHealth { $null=Health $web $receipt };$h=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json;Remove-Item -LiteralPath $receipt -Force;Write-Output ('SUCCESS commit='+$target+' activeWebPin='+$activeCommit+' web=UNCHANGED health=PASS courier=UNTOUCHED rounds='+$h.rounds.Count);return}
  DeployWeb $web $target $webPaths
 }
 function DeployWeb($web,[string]$target,[string[]]$paths){
  $script:WebUpdatePhase='WEB_RELEASE_PRECHECK'
  if(@($paths|Where-Object{$_ -match '^package(-lock)?\.json$'}).Count){Fail 'WEB_DEPENDENCY_CHANGE_REQUIRES_STAGED_DEPENDENCY_INSTALL'}
+ $ownerIdentity=GetWebOwnerIdentity $web;$script:WebUpdatePhase='WEB_OLD_HEALTH_PREFLIGHT';$preflightReceipt=Join-Path $env:TEMP ('web-preflight-'+[Guid]::NewGuid().ToString('N')+'.json');RetryTransientHealth { $null=Health $web $preflightReceipt };Remove-Item -LiteralPath $preflightReceipt -Force
  $runtime=$web.Runtime;$cfgPath=$web.ConfigPath;$cfg=$web.Config
  foreach($rel in $paths){if($rel.StartsWith('/') -or $rel.Split('/') -contains '..'){Fail 'WEB_PATH_REJECTED'};$p=Join-Path $runtime $rel;if(Test-Path -LiteralPath $p){$i=Get-Item -LiteralPath $p;if($i.Attributes -band [IO.FileAttributes]::ReparsePoint){Fail 'WEB_RUNTIME_LINK_REJECTED'};$pin=$cfg.sourceHashes.PSObject.Properties[$rel];$expected=if($pin){[string]$pin.Value}else{$null};if(-not $expected -or (Hash $p) -ne $expected){Fail 'WEB_RUNTIME_SOURCE_DRIFT'}}}
  $script:WebUpdatePhase='WEB_RELEASE_DIRECTORY';$releaseRoot=Join-Path (Split-Path -Parent $cfgPath) 'updates';[void][IO.Directory]::CreateDirectory($releaseRoot);$release=Join-Path $releaseRoot ($target.Substring(0,12)+'-'+[Guid]::NewGuid().ToString('N'));[void][IO.Directory]::CreateDirectory($release);$script:WebUpdateRelease=$release
@@ -128,7 +163,7 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
  $control=Join-Path $runtime 'ops/windows/web-native-control.ps1';$fenceAttempted=$false;$fenced=$false;$quiescent=$false;$mutated=$false
  try{
   $script:WebUpdatePhase='WEB_STOP_FENCE'
-  $fenceAttempted=$true;$null=Control $control 'StopFence' $cfgPath $web.ConfigSha $approvalPath $planHash $barrier;$fenced=$true;$null=Control $control 'AssertFence' $cfgPath $web.ConfigSha '' $planHash $barrier;$quiescent=$true
+  $fenceAttempted=$true;$null=Control $control 'StopFence' $cfgPath $web.ConfigSha $approvalPath $planHash $barrier;$fenced=$true;$null=Control $control 'AssertFence' $cfgPath $web.ConfigSha '' $planHash $barrier;$script:WebUpdatePhase='WEB_OLD_OWNER_EXIT';WaitWebOwnerExit $ownerIdentity;$quiescent=$true
   $script:WebUpdatePhase='WEB_FILE_ACTIVATION'
   foreach($entry in $entries){$dest=Join-Path $runtime $entry.path;$src=Join-Path $payload $entry.path;$mutated=$true;if($entry.after){Atomic $dest ([IO.File]::ReadAllBytes($src))}elseif(Test-Path -LiteralPath $dest){Remove-Item -LiteralPath $dest -Force}}
   Atomic $cfgPath $newConfigBytes
@@ -136,7 +171,7 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
   $action=New-ScheduledTaskAction -Execute $oldAction.Execute -Argument $argsNew -WorkingDirectory $oldAction.WorkingDirectory;Set-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName -Action $action|Out-Null
   $script:WebUpdatePhase='WEB_TASK_HANDOFF';$fence=Get-Content -LiteralPath $cfg.fenceFile -Raw|ConvertFrom-Json;Need ($fence.barrierId -eq $barrier -and $fence.configSha256 -eq $web.ConfigSha) 'WEB_FENCE_RECEIPT_MISMATCH';Remove-Item -LiteralPath $cfg.fenceFile -Force
   Enable-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName|Out-Null;Start-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;$null=WaitReady $cfgPath $newConfigHash
-  $script:WebUpdatePhase='WEB_POST_START_HEALTH';$receipt=Join-Path $release 'health.json';$webNew=[pscustomobject]@{Runtime=$runtime};Health $webNew $receipt
+  $script:WebUpdatePhase='WEB_POST_START_HEALTH';$receipt=Join-Path $release 'health.json';$webNew=[pscustomobject]@{Runtime=$runtime};RetryTransientHealth { $null=Health $webNew $receipt }
   $manifest.state='ACTIVE';$manifest.health='PASS';$manifest.checkedAtUtc=[DateTimeOffset]::UtcNow.ToString('o');SaveJson (Join-Path $release 'manifest.json') $manifest;PrunePrevious $releaseRoot $release
   Write-Output ('SUCCESS commit='+$target+' web=DEPLOYED task='+$cfg.taskName+' courier=UNTOUCHED rollback='+$release)
  }catch{
@@ -147,9 +182,9 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
    $taskNow=Get-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName
    if([string]$taskNow.State -eq 'Running'){Disable-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName|Out-Null;Stop-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;for($i=0;$i -lt 60;$i++){if(-not(Get-CimInstance Win32_Process -Filter ("Name='powershell.exe' OR Name='node.exe'" )|Where-Object{$_.CommandLine -and $_.CommandLine.Contains($runtime)})){break};Start-Sleep -Milliseconds 500};$alive=@(Get-CimInstance Win32_Process -Filter ("Name='powershell.exe' OR Name='node.exe'" )|Where-Object{$_.CommandLine -and $_.CommandLine.Contains($runtime)});if($alive.Count){Fail 'WEB_ROLLBACK_STOP_NOT_CONFIRMED'}}
    if($mutated){foreach($entry in $entries){$dest=Join-Path $runtime $entry.path;$b=Join-Path $backup $entry.path;if($entry.before){Atomic $dest ([IO.File]::ReadAllBytes($b))}elseif(Test-Path -LiteralPath $dest){Remove-Item -LiteralPath $dest -Force}}}
-   Atomic $cfgPath $oldConfigBytes;if(Test-Path -LiteralPath $cfg.fenceFile){$f=Get-Content -LiteralPath $cfg.fenceFile -Raw|ConvertFrom-Json;if($f.barrierId -ne $barrier -and $f.configSha256 -ne $newConfigHash){Fail 'UNEXPECTED_WEB_STARTUP_FENCE'};Remove-Item -LiteralPath $cfg.fenceFile -Force};Set-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName -Action $oldAction|Out-Null;Enable-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName|Out-Null;Start-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;$null=WaitReady $cfgPath $web.ConfigSha
-   $rollbackHealth=Join-Path $release 'rollback-health.json';Health $web $rollbackHealth;$manifest.state='ROLLED_BACK';$manifest.failureCode=$original;$manifest.rollbackHealth='PASS';SaveJson (Join-Path $release 'manifest.json') $manifest;Fail ('WEB_UPDATE_FAILED_ROLLED_BACK_'+$original)
-  }catch{if($_.Exception.Message -like 'WEB_UPDATE_FAILED_ROLLED_BACK_*'){throw};$manifest.state='ROLLBACK_FAILED';$manifest.failureCode=$original;$manifest.rollbackError=$_.Exception.Message;SaveJson (Join-Path $release 'manifest.json') $manifest;Fail 'WEB_ROLLBACK_FAILED_PRESERVE_RELEASE_AND_TASK_STATE'}
+   Atomic $cfgPath $oldConfigBytes;if(Test-Path -LiteralPath $cfg.fenceFile){$f=Get-Content -LiteralPath $cfg.fenceFile -Raw|ConvertFrom-Json;if($f.barrierId -ne $barrier -or $f.configSha256 -ne $web.ConfigSha){Fail 'UNEXPECTED_WEB_STARTUP_FENCE'};Remove-Item -LiteralPath $cfg.fenceFile -Force};Set-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName -Action $oldAction|Out-Null;Enable-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName|Out-Null;Start-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;$null=WaitReady $cfgPath $web.ConfigSha
+   $rollbackHealth=Join-Path $release 'rollback-health.json';RetryTransientHealth { $null=Health $web $rollbackHealth };$manifest.state='ROLLED_BACK';$manifest.failureCode=$original;$manifest.rollbackHealth='PASS';SaveJson (Join-Path $release 'manifest.json') $manifest;Fail ('WEB_UPDATE_FAILED_ROLLED_BACK_'+$original)
+  }catch{if($_.Exception.Message -like 'WEB_UPDATE_FAILED_ROLLED_BACK_*'){throw};$rollbackError=$_.Exception.Message;if($rollbackError -like 'WEB_HEALTH_FAILED_*'){$restoredTask=Get-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;$preservedState=RollbackHealthFailureState ([string]$restoredTask.State) ([bool]$restoredTask.Settings.Enabled);if($preservedState){$manifest.state=$preservedState;$manifest.failureCode=$original;$manifest.rollbackError=$rollbackError;$manifest.rollbackHealth='FAIL';$manifest.rollbackTaskPreserved=$true;SaveJson (Join-Path $release 'manifest.json') $manifest;Fail 'WEB_ROLLBACK_HEALTH_FAILED_TASK_PRESERVED'}};$manifest.state='ROLLBACK_FAILED';$manifest.failureCode=$original;$manifest.rollbackError=$rollbackError;SaveJson (Join-Path $release 'manifest.json') $manifest;Fail 'WEB_ROLLBACK_FAILED_PRESERVE_RELEASE_AND_TASK_STATE'}
  }
 }
 try{Main;exit 0}catch{$exceptionType=$_.Exception.GetType().FullName;$reason=SafeDiagnostic $_.Exception.Message;$code=if($_.Exception.Message -match '^[A-Z0-9_-]+$'){$_.Exception.Message}else{'WEB_UPDATE_FAILED'};Write-Output ('DIAGNOSTIC phase='+$script:WebUpdatePhase+' exception='+$exceptionType+' reason='+$reason);if($script:WebUpdateRelease){try{$failure=@{kind='HDWORK2_WEB_UPDATE_FAILURE';phase=$script:WebUpdatePhase;code=$code;exception=$exceptionType;reason=$reason;failedAtUtc=[DateTimeOffset]::UtcNow.ToString('o')};SaveJson (Join-Path $script:WebUpdateRelease 'failure.json') $failure}catch{Write-Output ('DIAGNOSTIC_RECEIPT_WRITE_FAILED '+(SafeDiagnostic $_.Exception.Message))}};Write-Output ('FAILED code='+$code+' courier=UNTOUCHED');exit 1}
