@@ -8,7 +8,7 @@ import { useUnsentChatWarning } from './unsent-chat';
 import type { Work } from './model';
 export type ChatMessage = { id: string; direction: string; text: string; userName: string; at: string; status: string; telegramMessageId: string | null; replyTo: string | null; attempts: number };
 
-export default function OrderChat({ id, order, onChange, actions }: { id: string; order?: Work; onChange: () => Promise<void>; actions?: ReactNode }) {
+export default function OrderChat({ id, order, onChange, actions, originalMessage, hideHeading = false }: { id: string; order?: Work; onChange: () => Promise<void>; actions?: ReactNode; originalMessage?: string; hideHeading?: boolean }) {
   const { user } = useAuth();
   const account = String(user?.id);
   const [page, setPage] = useState(1), [text, setText] = useState(() => readChatDraft(account, id).text);
@@ -18,6 +18,8 @@ export default function OrderChat({ id, order, onChange, actions }: { id: string
   const messages = useWorkData<{ data: ChatMessage[]; hasMore: boolean; routeActive?: boolean }>(`/chat/${id}/messages?page=${page}`, { page });
   const allowed = messages.data?.routeActive !== false && !messages.error && Boolean(messages.data) && ['HD', 'ADMIN', 'SUPER_ADMIN'].includes(user?.role || '') && user?.username !== 'trial_yanto' && order?.status === 'IN_PROGRESS' && String(order.ownerId) === String(user?.id) && user?.modules?.includes(order.module);
   useUnsentChatWarning(text, busy);
+  const originalIndex = messages.data?.data.findIndex(message => originalMessage && message.direction === 'IN' && !message.replyTo && message.text === originalMessage) ?? -1;
+  const chatMessages = messages.data?.data.filter((_message, index) => index !== originalIndex);
   async function send() {
     if (!text.trim() || sending.current || !order || (!allowed && !pending)) return;
     sending.current = true; setBusy(true); setError(''); setNotice('');
@@ -35,12 +37,12 @@ export default function OrderChat({ id, order, onChange, actions }: { id: string
   }
   return <section aria-label="Live chat order" className="op-order-chat">
     <div className="op-chat-history">
-    <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-semibold">Live chat order</h3><p className="mt-1 text-xs text-muted-foreground">Balasan menuju pesan dan topic Telegram asli. ANTRE menunggu giliran; MENGIRIM mencakup proses kirim atau menunggu ACK. TERKIRIM setelah backend mengonfirmasi.</p></div></div>
+    {!hideHeading && <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-semibold">Live chat order</h3><p className="mt-1 text-xs text-muted-foreground">Balasan menuju pesan dan topic Telegram asli. ANTRE menunggu giliran; MENGIRIM mencakup proses kirim atau menunggu ACK. TERKIRIM setelah backend mengonfirmasi.</p></div></div>}
     {messages.loading && <p role="status" className="text-xs text-muted-foreground">{messages.data ? 'Memperbarui percakapan…' : 'Memuat percakapan…'}</p>}
     {messages.error && <div role="alert"><p>{messages.error}</p><Button variant="outline" onClick={() => void messages.refresh()}>Coba muat percakapan</Button></div>}
     <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={messages.loading || !messages.data?.hasMore} onClick={() => setPage(value => value + 1)}>Pesan lebih lama</Button><Button variant="outline" disabled={messages.loading || page <= 1} onClick={() => setPage(value => value - 1)}>Pesan lebih baru</Button></div>
-    <ol className="op-chat-messages" aria-label="Pesan percakapan">{messages.data?.data.map(message => <li key={message.id} className={message.direction === 'OUT' ? 'op-chat-out' : 'op-chat-in'}><p className="text-xs font-semibold">{message.userName}</p><p className="whitespace-pre-wrap break-words text-sm">{message.text || '[Pesan dengan lampiran]'}</p><p className="mt-2 text-[10px] text-muted-foreground">{new Date(message.at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB · {message.status}{message.attempts > 0 ? ` · percobaan ${message.attempts}` : ''}{message.replyTo ? ` · Reply ${message.replyTo}` : ' · Pesan order'}{message.telegramMessageId ? ` · Telegram #${message.telegramMessageId}` : ''}</p></li>)}</ol>
-    {messages.data && !messages.data.data.length && <p className="text-sm text-muted-foreground">Belum ada pesan chat tersimpan untuk order ini.</p>}
+    <ol className="op-chat-messages" aria-label="Pesan percakapan">{chatMessages?.map(message => <li key={message.id} className={message.direction === 'OUT' ? 'op-chat-out' : 'op-chat-in'}><p className="text-xs font-semibold">{message.userName}</p><p className="whitespace-pre-wrap break-words text-sm">{message.text || '[Pesan dengan lampiran]'}</p><p className="mt-2 text-[10px] text-muted-foreground">{new Date(message.at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB · {message.status}{message.attempts > 0 ? ` · percobaan ${message.attempts}` : ''}{message.replyTo ? ` · Reply ${message.replyTo}` : ' · Pesan order'}{message.telegramMessageId ? ` · Telegram #${message.telegramMessageId}` : ''}</p></li>)}</ol>
+    {messages.data && !chatMessages?.length && <p className="text-sm text-muted-foreground">Belum ada pesan chat tersimpan untuk order ini.</p>}
     {messages.data?.routeActive === false && <p role="status">Grup nonaktif atau belum terverifikasi. Riwayat tetap tersedia; percakapan tidak dapat dilanjutkan.</p>}
     </div>
     <div className="op-chat-composer">

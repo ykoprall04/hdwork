@@ -871,6 +871,25 @@ body {
 .op-chat-composer textarea { max-height: 120px; }
 .op-chat-action-bar { flex-shrink: 0; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .op-chat-action-bar button { min-height: 40px; }
+.op-process-workspace { display: grid; grid-template-columns: minmax(0,3fr) minmax(0,7fr); height: min(72dvh,820px); min-height: 520px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.op-process-work-list { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; overflow: hidden; padding: 14px; border-right: 1px solid var(--border); }
+.op-process-work-items { min-height: 0; overflow-y: auto; }
+.op-process-work-items li + li { border-top: 1px solid var(--border); }
+.op-process-work-items button { display: block; width: 100%; min-width: 0; padding: 10px 8px; text-align: left; border-radius: 8px; }
+.op-process-work-items button:hover, .op-process-work-items button[data-selected="true"] { background: color-mix(in srgb,var(--primary) 8%,var(--card)); }
+.op-process-detail { position: relative; inset: auto; width: auto; height: 100%; min-width: 0; z-index: auto; border: 0; box-shadow: none; }
+.op-process-detail .op-work-panel-header { flex-wrap: nowrap; }
+.op-process-work-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: var(--muted-foreground); }
+.op-process-detail .op-original-message { max-height: 20vh; overflow-y: auto; }
+.op-process-detail .op-order-chat h3, .op-process-detail .op-order-chat .op-chat-history > div:first-child { display: none; }
+.op-process-detail .op-work-panel-content { overflow: hidden; }
+@media (max-width: 767px) {
+ .op-process-workspace { display: block; height: auto; min-height: 0; overflow: visible; border: 0; }
+ .op-process-workspace[data-selected="true"] .op-process-work-list { display: none; }
+ .op-process-work-list { min-height: 55dvh; border: 1px solid var(--border); border-radius: 12px; }
+ .op-process-detail { height: min(72dvh,760px); min-height: 460px; border: 1px solid var(--border); border-radius: 12px; }
+ .op-process-work-empty { display: none; }
+}
 @media (max-width: 767px) {
   .op-work-panel-content { padding: 8px; gap: 8px; }
   .op-work-panel-header { gap: 8px; }
