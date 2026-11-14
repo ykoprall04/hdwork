@@ -5,7 +5,7 @@ function fixture(){
  const pool={get state(){return state;},async getConnection(){const previous=tail;let unlock;tail=new Promise(r=>unlock=r);await previous;let saved;return {
   async beginTransaction(){saved=structuredClone(state);},async commit(){},async rollback(){state=saved;},release(){unlock();},
   async execute(sql,p=[]){
-   if(sql.includes('FROM users'))return [[{id:1,name:'Synthetic',role:'HD',is_active:1}]];
+   if(sql.includes('FROM users'))return [[{id:p[0],name:'Synthetic',role:'HD',is_active:1}]];
    if(sql.includes('FROM hd2_user_modules'))return [[{module:'B2B'}]];
    if(sql.includes('FROM hd2_sessions'))return [[{token_hash:'synthetic'}]];
    if(sql.startsWith('SELECT * FROM hd2_orders'))return [[state.order]];
@@ -23,7 +23,7 @@ function fixture(){
 }
 test('concurrent status PICK uses version lock; retry is idempotent and reply preserves topic',async()=>{
  const {pool,id}=fixture(),first={requestId:randomUUID(),version:0,action:'PICK'},second={...first,requestId:randomUUID()};
- const result=await Promise.allSettled([act(pool,'synthetic',1,id,first),act(pool,'synthetic',1,id,second)]);
+ const result=await Promise.allSettled([act(pool,'synthetic',1,id,first),act(pool,'synthetic',2,id,second)]);
  assert.equal(result[0].status,'fulfilled');assert.equal(result[1].reason.statusCode,409);assert.equal(pool.state.order.version,1);
  await act(pool,'synthetic',1,id,first);assert.equal(pool.state.outbox.length,1);assert.equal(pool.state.audit.length,1);
  const reply=JSON.parse(pool.state.outbox[0].payload);assert.equal(reply.thread_mode,'thread');assert.equal(reply.telegram_thread_id,'11');assert.equal(reply.reply_to_message_id,'102');

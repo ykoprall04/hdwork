@@ -29,7 +29,7 @@ class MemoryStore {
     if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw fail();
     const messages = [];
     for (const record of this.outbox.values()) {
-      if (record.status === 'sending' && record.until <= this.now()) this.retry(record);
+      if (record.status === 'sending' && record.until <= this.now()) { record.status='dead'; record.last_error_code='LEASE_EXPIRED'; }
       if (messages.length >= limit || record.status !== 'queued' || record.due > this.now()) continue;
       record.attempts++; record.status = 'sending'; record.lease = randomUUID(); record.until = this.now() + 60000;
       messages.push({ delivery_id: record.id, lease_token: record.lease, attempt: record.attempts, payload: record.message });
@@ -40,14 +40,13 @@ class MemoryStore {
     const record = this.outbox.get(id);
     if (!record || !body || typeof body.lease_token !== 'string' || !['sent', 'retry', 'failed'].includes(body.result)) throw fail(409);
     const ack = { lease_token: body.lease_token, result: body.result, telegram_message_id: body.result === 'sent' ? messageId(body.telegram_message_id) : null, error_code: body.result === 'sent' ? null : body.error_code, retry_after: body.retry_after ?? 0 };
-    if (!['NETWORK', 'RATE_LIMIT', 'FORBIDDEN', 'BAD_REQUEST', 'UNKNOWN', null].includes(ack.error_code) || !Number.isInteger(ack.retry_after) || ack.retry_after < 0 || ack.retry_after > 300) throw fail();
+    if (!['NETWORK', 'RATE_LIMIT', 'FORBIDDEN', 'BAD_REQUEST', 'UNKNOWN', 'ECONNRESET', 'ETIMEDOUT', null].includes(ack.error_code) || !Number.isInteger(ack.retry_after) || ack.retry_after < 0 || ack.retry_after > 300) throw fail();
     const hash = digest(ack);
     if (record.ack?.lease === body.lease_token) { if (record.ack.hash !== hash) throw fail(409); return { duplicate: true }; }
     if (record.status !== 'sending' || record.lease !== body.lease_token || record.until <= this.now()) throw fail(409);
     record.ack = { lease: body.lease_token, hash };
     if (body.result === 'sent') { record.status = 'sent'; record.telegram_message_id = ack.telegram_message_id; }
-    else if (body.result === 'failed') record.status = 'dead';
-    else this.retry(record, ack.retry_after * 1000);
+    else { record.last_error_code=ack.error_code; const state=require('./delivery-state').settlementState(body.result,ack.error_code,record.attempts,this.maxAttempts); if(state==='QUEUED')this.retry(record,ack.retry_after*1000);else record.status='dead'; }
     return { duplicate: false };
   }
 }

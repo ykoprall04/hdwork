@@ -37,7 +37,7 @@ class MysqlStore {
       if (options.before) await options.before(c);
       const now = this.now();
       const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=? ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now]);
-      for (const row of expired) await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', [row.attempts >= this.maxAttempts ? 'DEAD' : 'QUEUED', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);
+      for (const row of expired) await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', ['DEAD', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);
       const [rows] = await c.execute("SELECT id,payload,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<? ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, limit]);
       const messages = [];
       for (const row of rows) {
@@ -55,14 +55,14 @@ class MysqlStore {
   async settle(id, body) {
     if (!body || typeof body.lease_token !== 'string' || !['sent', 'retry', 'failed'].includes(body.result)) throw fail();
     const ack = { lease_token: body.lease_token, result: body.result, telegram_message_id: body.result === 'sent' ? messageId(body.telegram_message_id) : null, error_code: body.result === 'sent' ? null : body.error_code, retry_after: body.retry_after ?? 0 };
-    if (!['NETWORK', 'RATE_LIMIT', 'FORBIDDEN', 'BAD_REQUEST', 'UNKNOWN', null].includes(ack.error_code) || !Number.isInteger(ack.retry_after) || ack.retry_after < 0 || ack.retry_after > 300) throw fail();
+    if (!['NETWORK', 'RATE_LIMIT', 'FORBIDDEN', 'BAD_REQUEST', 'UNKNOWN', 'ECONNRESET', 'ETIMEDOUT', null].includes(ack.error_code) || !Number.isInteger(ack.retry_after) || ack.retry_after < 0 || ack.retry_after > 300) throw fail();
     const hash = digest(ack);
     return this.transaction(async c => {
       const [[row]] = await c.execute('SELECT * FROM hd2_courier_outbox WHERE id=? AND bot_id=? FOR UPDATE', [id, this.botId]);
       if (!row) throw fail(409);
       if (row.last_ack_token === body.lease_token) { if (row.last_ack_hash !== hash) throw fail(409); return { duplicate: true }; }
       if (row.state !== 'SENDING' || row.lease_token !== body.lease_token || Number(row.lease_until_ms) <= this.now()) throw fail(409);
-      const state = body.result === 'sent' ? 'SENT' : body.result === 'failed' || row.attempts >= this.maxAttempts ? 'DEAD' : 'QUEUED';
+      const state = require('./delivery-state').settlementState(body.result,ack.error_code,row.attempts,this.maxAttempts);
       await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_ack_token=?,last_ack_hash=?,telegram_message_id=?,last_error_code=? WHERE id=? AND bot_id=?', [state, this.now() + Math.max(ack.retry_after * 1000, backoff(row.attempts)), body.lease_token, hash, ack.telegram_message_id, ack.error_code, id, this.botId]);
       return { duplicate: false };
     });

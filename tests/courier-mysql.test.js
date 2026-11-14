@@ -26,12 +26,11 @@ test('concurrent claim has one lease, stale acknowledgements rejected and succes
  assert.equal((await store.settle(lease.delivery_id,ack)).duplicate,true);
  assert.equal(pool.state.outbox[0].state,'SENT');
 });
-test('expired leases recover with backoff and bounded attempts reach dead-letter',async()=>{
- const {pool,store,advance}=setup(2); await store.enqueue('x',payload); const [first]=await store.claim();
- advance(60001); assert.deepEqual(await store.claim(),[]); advance(2000);
- const [second]=await store.claim(); assert.equal(second.attempt,2);
+test('expired leases are held for review without resending an uncertain delivery',async()=>{
+ const {pool,store,advance}=setup(5); await store.enqueue('x',payload); const [first]=await store.claim();
+ advance(60001); assert.deepEqual(await store.claim(),[]); advance(120000);
+ assert.deepEqual(await store.claim(),[]);assert.equal(pool.state.outbox[0].state,'DEAD');assert.equal(pool.state.outbox[0].last_error_code,'LEASE_EXPIRED');
  await assert.rejects(store.settle(first.delivery_id,{lease_token:first.lease_token,result:'sent',telegram_message_id:'20'}),{statusCode:409});
- advance(60001); assert.deepEqual(await store.claim(),[]); assert.equal(pool.state.outbox[0].state,'DEAD');
 });
 test('retry-after delays delivery; permanent failure enters dead-letter',async()=>{
  const {pool,store,advance}=setup(); await store.enqueue('x',payload); const [first]=await store.claim();

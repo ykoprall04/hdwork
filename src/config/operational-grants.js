@@ -1,5 +1,5 @@
 // Exact table/column allowlists. SHOW GRANTS only, never changes permissions.
-const read={hd2_orders:['SELECT'],hd2_audit:['SELECT'],hd2_live_events:['SELECT'],hd2_user_modules:['SELECT'],users:['SELECT (id, is_active, name, role)']};
+const read={hd2_orders:['SELECT'],hd2_audit:['SELECT'],hd2_live_events:['SELECT'],hd2_user_modules:['SELECT'],hd2_web_requests:['SELECT (order_id, request_id, user_id)'],hd2_courier_outbox:['SELECT (bot_id, created_at, id, idem_key, last_error_code, lease_until_ms, state, telegram_message_id)'],users:['SELECT (id, is_active, name, role)']};
 const write={users:read.users,hd2_user_modules:['SELECT'],hd2_sessions:['SELECT'],hd2_orders:['SELECT','INSERT','UPDATE (completion_note, duplicate_decision, final_user_id, finished_at, owner_user_id, started_at, status, version)'],hd2_audit:['INSERT'],hd2_web_requests:['SELECT','INSERT','UPDATE'],hd2_live_events:['INSERT'],hd2_courier_outbox:['SELECT','INSERT','UPDATE (id)']};
 const courier={hd2_orders:['SELECT','INSERT'],hd2_courier_inbox:['SELECT','INSERT','UPDATE'],hd2_daily_keys:['SELECT','INSERT','UPDATE'],hd2_tial_keys:['SELECT','INSERT','UPDATE'],hd2_audit:['INSERT'],hd2_live_events:['INSERT'],hd2_courier_workers:['SELECT','INSERT','UPDATE'],hd2_courier_nonces:['SELECT','INSERT','DELETE']};
 const courierSend={...courier,hd2_courier_outbox:['SELECT','INSERT','UPDATE']};

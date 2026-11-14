@@ -5,6 +5,8 @@
 
 -- Dashboard read-only account. Not yet wired as a separate runtime pool.
 GRANT SELECT ON hdwork2.hd2_orders TO 'hdwork_ops_read'@'localhost';
+GRANT SELECT (order_id,request_id,user_id) ON hdwork2.hd2_web_requests TO 'hdwork_ops_read'@'localhost';
+GRANT SELECT (id,bot_id,idem_key,created_at,state,telegram_message_id,last_error_code,lease_until_ms) ON hdwork2.hd2_courier_outbox TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_audit TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_live_events TO 'hdwork_ops_read'@'localhost';
 GRANT SELECT ON hdwork2.hd2_user_modules TO 'hdwork_ops_read'@'localhost';
