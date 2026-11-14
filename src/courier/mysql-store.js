@@ -3,9 +3,11 @@ const { eventEnvelope, outbound, digest, fail, messageId } = require('./contract
 const json = value => typeof value === 'string' ? JSON.parse(value) : value;
 const backoff = attempt => Math.min(60000, 2000 * 2 ** (attempt - 1));
 class MysqlStore {
-  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false }) {
+  constructor({ pool, botId, now = Date.now, maxAttempts = 5, orderedInbox = false, outboxPrefix }) {
     this.pool = pool; this.botId = botId; this.now = now; this.maxAttempts = maxAttempts;
     this.orderedInbox = orderedInbox;
+    if(outboxPrefix!==undefined&&!/^trial-received:[1-9]\d*:$/.test(outboxPrefix))throw fail();
+    this.outboxPrefix=outboxPrefix;
   }
   async transaction(run) {
     const connection = await this.pool.getConnection();
@@ -36,9 +38,11 @@ class MysqlStore {
     return this.transaction(async c => {
       if (options.before) await options.before(c);
       const now = this.now();
-      const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=? ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now]);
+      const scope=this.outboxPrefix?' AND idem_key LIKE ?':'';
+      const values=this.outboxPrefix?[this.outboxPrefix+'%']:[];
+      const [expired] = await c.execute("SELECT id,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='SENDING' AND lease_until_ms<=?"+scope+" ORDER BY lease_until_ms,id LIMIT 100 FOR UPDATE SKIP LOCKED", [this.botId, now,...values]);
       for (const row of expired) await c.execute('UPDATE hd2_courier_outbox SET state=?,due_ms=?,last_error_code=? WHERE id=? AND bot_id=?', [row.attempts >= this.maxAttempts ? 'DEAD' : 'QUEUED', now + backoff(row.attempts), 'LEASE_EXPIRED', row.id, this.botId]);
-      const [rows] = await c.execute("SELECT id,payload,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<? ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts, limit]);
+      const [rows] = await c.execute("SELECT id,payload,attempts FROM hd2_courier_outbox WHERE bot_id=? AND state='QUEUED' AND due_ms<=? AND attempts<?"+scope+" ORDER BY due_ms,id LIMIT ? FOR UPDATE SKIP LOCKED", [this.botId, now, this.maxAttempts,...values,limit]);
       const messages = [];
       for (const row of rows) {
         if (options.authorize && !await options.authorize(json(row.payload), c)) {

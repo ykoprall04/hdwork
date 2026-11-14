@@ -25,6 +25,8 @@ def serve(courier, stop, report=lambda code: print(code, file=sys.stderr)):
             courier.run_once()
             failures = 0
         except Exception as error:
+            if isinstance(error, TransportError) and error.status in (401, 403, 409):
+                raise
             failures += 1
             if isinstance(error, TransportError):
                 retry_after = min(300, max(0, error.retry_after))
@@ -62,6 +64,8 @@ def main():
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), lambda *_args: stop.set())
+        lease.ensure()
+        print('READY', flush=True)
         serve(courier, stop)
         return 0
     except KeyboardInterrupt:

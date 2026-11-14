@@ -100,6 +100,9 @@ class DurableCourier:
             try:
                 updates = self.telegram.updates(self.journal.offset)
             except TransportError as error:
+                if error.status in (401, 403, 409):
+                    # Invalid access or another poller needs review, not a retry loop.
+                    raise
                 self.cooldown_until = self.clock() + max(2, error.retry_after if error.status == 429 else 5)
                 updates = None
             if updates is not None:
@@ -119,8 +122,8 @@ class DurableCourier:
             if self.stopped():
                 return
             self.lease.ensure()
-            cached = self.journal.begin_delivery(delivery)
             try:
+                cached = self.journal.begin_delivery(delivery)
                 self.policy.outgoing(delivery['payload'])
                 message_id = cached or str(self.telegram.send(delivery['payload']))
                 result = {'result': 'sent', 'telegram_message_id': message_id}
@@ -128,7 +131,9 @@ class DurableCourier:
                 if error.status == 429:
                     self.cooldown_until = self.clock() + max(1, error.retry_after)
                 code = {400: 'BAD_REQUEST', 403: 'FORBIDDEN', 429: 'RATE_LIMIT'}.get(error.status, 'NETWORK')
-                result = {'result': 'failed' if error.status in (400, 403) else 'retry',
+                # Only an explicit 429 proves Telegram refused the send safely.
+                # Network timeouts/5xx may have delivered: quarantine, no blind retry.
+                result = {'result': 'retry' if error.status == 429 else 'failed',
                           'error_code': code, 'retry_after': min(300, max(0, error.retry_after))}
             self.journal.delivery_result(delivery, result)
             if not self.stopped():

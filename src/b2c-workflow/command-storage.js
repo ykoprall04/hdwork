@@ -25,6 +25,9 @@ async function saveCommand({e,parsed,settings,group,tx,audit}) {
   if(dailyScope&&!duplicate)await c.execute('UPDATE hd2_daily_keys SET order_id=? WHERE bot_id=? AND module=? AND business_day=? AND dedupe_key=?',[id,...dailyScope]);
   else if(key&&!dailyScope)await c.execute('UPDATE hd2_tial_keys SET order_id=? WHERE dedupe_key=?',[duplicate||id,key]);
   await audit(duplicate?'DUPLICATE_ORDER_RECORDED':'ORDER_RECEIVED',{id,status:null},status);
+  if(settings.feedbackNotBefore&&e.timestamp>=settings.feedbackNotBefore&&parsed.command==='order'&&!duplicate){
+    await tx.enqueue('trial-received:'+settings.feedbackNotBefore+':'+id,{method:'sendMessage',chat_id:e.chat_id,telegram_thread_id:e.telegram_thread_id,thread_mode:group.threadMode,reply_to_message_id:e.message_id,text:'Order diterima'});
+  }
   if(settings.webOnly||process.env.HDWORK2_OPERATIONS_ENABLED==='true')await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,'arrival')",[require('../operations/policy').moduleOf({command:parsed.command,module:group.module})]);
   return {disposition:'PROCESSED'};
 }

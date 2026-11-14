@@ -109,6 +109,7 @@ class Journal:
 
     def defer(self, row, terminal=False, retry_after=0):
         attempts = row['attempts'] + 1
+        terminal = terminal or attempts >= 8
         with self.db:
             self.db.execute('UPDATE updates SET state=?,reason=?,attempts=?,due=? WHERE seq=?',
                             ('QUARANTINED' if terminal else 'PENDING', 'backend_rejected' if terminal else 'backend_unavailable',
@@ -122,6 +123,10 @@ class Journal:
                 raise ValueError('outbox_payload_conflict')
             if row and row['success_id']:
                 return row['success_id']
+            if row and row['state'] == 'SENDING':
+                # The previous process may have sent before crashing. Never resend.
+                from .http import TransportError
+                raise TransportError(400)
             self.db.execute("INSERT INTO deliveries(delivery_id,hash,state) VALUES (?,?,'SENDING') ON CONFLICT(delivery_id) DO UPDATE SET state='SENDING'", (delivery['delivery_id'], fingerprint))
         return None
 

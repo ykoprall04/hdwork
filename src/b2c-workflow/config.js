@@ -21,6 +21,8 @@ function validateConfig(input) {
     return { id: id(actor.id), name: actor.name };
   });
   if (new Set(actors.map(a=>a.id)).size !== actors.length) throw fail();
-  return { botId: input.botId, identityKey: input.identityKey, dedupeBy: input.dedupeBy, groups, actors,webOnly:input.webOnly===true,botUsername:input.botUsername };
+  const feedbackNotBefore=input.feedbackNotBefore;
+  if(feedbackNotBefore!==undefined&&(!Number.isSafeInteger(feedbackNotBefore)||feedbackNotBefore<1||input.botId!=='hdworkopsbot-testing'||groups.length!==1||groups[0].chatId!=='-5436357946'||groups[0].threadId!==null))throw fail();
+  return { botId: input.botId, identityKey: input.identityKey, dedupeBy: input.dedupeBy, groups, actors,webOnly:input.webOnly===true,botUsername:input.botUsername,feedbackNotBefore };
 }
 module.exports = { validateConfig };

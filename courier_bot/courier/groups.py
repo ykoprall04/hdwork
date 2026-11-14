@@ -68,6 +68,9 @@ class IngressPolicy:
             return None, 'IGNORED', 'forum_not_allowed'
         if event['kind'] != 'message':
             return None, 'IGNORED', 'edit_requires_review'
+        import os
+        if event['timestamp'] < int(os.environ.get('COURIER_TRIAL_NOT_BEFORE', '0')):
+            return None, 'IGNORED', 'before_trial_cutover'
         parsed = parse_command(event['text'], group['profile'], self.bot_username)
         if not parsed['valid'] or parsed['command'] not in group['commands']:
             return None, 'IGNORED', 'command_not_allowed_or_invalid'
