@@ -1,5 +1,14 @@
 {
-  "order": {"identity":"SC/IN","required":["SC/IN","NO INET","SN ONT","STO","KETERANGAN","NIK"],"optional":["NO VOICE","STB ID","TIPE TRANSAKSI","VALINS ID","TIME","SUMMARY ODP","PANEL","IP OLT","SLOT","PORT"],"codes":["AO","PDA"]},
-  "config_psb": {"identity":"ORDER ID","required":["ORDER ID","STO"],"optional":["SERVICE","SN ONT BARU","SN ONT LAMA","TIPE ONT BARU","NO INTERNET","NO VOICE","NO USEE","DOMAIN","HOSTNAME GPON & IP GPON","RACK/SHELF/SLOT/PORT","NAMA PELAPOR","NIK PELAPOR","KETERANGAN"],"codes":["AO","PDA","MO","DO"]},
-  "mo": {"identity":"SC/IN","required":["SC/IN","STO"],"optional":["NO INET","NO VOICE","SN ONT LAMA","SN ONT BARU","TIPE ONT BARU","TRANSAKSI","KETERANGAN","NIK"],"codes":["AO","PDA","MO","DO"]}
+  "_formats": {
+    "phone":"^\\+?[0-9][0-9 -]{2,32}$",
+    "sto":"^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$",
+    "serial":"^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$",
+    "person":"^[A-Za-z0-9][A-Za-z0-9._/-]{0,31}$",
+    "transaction":"^[A-Za-z0-9][A-Za-z0-9 ._/-]{0,99}$",
+    "text":"^[^\\u0000-\\u001F\\u007F]{1,2000}$",
+    "service":["1P","2P","3P","1P-VOICE"]
+  },
+  "order": {"identity":"SC/IN","required":["SC/IN","NO INET","SN ONT","STO","KETERANGAN","NIK"],"optional":["NO VOICE","STB ID","TIPE TRANSAKSI","VALINS ID","TIME","SUMMARY ODP","PANEL","IP OLT","SLOT","PORT"],"codes":["AO","PDA"],"formats":{"NO INET":"phone","NO VOICE":"phone","SN ONT":"serial","STO":"sto","KETERANGAN":"text","NIK":"person","STB ID":"serial","TIPE TRANSAKSI":"transaction","VALINS ID":"serial","TIME":"text","SUMMARY ODP":"text","PANEL":"text","IP OLT":"text","SLOT":"text","PORT":"text"}},
+  "config_psb": {"identity":"ORDER ID","required":["ORDER ID","STO"],"optional":["SERVICE","SN ONT BARU","SN ONT LAMA","TIPE ONT BARU","NO INTERNET","NO VOICE","NO USEE","DOMAIN","HOSTNAME GPON & IP GPON","RACK/SHELF/SLOT/PORT","NAMA PELAPOR","NIK PELAPOR","KETERANGAN"],"codes":["AO","PDA","MO","DO"],"formats":{"STO":"sto","SERVICE":"service","SN ONT BARU":"serial","SN ONT LAMA":"serial","TIPE ONT BARU":"text","NO INTERNET":"phone","NO VOICE":"phone","NO USEE":"phone","DOMAIN":"text","HOSTNAME GPON & IP GPON":"text","RACK/SHELF/SLOT/PORT":"text","NAMA PELAPOR":"text","NIK PELAPOR":"person","KETERANGAN":"text"}},
+  "mo": {"identity":"SC/IN","required":["SC/IN","STO"],"optional":["NO INET","NO VOICE","SN ONT LAMA","SN ONT BARU","TIPE ONT BARU","TRANSAKSI","KETERANGAN","NIK"],"codes":["AO","PDA","MO","DO"],"formats":{"STO":"sto","NO INET":"phone","NO VOICE":"phone","SN ONT LAMA":"serial","SN ONT BARU":"serial","TIPE ONT BARU":"text","TRANSAKSI":"transaction","KETERANGAN":"text","NIK":"person"}}
 }

@@ -106,8 +106,12 @@ class IngressPolicy:
         if self.chat_enabled and event['reply_to_message_id'] is not None:
             return envelope, 'PENDING', None
         parsed = parse_command(event['text'], group['profile'], self.bot_username)
-        if not parsed['valid'] or parsed['command'] not in group['commands']:
+        if parsed.get('command') not in group['commands']:
             return None, 'IGNORED', 'command_not_allowed_or_invalid'
+        if not parsed['valid']:
+            if self.test_window:
+                return None, 'IGNORED', 'outside_single_order_window'
+            return envelope, 'PENDING', None
         if self.test_window:
             if event['timestamp'] < self.test_window['not_before'] or parsed.get('sc_in') != self.test_window['reference']:
                 return None, 'IGNORED', 'outside_single_order_window'

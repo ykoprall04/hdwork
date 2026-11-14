@@ -3,14 +3,14 @@ function parseCommand(text,profile,botUsername) {
   if(profile==='ALL'&&typeof text!=='string')return {valid:false,errors:['format']};
   if(profile==='ALL'){const head=/^\s*\/(assuren|b2b|replacement)(?:@|\s|$)/i.exec(text||'');if(head)return parseCommand(text,head[1].toUpperCase(),botUsername);profile='TIAL1';}
   if(['ASSUREN','B2B','REPLACEMENT'].includes(profile))return require('../courier/workspace-command').parseWorkspaceCommand(text,profile,botUsername);
-  const reject=fields=>({valid:false,errors:fields});
+  const reject=(fields,command=null)=>({valid:false,errors:fields,...(command?{command}:{})});
   if(typeof text!=='string'||text.length>16384)return reject(['format']);
   const head=/^\s*\/(order|config_psb|mo|req)(?:@([A-Za-z0-9_]{5,32}))?(?=\s|$)/i.exec(text);
   if(!head)return reject(['perintah']);
   if(head[2]&&(!botUsername||head[2].toLowerCase()!==botUsername.toLowerCase()))return reject(['perintah']);
   const command=head[1].toLowerCase(),body=text.slice(head[0].length);
   if(!['TIAL1','TIAL2','SOLVER1'].includes(profile)||(profile==='SOLVER1'&&command==='order'))return reject(['perintah tidak diizinkan di grup ini']);
-  if(command==='req')return body.trim()?{valid:true,command,sc_in:null,fields:{},request:body,original:text}:reject(['teks permintaan']);
+  if(command==='req')return body.trim()?{valid:true,command,sc_in:null,fields:{},request:body,original:text}:reject(['teks permintaan'],command);
   const rule=spec[command],fields={},errors=[];
   for(const line of body.split(/\r?\n/)){
     const colon=line.indexOf(':');if(colon<0)continue;
@@ -22,7 +22,10 @@ function parseCommand(text,profile,botUsername) {
     const value=line.slice(colon+1).trim();fields[label]=value&&value!=='-'?value:null;
   }
   for(const name of rule.required)if(!fields[name])errors.push(name);
-  if(fields.SERVICE && !['1P','2P','3P','1P-VOICE'].includes(fields.SERVICE.toUpperCase()))errors.push('SERVICE');
+  for(const [name,kind] of Object.entries(rule.formats||{})){
+    const value=fields[name];if(value===undefined||value===null)continue;
+    if(kind==='service'? !spec._formats.service.includes(value.toUpperCase()) : !new RegExp(spec._formats[kind]).test(value))errors.push(name+' (format)');
+  }
   let code=null;
   if(fields[rule.identity]){
     const matches=[...fields[rule.identity].split('_')[0].matchAll(/\b([A-Za-z0-9]+)-((?:PDA|AO|MO|DO)[A-Za-z0-9]*)(?=_|\s|$)/gi)];
@@ -30,6 +33,6 @@ function parseCommand(text,profile,botUsername) {
     if(!code||code.length>100)errors.push(rule.identity+' (kode transaksi)');
   }
   for(const name of rule.optional)if(!Object.hasOwn(fields,name))fields[name]=null;
-  return errors.length?reject(errors):{valid:true,command,sc_in:code,fields,original:text};
+  return errors.length?reject(errors,command):{valid:true,command,sc_in:code,fields,original:text};
 }
 module.exports={parseCommand};

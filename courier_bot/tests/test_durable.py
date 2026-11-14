@@ -64,6 +64,9 @@ class DurableTests(unittest.TestCase):
             self.assertIsNone(envelope['event']['telegram_thread_id'])
         for raw in [update(chat=-1003), update(text='/req@AnotherBot hello'), update(text='/config_psb\nOrder ID:X-AOi1\nSTO:ABC'), update(text='DONE')]:
             self.assertEqual(self.policy.prepare(raw)[1], 'IGNORED')
+        invalid_order=update(text='/order\nSC/IN:bad')
+        envelope,state,reason=self.policy.prepare(invalid_order)
+        self.assertEqual((state,reason),('PENDING',None));self.assertEqual(envelope['event']['message_id'],'11')
         forum=update();forum['message']['chat']['is_forum']=True
         self.assertEqual(self.policy.prepare(forum)[1], 'IGNORED')
         self.assertFalse(parse_command('/req@HDWorkOpsBot hello', 'TIAL1')['valid'])

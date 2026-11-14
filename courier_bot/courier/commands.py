@@ -15,7 +15,7 @@ def parse_command(text, profile, bot_username=None):
     if profile in ('ASSUREN', 'B2B', 'REPLACEMENT'):
         from .workspace_command import parse_workspace_command
         return parse_workspace_command(text, profile, bot_username)
-    def reject(fields): return {'valid': False, 'errors': fields}
+    def reject(fields, command=None): return {'valid': False, 'errors': fields, **({'command': command} if command else {})}
     if not isinstance(text, str) or len(text) > 16384: return reject(['format'])
     head = re.match(r'^\s*/(order|config_psb|mo|req)(?:@([A-Za-z0-9_]{5,32}))?(?=\s|$)', text, re.I)
     if not head: return reject(['perintah'])
@@ -24,7 +24,7 @@ def parse_command(text, profile, bot_username=None):
     if profile not in ('TIAL1', 'TIAL2', 'SOLVER1') or (profile == 'SOLVER1' and command == 'order'):
         return reject(['perintah tidak diizinkan di grup ini'])
     if command == 'req':
-        return {'valid': True, 'command': command, 'sc_in': None, 'fields': {}, 'request': body, 'original': text} if body.strip() else reject(['teks permintaan'])
+        return {'valid': True, 'command': command, 'sc_in': None, 'fields': {}, 'request': body, 'original': text} if body.strip() else reject(['teks permintaan'], command)
     rule, fields, errors = SPEC[command], {}, []
     for line in body.splitlines():
         if ':' not in line: continue
@@ -38,7 +38,14 @@ def parse_command(text, profile, bot_username=None):
         fields[label] = value if value and value != '-' else None
     for name in rule['required']:
         if not fields.get(name): errors.append(name)
-    if fields.get('SERVICE') and fields['SERVICE'].upper() not in ('1P','2P','3P','1P-VOICE'): errors.append('SERVICE')
+    for name, kind in rule.get('formats', {}).items():
+        value = fields.get(name)
+        if value is None:
+            continue
+        allowed = SPEC['_formats'][kind]
+        valid = value.upper() in allowed if kind == 'service' else bool(re.fullmatch(allowed, value))
+        if not valid:
+            errors.append(name + ' (format)')
     code = None
     if fields.get(rule['identity']):
         matches = re.findall(r'\b([A-Za-z0-9]+)-((?:PDA|AO|MO|DO)[A-Za-z0-9]*)(?=_|\s|$)', fields[rule['identity']].split('_')[0], re.I)
@@ -46,4 +53,4 @@ def parse_command(text, profile, bot_username=None):
             code = (matches[0][1] if command == 'mo' else matches[0][0] + '-' + matches[0][1])
         if not code or len(code) > 100: errors.append(rule['identity'] + ' (kode transaksi)')
     for name in rule['optional']: fields.setdefault(name, None)
-    return reject(errors) if errors else {'valid': True, 'command': command, 'sc_in': code, 'fields': fields, 'original': text}
+    return reject(errors, command) if errors else {'valid': True, 'command': command, 'sc_in': code, 'fields': fields, 'original': text}

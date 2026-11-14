@@ -12,7 +12,8 @@ test('one shared group processes all seven existing commands into their real mod
  const processor=require('../src/b2c-workflow/workflow').createB2CProcessor({store,config});
  for(const [i,text]of bodies.entries()){await store.accept(policy.ingress(envelope(text,i)));assert.equal(await processor.processNext(),true);}
  const rows=[...pool.state.orders.values()];assert.equal(rows.length,7);for(const row of rows)assert.equal(row.module,moduleFor(row.command));
- for(const text of ['/login anything','/req@AnotherTestBot other','/b2b invalid'])assert.throws(()=>policy.ingress(envelope(text,99)));
+ for(const text of ['/login anything','/req@AnotherTestBot other'])assert.throws(()=>policy.ingress(envelope(text,99)));
+ assert.doesNotThrow(()=>policy.ingress(envelope('/b2b invalid',99)));
 });
 test('shared group keeps exact chat/topic isolation and B2C readiness coverage',()=>{
  const policy=createGroupPolicy({botId:'synthetic-all',botUsername:'SyntheticAllBot',groups:[group]});

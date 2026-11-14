@@ -1,9 +1,12 @@
 import unittest
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 from courier.groups import IngressPolicy
 from courier.commands import parse_command
 from courier.durable_runner import DurableCourier
+from courier.journal import Journal
 from courier.http import TransportError
 
 COMMANDS = ['order', 'req', 'config_psb', 'mo', 'assuren', 'b2b', 'replacement']
@@ -20,6 +23,18 @@ class SharedGroupsTests(unittest.TestCase):
             self.assertEqual(policy.prepare(update)[1], 'PENDING')
         self.assertFalse(parse_command('/login anything', 'ALL')['valid'])
         self.assertFalse(parse_command('/req@AnotherTestBot hello', 'ALL', 'SyntheticAllBot')['valid'])
+
+    def test_invalid_known_order_is_durably_forwarded_for_a_reasoned_reply(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal=Journal(str(Path(folder)/'invalid-order.sqlite'),'synthetic-all','synthetic-fingerprint')
+            policy=IngressPolicy('synthetic-all','SyntheticAllBot',[GROUP])
+            tg,internal=Mock(),Mock();tg.updates.return_value=[{'update_id':77,'message':{'message_id':88,'chat':{'id':-1001},'from':{'id':9},'date':1700000000,'text':'/order\nSC/IN:bad'}}];internal.event.return_value={'ok':True,'receipt_id':'synthetic-invalid-receipt'}
+            try:
+                DurableCourier(tg,internal,journal,policy,Mock(),poll=True,send=False).run_once()
+                internal.event.assert_called_once();self.assertEqual(journal.offset,78)
+                self.assertEqual(journal.db.execute("SELECT state FROM updates WHERE update_id='77'").fetchone()['state'],'ACKED')
+                tg.send.assert_not_called()
+            finally:journal.close()
 
     def test_disabling_last_group_produces_empty_snapshot_without_crashing(self):
         policy = IngressPolicy('synthetic-all', 'SyntheticAllBot', [GROUP])

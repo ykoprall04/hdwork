@@ -6,17 +6,24 @@ SPECS = json.loads((Path(__file__).resolve().parents[2] / 'contracts/workspace-c
 
 
 def parse_workspace_command(text, profile, bot_username=None):
-    bad = {'valid': False, 'errors': ['format atau profil workspace']}
-    if not isinstance(text, str) or len(text) > 16384 or re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', text):
-        return bad
+    def bad(errors=None, command=None):
+        result = {'valid': False, 'errors': errors or ['format atau profil workspace']}
+        if command:
+            result['command'] = command
+        return result
+
+    if not isinstance(text, str):
+        return bad()
     head = re.match(r'^\s*/(assuren|b2b|replacement)(?:@([A-Za-z0-9_]{5,32}))?(?=\s|$)', text, re.I)
     if not head or (head[2] and head[2].lower() != (bot_username or '').lower()):
-        return bad
+        return bad()
     command = head[1].lower()
     spec = SPECS[command]
     if spec['module'] != profile:
-        return bad
-    fields = {}
+        return bad()
+    if len(text) > 16384 or re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', text):
+        return bad(['format pesan'], command)
+    fields, errors = {}, []
     for line in text[head.end():].splitlines():
         if ':' not in line:
             continue
@@ -29,15 +36,18 @@ def parse_workspace_command(text, profile, bot_username=None):
         if label not in spec['required'] + spec['optional']:
             continue
         if label in fields:
-            return bad
+            errors.append(label + ' berulang')
+            continue
         fields[label] = value.strip()
-    if any(not fields.get(k) or fields[k] == '-' for k in spec['required']):
-        return bad
-    if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9/_-]{0,99}', fields['SC/IN']) or
-            not re.fullmatch(r'\+?[0-9][0-9 -]{2,98}', fields['NO INET/TELP']) or
-            not re.fullmatch(r'[A-Za-z0-9_-]{2,20}', fields['STO']) or
-            len(fields['TRANSAKSI']) > 100 or len(fields.get('KETERANGAN', '')) > 2000):
-        return bad
+    for name in spec['required']:
+        if not fields.get(name) or fields[name] == '-':
+            errors.append(name)
+    for name, kind in spec.get('formats', {}).items():
+        value = fields.get(name)
+        if value is not None and value != '-' and not re.fullmatch(SPECS['_formats'][kind], value):
+            errors.append(name + ' (format)')
+    if errors:
+        return bad(errors, command)
     for k in spec['optional']:
         fields[k] = fields.get(k) or None
     return {'valid': True, 'command': command, 'sc_in': fields['SC/IN'].upper(), 'fields': fields, 'original': text}

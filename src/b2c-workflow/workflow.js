@@ -5,6 +5,7 @@ const { parseOrder, parseStatus, jakartaDay } = require('./parser');
 function createB2CProcessor({ store, config }) {
   const settings = validateConfig(config);
   if (!store || store.botId !== settings.botId || typeof store.processNext !== 'function') throw fail();
+  const reply = (e, group, text) => ({method:'sendMessage',chat_id:e.chat_id,telegram_thread_id:group.threadId,thread_mode:group.threadMode,reply_to_message_id:e.message_id,text});
   async function handle(body, tx) {
     const { event: e } = eventEnvelope(body, settings.botId);
     const c = tx.connection;
@@ -20,9 +21,18 @@ function createB2CProcessor({ store, config }) {
     if (!group.commandProfile && e.text.trimStart().startsWith('/')) return ignore('COMMAND_CONFIG_REQUIRED');
     if (group.commandProfile && (e.reply_to_message_id === null || e.text.trimStart().startsWith('/'))) {
       const parsed=require('./commands').parseCommand(e.text,group.commandProfile,settings.botUsername);
-      if (!parsed.valid) return ignore('COMMAND_VALIDATION_REJECTED');
       if(group.allowedCommands&&!group.allowedCommands.includes(parsed.command))return ignore('COMMAND_NOT_ALLOWED_IN_GROUP');
-      return require('./command-storage').saveCommand({e,parsed,settings,group:group.commandProfile==='ALL'?{...group,module:require('../courier/shared-group').moduleFor(parsed.command)}:group,tx,audit});
+      if (!parsed.valid) {
+        if (!parsed.command) return ignore('COMMAND_VALIDATION_REJECTED');
+        const errors=Array.isArray(parsed.errors)&&parsed.errors.length?parsed.errors:['format pesan'];
+        await audit('ORDER_FORMAT_REJECTED',null,null,{command:parsed.command,errors});
+        await tx.enqueue(`b2c:${tx.inboxId}:format-rejected`,reply(e,group,'❌ Gagal! Format order salah. Alasan: '+errors.join(', ')));
+        return {disposition:'PROCESSED'};
+      }
+      const targetGroup=group.commandProfile==='ALL'?{...group,module:require('../courier/shared-group').moduleFor(parsed.command)}:group;
+      const saved=await require('./command-storage').saveCommand({e,parsed,settings,group:targetGroup,tx,audit});
+      if(saved?.disposition!=='IGNORED')await tx.enqueue(`b2c:${tx.inboxId}:order-accepted`,reply(e,group,'✅ Berhasil! Order diterima.'));
+      return saved;
     }
     if(settings.webOnly)return ignore('TELEGRAM_STATUS_NOT_AUTHORIZED');
     if (e.reply_to_message_id !== null && process.env.HDWORK2_OPERATIONS_ENABLED==='true') return ignore('TELEGRAM_STATUS_DEFERRED_BATCH12');
