@@ -1,7 +1,7 @@
 const {createHash}=require('node:crypto');
 const {modules,areas}=require('./modules');
 const fail=(statusCode=400,message='Permintaan pekerjaan tidak valid')=>Object.assign(Error(message),{statusCode});
-const uuid=value=>{if(typeof value!=='string'||! /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value))throw fail();return value;};
+const uuid=value=>{if(typeof value!=='string'||! /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value))throw fail();return value;};
 const moduleOf=o=>({order:'TIAL',req:'REQ',config_psb:'LOGIC_PSB',mo:'LOGIC_MO'})[o.command]||o.module;
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function transition(order,user,input){

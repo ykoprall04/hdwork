@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),http=requir
 const {checkDatabase}=require('../src/config/local-database-check');
 const {validateAuthWriteScope}=require('../src/config/auth-write-policy');
 test('auth-only readiness accepts only four visible auth tables while full operational readiness stays closed',async()=>{
- const names={users:['id','password_hash','role','is_active'],hd2_sessions:['token_hash','expires_at','revoked'],hd2_user_modules:['module'],hd2_security_audit:['action']};
+ const names={users:['id','password_hash','role','is_active','approval_status'],hd2_sessions:['token_hash','expires_at','revoked'],hd2_user_modules:['module'],hd2_security_audit:['action']};
  const queries=[];const pool={async query(sql){queries.push(sql);return sql.includes('DATABASE() AS')?[[{name:'hdwork2'}]]:[Object.entries(names).flatMap(([table,columns])=>columns.map(column=>({TABLE_NAME:table,COLUMN_NAME:column})))];}};
  const result=await checkDatabase(pool,{authOnly:true});assert.equal(result.ok,true);assert.equal(result.scope,'auth');await assert.rejects(checkDatabase(pool,{authOnly:false}));assert.ok(queries.every(sql=>sql.startsWith('SELECT')));
 });

@@ -15,5 +15,5 @@ test('review SQL exactly covers the three pool policies and grants no password-h
   const grants=sql.split(';').map(s=>s.trim()).filter(s=>s.includes("TO '"+user+"'" )).map(grant=>({grant}));assert.equal(reviewOperationalGrants(grants,role).ok,true,role);
  }
  assert.doesNotMatch(sql,/password_hash|CREATE USER|DROP |ALTER |FLUSH PRIVILEGES|WITH GRANT OPTION|hd_b2c/i);
- const create=fs.readFileSync('src/operations/create.js','utf8');assert.match(create,/FROM users WHERE id=\? FOR SHARE/);assert.doesNotMatch(create,/UPDATE users/);
+ const create=fs.readFileSync('src/operations/create.js','utf8');assert.match(create,/statusCode:403/);assert.doesNotMatch(create,/UPDATE users/);
 });
