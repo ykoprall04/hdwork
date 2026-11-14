@@ -2,13 +2,14 @@ import { useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu } from '@base-ui/react/menu';
-import { ChevronDown, ChevronRight, LogOut, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Settings2, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, LogOut, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Settings2, X } from 'lucide-react';
 import type { User } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import ThemeToggle from '@/components/ThemeToggle';
 import { cookieMode } from './cookie-http';
 import { operationsEnabled } from '../workflow/api';
 import { operationalNavigation, pageContext } from './navigation';
+import { workspaceBackFallback } from './back-navigation';
 import { confirmChatNavigation } from '../workflow/unsent-chat';
 
 type Props = { user: User; local: { status: string; select: (value: 'ONLINE' | 'SIBUK' | 'OFFLINE') => void }; onLogout: () => Promise<void>; children: ReactNode };
@@ -23,6 +24,12 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('hdwork2:sidebar-collapsed') === 'true'; } catch { return false; } });
   const groups = operationalNavigation(user, cookieMode, operationsEnabled, import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true');
   const page = pageContext(pathname);
+  const showWorkspaceBack = /^\/work\/B2C\/(TIAL|REQ)$/.test(pathname);
+  function goBackToWorkspace() {
+    if (!confirmChatNavigation()) return;
+    if (workspaceBackFallback(window.history.state)) navigate('/jobs');
+    else navigate(-1);
+  }
   const checkIn = pathname === '/check-in';
   function toggle() { setCollapsed(value => { try { localStorage.setItem('hdwork2:sidebar-collapsed', String(!value)); } catch { /* optional preference */ } return !value; }); }
   function navigation(compact = false) {
@@ -51,6 +58,7 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
               {navigation()}<p className="op-sidebar-bottom text-xs text-muted-foreground">Ruang kerja sesuai akses modul akun.</p>
             </Dialog.Popup></Dialog.Portal>
           </Dialog.Root>}
+          {showWorkspaceBack && <Button variant="outline" className="min-h-10 shrink-0 gap-1.5 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm" onClick={goBackToWorkspace}><ArrowLeft aria-hidden="true" className="size-4" /><span>Kembali</span></Button>}
           <nav aria-label="Breadcrumb" className="op-breadcrumb"><Link to="/jobs">Workspace</Link><ChevronRight aria-hidden="true" />{page.parent && <><Link to={page.parent.to}>{page.parent.label}</Link><ChevronRight aria-hidden="true" /></>}<span aria-current="page">{page.label}</span></nav>
         </div>
         <div className="flex shrink-0 items-center gap-1 sm:gap-3"><ThemeToggle compact />
