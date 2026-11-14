@@ -36,6 +36,8 @@ Pertahankan aplikasi dan fitur yang sudah berfungsi. Jangan melakukan rewrite be
 
 ## 4. GitHub dan deployment
 
+Sebelum mengubah mekanisme update atau deployment, baca status terkini di [`docs/DEPLOYMENT-STATUS.md`](docs/DEPLOYMENT-STATUS.md). Perbarui dokumen itu saat status atau kemampuan updater berubah.
+
 GitHub `main` adalah sumber kode resmi.
 
 Target alur permanen:
