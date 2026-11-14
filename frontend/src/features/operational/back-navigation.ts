@@ -3,3 +3,7 @@ export function workspaceBackFallback(historyState: unknown): boolean {
   const index = (historyState as { idx?: unknown }).idx;
   return typeof index !== 'number' || !Number.isInteger(index) || index <= 0;
 }
+
+export function showOperationalBackButton(pathname: string): boolean {
+  return pathname !== '/login' && !pathname.startsWith('/login/');
+}
