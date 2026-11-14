@@ -35,6 +35,8 @@ function RetryTransientHealth([scriptblock]$probe,[int]$attempts=5,[int]$delayMs
  Fail 'WEB_HEALTH_RETRIES_EXHAUSTED'
 }
 function RollbackHealthFailureState([string]$taskState,[bool]$enabled){if($taskState -eq 'Running' -and $enabled){return 'ROLLED_BACK_WEB_READY_HEALTH_FAILED_TASK_PRESERVED'};return $null}
+function TaskHandoffIdle([string]$state,[bool]$enabled){return ($state -ne 'Running' -and -not $enabled)}
+function HealthFailureCode([string]$text){if($text -match '\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|HEALTH_DEADLINE)\b'){return 'WEB_HEALTH_FAILED_'+$Matches[1]};return 'WEB_HEALTH_FAILED_HEALTH_PROBE_FAILED'}
 function WebPath([string]$path){
  $p=$path.Replace('\','/')
  if($p -match '^(src/courier/|src/b2c-workflow/|src/config/production-courier\.js$|courier[-_]|courier_bot/|contracts/|docs/|tests/|scripts/hdwork-web-update\.ps1$|hdwork-update\.cmd$)'){return $false}
@@ -60,6 +62,7 @@ function MockTests{
   $script:mockHealthProbes=0;RetryTransientHealth { $script:mockHealthProbes++;if($script:mockHealthProbes -lt 3){throw 'WEB_HEALTH_FAILED_ECONNREFUSED'} } 4 0;Need ($script:mockHealthProbes -eq 3) 'MOCK_TRANSIENT_HEALTH_RETRY_FAILED';$n++;
   $script:mockHealthProbes=0;try{RetryTransientHealth { $script:mockHealthProbes++;throw 'WEB_HEALTH_FAILED_CERTIFICATE_REJECTED' } 4 0;Fail 'MOCK_PERMANENT_HEALTH_FAILURE_RETRIED'}catch{Need ($_.Exception.Message -eq 'WEB_HEALTH_FAILED_CERTIFICATE_REJECTED' -and $script:mockHealthProbes -eq 1) 'MOCK_PERMANENT_HEALTH_RETRY_GUARD_FAILED';$n++}
   Need ((RollbackHealthFailureState 'Running' $true) -eq 'ROLLED_BACK_WEB_READY_HEALTH_FAILED_TASK_PRESERVED') 'MOCK_READY_OLD_TASK_NOT_PRESERVED';$n++;Need ($null -eq (RollbackHealthFailureState 'Disabled' $false)) 'MOCK_FAILED_ROLLBACK_MISLABELED_PRESERVED';$n++
+  Need (TaskHandoffIdle 'Ready' $false) 'MOCK_IDLE_WEB_TASK_NOT_ACCEPTED';$n++;Need (-not(TaskHandoffIdle 'Running' $false)) 'MOCK_RUNNING_WEB_TASK_ACCEPTED_AS_IDLE';$n++;Need ((HealthFailureCode 'ECONNREFUSED') -eq 'WEB_HEALTH_FAILED_ECONNREFUSED') 'MOCK_REFUSED_HEALTH_CODE_LOST';$n++;Need ((HealthFailureCode 'certificate validation failed') -eq 'WEB_HEALTH_FAILED_HEALTH_PROBE_FAILED') 'MOCK_PERMANENT_HEALTH_CODE_MISCLASSIFIED';$n++
  }finally{Remove-Item -LiteralPath $tmp -Recurse -Force}
  Write-Output ('MOCK_PASS checks='+$n+' webRuntimeChanged=false courierTouched=false')
 }
@@ -87,13 +90,20 @@ function GetWebOwnerIdentity($web){
 function WaitWebOwnerExit($identity){
  WaitUntilExit { $process=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$identity.pid);SameProcess $process $identity } 30000 'WEB_OLD_OWNER_EXIT_TIMEOUT' 100
 }
+function WaitWebTaskIdle($web){
+ WaitUntilExit {
+  $task=Get-ScheduledTask -TaskPath '\' -TaskName $web.Task.TaskName
+  Need (@($task.Actions).Count -eq 1 -and ([string]$task.Actions[0].Arguments).Contains($web.ConfigPath) -and ([string]$task.Actions[0].Arguments).Contains($web.ConfigSha)) 'WEB_TASK_CHANGED_DURING_HANDOFF'
+  -not (TaskHandoffIdle ([string]$task.State) ([bool]$task.Settings.Enabled))
+ } 30000 'WEB_OLD_TASK_NOT_IDLE' 100
+}
 function Health($web,[string]$receipt){
  $envPath=Join-Path $web.Runtime 'service/environment.json';$e=Get-Content -LiteralPath $envPath -Raw|ConvertFrom-Json
  $api=[int]$e.PORT;$tls=[int]$e.LOCAL_HTTPS_PORT;$ca=if($e.LOCAL_TLS_CA){[string]$e.LOCAL_TLS_CA}else{'.local/tls/ca.crt'}
  if(-not [IO.Path]::IsPathRooted($ca)){$ca=Join-Path $web.Runtime $ca}
  Need (Test-Path -LiteralPath $ca) 'WEB_HEALTH_CA_MISSING'
- $output=@(& node (Join-Path $root 'scripts/check-web-health.cjs') $api $tls $ca $receipt 2>&1);$exitCode=$LASTEXITCODE
- if($exitCode -ne 0){$text=($output|ForEach-Object{[string]$_}) -join ' ';$reason='HEALTH_PROBE_FAILED';if($text -match '\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|HEALTH_DEADLINE)\b'){$reason=$Matches[1]};Fail ('WEB_HEALTH_FAILED_'+$reason)}
+ $previousPreference=$ErrorActionPreference;try{$ErrorActionPreference='Continue';$output=@(& node (Join-Path $root 'scripts/check-web-health.cjs') $api $tls $ca $receipt 2>&1);$exitCode=$LASTEXITCODE}finally{$ErrorActionPreference=$previousPreference}
+ if($exitCode -ne 0){$text=($output|ForEach-Object{[string]$_}) -join ' ';Fail (HealthFailureCode $text)}
  $output|ForEach-Object{Write-Output $_}
 }
 function Control([string]$script,[string]$mode,[string]$config,[string]$sha,[string]$approval,[string]$plan,[string]$barrier){
@@ -105,7 +115,7 @@ function Control([string]$script,[string]$mode,[string]$config,[string]$sha,[str
 function WaitReady([string]$configPath,[string]$sha,[int]$seconds=60){
  $until=[DateTimeOffset]::UtcNow.AddSeconds($seconds)
  do{try{$cfg=Get-Content -LiteralPath $configPath -Raw|ConvertFrom-Json;$s=Get-Content -LiteralPath $cfg.stateFile -Raw|ConvertFrom-Json;if($s.status -eq 'READY' -and $s.configSha256 -eq $sha -and $s.ownerSid -eq $cfg.ownerSid){$p=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$s.childPid);if($p -and $p.Name -eq 'node.exe' -and (Invoke-CimMethod -InputObject $p -MethodName GetOwnerSid).Sid -eq 'S-1-5-19'){return $s}}}catch{};Start-Sleep -Milliseconds 500}while([DateTimeOffset]::UtcNow -lt $until)
- Fail 'WEB_READY_TIMEOUT'
+ $hint='WEB_READY_TIMEOUT';try{$cfg=Get-Content -LiteralPath $configPath -Raw|ConvertFrom-Json;$s=Get-Content -LiteralPath $cfg.stateFile -Raw|ConvertFrom-Json;if($s.status -match '^[A-Z0-9_]+$'){$hint+='_STATE_'+$s.status};$task=Get-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;if([string]$task.State -match '^[A-Za-z]+$'){$hint+='_TASK_'+([string]$task.State).ToUpperInvariant()};$info=Get-ScheduledTaskInfo -TaskPath '\' -TaskName $cfg.taskName;$hint+='_RESULT_'+[int]$info.LastTaskResult}catch{};Fail $hint
 }
 function IsAdmin{$id=[Security.Principal.WindowsIdentity]::GetCurrent();return (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}
 function PrunePrevious([string]$releaseRoot,[string]$currentRelease){
@@ -163,7 +173,7 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
  $control=Join-Path $runtime 'ops/windows/web-native-control.ps1';$fenceAttempted=$false;$fenced=$false;$quiescent=$false;$mutated=$false
  try{
   $script:WebUpdatePhase='WEB_STOP_FENCE'
-  $fenceAttempted=$true;$null=Control $control 'StopFence' $cfgPath $web.ConfigSha $approvalPath $planHash $barrier;$fenced=$true;$null=Control $control 'AssertFence' $cfgPath $web.ConfigSha '' $planHash $barrier;$script:WebUpdatePhase='WEB_OLD_OWNER_EXIT';WaitWebOwnerExit $ownerIdentity;$quiescent=$true
+  $fenceAttempted=$true;$null=Control $control 'StopFence' $cfgPath $web.ConfigSha $approvalPath $planHash $barrier;$fenced=$true;$null=Control $control 'AssertFence' $cfgPath $web.ConfigSha '' $planHash $barrier;$script:WebUpdatePhase='WEB_OLD_OWNER_EXIT';WaitWebOwnerExit $ownerIdentity;WaitWebTaskIdle $web;$quiescent=$true
   $script:WebUpdatePhase='WEB_FILE_ACTIVATION'
   foreach($entry in $entries){$dest=Join-Path $runtime $entry.path;$src=Join-Path $payload $entry.path;$mutated=$true;if($entry.after){Atomic $dest ([IO.File]::ReadAllBytes($src))}elseif(Test-Path -LiteralPath $dest){Remove-Item -LiteralPath $dest -Force}}
   Atomic $cfgPath $newConfigBytes
