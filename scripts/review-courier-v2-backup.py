@@ -1,5 +1,6 @@
 """Read only the verified offline backup and optional metadata JSONL; no credentials."""
 import argparse
+from contextlib import closing
 import hashlib
 import json
 import re
@@ -26,7 +27,7 @@ def review(directory, dead_file=None):
         raise ValueError('BACKUP_HASH_MISMATCH')
     rows = []
     # immutable=1 is appropriate ONLY for this finalized standalone offline backup.
-    with sqlite3.connect(backup.as_uri() + '?mode=ro&immutable=1', uri=True) as c:
+    with closing(sqlite3.connect(backup.as_uri() + '?mode=ro&immutable=1', uri=True)) as c:
         if c.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
             raise ValueError('BACKUP_INTEGRITY_FAILED')
         if dead_file:

@@ -36,7 +36,10 @@ async function pairedBackup({directory,mysqlBin,python,source,auth,sourceOwnedDa
  };
  await verifyScope();const before=await scopedDigest(source,scope.botId),startedAtUtc=new Date().toISOString();
  fs.mkdirSync(directory,{mode:0o700});const dump=path.join(directory,'mysql.sql'),sqlite=path.join(directory,'journal.sqlite3');
- const env=Object.fromEntries(['SystemRoot','WINDIR','PATH','PATHEXT','TEMP','TMP'].filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
+ // Keep the current user's MySQL login-path discoverable in child CLI tools.
+ // The credential stays in the encrypted login-path file; only its standard
+ // Windows lookup environment is inherited by mysqldump/mysql.
+ const env=Object.fromEntries(['SystemRoot','WINDIR','PATH','PATHEXT','TEMP','TMP','APPDATA','USERPROFILE'].filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
  function run(file,args,extra={}){try{return cp.execFileSync(file,args,{env,windowsHide:true,stdio:['ignore','pipe','pipe'],timeout:60000,...extra});}catch{throw fail('BACKUP_OR_RESTORE_COMMAND_FAILED');}}
  const journalScript=path.resolve(__dirname,'../backup-courier-sqlite.py');
  const journalBefore=JSON.parse(run(python,['-B',journalScript,'--inspect-readonly',sqliteSource]).toString());

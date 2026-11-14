@@ -1,5 +1,6 @@
 """Online SQLite backup + upgrade rehearsal on copies only. Never imports Courier main."""
 import argparse
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -16,7 +17,7 @@ def digest(file):
     return h.hexdigest()
 
 def inspect_copy(file,bot_id):
-    with sqlite3.connect(file.as_uri()+'?mode=ro',uri=True) as c:
+    with closing(sqlite3.connect(file.as_uri()+'?mode=ro',uri=True)) as c:
         c.row_factory=sqlite3.Row
         if [row[0] for row in c.execute('PRAGMA integrity_check')]!=['ok']:raise ValueError('BACKUP_INTEGRITY_FAILED')
         meta=dict((r['key'],r['value']) for r in c.execute("SELECT key,value FROM metadata WHERE key IN ('bot_id','token_fingerprint','offset')"))
@@ -52,7 +53,7 @@ def prepare(source,destination,bot_id,timeout=120):
     if shutil.disk_usage(destination.parent).free<2*(source.stat().st_size+sidecars['-wal']['bytes'])+16777216:raise ValueError('BACKUP_DISK_SPACE_INSUFFICIENT')
     fd=os.open(str(destination),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(fd)
     start=time.monotonic()
-    with sqlite3.connect(source.as_uri()+'?mode=ro',uri=True,timeout=5) as src,sqlite3.connect(str(destination),timeout=5) as target:
+    with closing(sqlite3.connect(source.as_uri()+'?mode=ro',uri=True,timeout=5)) as src,closing(sqlite3.connect(str(destination),timeout=5)) as target:
         src.execute('PRAGMA query_only=ON')
         def progress(status,remaining,total):
             if time.monotonic()-start>timeout:raise TimeoutError('ONLINE_BACKUP_DEADLINE')

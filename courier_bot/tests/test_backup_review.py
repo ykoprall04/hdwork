@@ -3,6 +3,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 spec=importlib.util.spec_from_file_location('backup_review',Path(__file__).resolve().parents[2]/'scripts/review-courier-v2-backup.py')
@@ -14,9 +15,10 @@ class ReviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'journal-backup').mkdir(); db=root/'journal-backup/courier.sqlite3'
             first='11111111-1111-4111-8111-111111111111';second='22222222-2222-4222-8222-222222222222'
-            with sqlite3.connect(db) as c:
+            with closing(sqlite3.connect(db)) as c:
                 c.execute('CREATE TABLE deliveries(delivery_id TEXT,success_id TEXT,ack TEXT,state TEXT)')
                 c.execute('INSERT INTO deliveries VALUES (?,?,?,?)',(first,'123','PRIVATE_LEASE','SETTLED'))
+                c.commit()
             plan=root/'preparation.json';plan.write_text(json.dumps({'backupSha256':module.digest(db)}))
             old=module.EXPECTED_PLAN; module.EXPECTED_PLAN=module.digest(plan)
             try:
