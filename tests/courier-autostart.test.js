@@ -22,6 +22,14 @@ test('owner pipe closure stops the supervisor and records redacted state',async 
  const exit=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('stop timeout')),5000);child.once('exit',code=>{clearTimeout(timer);resolve(code);});});child.stdin.end();assert.equal(await exit,0);
  const state=JSON.parse(fs.readFileSync(path.join(f.dir,'state.json')));assert.equal(state.status,'STOPPED');assert.equal(state.liveChatEndToEndVerified,false);assert.equal(JSON.stringify(state).includes('synthetic ciphertext'),false);
 });
+test('supervisor stores only sanitized startup diagnostic receipts from its launcher',async t=>{
+ const f=fixture(t),c=f.save();const source=`exports.run=async()=>{const e=Error('SYNTHETIC_SECRET_TOKEN');e.code='COURIER_STARTUP_FAILED';e.startupDiagnostic={component:'PYTHON',phase:'JOURNAL_SEED',exceptionType:'PermissionError',osError:13,token:'SYNTHETIC_SECRET_TOKEN'};throw e;}`;
+ f.cfg.sourceHashes['scripts/run-production-live-chat-courier.js']=f.put('scripts/run-production-live-chat-courier.js',source);const config=f.save();
+ const child=spawn(process.execPath,[path.resolve(__dirname,'../scripts/courier-task-runner.js'),'--config',config.file,'--config-sha256',config.digest],{stdio:['pipe','pipe','pipe']});
+ t.after(()=>{if(child.exitCode===null)child.kill();});
+ const exit=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('failure timeout')),5000);child.once('exit',code=>{clearTimeout(timer);resolve(code);});child.stdout.resume();child.stderr.resume();});
+ assert.equal(exit,1);const state=JSON.parse(fs.readFileSync(path.join(f.dir,'state.json')));assert.equal(state.code,'COURIER_STARTUP_FAILED');assert.deepEqual(state.startupDiagnostic,{component:'PYTHON',phase:'JOURNAL_SEED',exceptionType:'PermissionError',osError:13});assert.equal(JSON.stringify(state).includes('SYNTHETIC_SECRET_TOKEN'),false);
+});
 test('preparation pins approved releases, preserves source and rejects service-account DPAPI owners',t=>{
  const f=fixture(t),releaseDir=path.join(f.dir,'release'),fixDir=path.join(f.dir,'fix'),out=path.join(f.dir,'output');for(const d of [releaseDir,fixDir,out])fs.mkdirSync(d);
  fs.mkdirSync(path.join(f.dir,'src/config'),{recursive:true});

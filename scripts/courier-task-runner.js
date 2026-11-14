@@ -1,6 +1,14 @@
 // Private Scheduled Task child. Its owner's stdin is a lifetime lease, never a secret channel.
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
 const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
+const startupPhases=new Set(['SECRET_LOAD','BACKEND_START','PYTHON_STARTUP','PYTHON_CONFIG','LOCK_DIRECTORY','JOURNAL_DIRECTORY','BOT_LOCK','JOURNAL_OPEN','JOURNAL_SEED','TELEGRAM_IDENTITY','INGRESS_POLICY','WORKER_LEASE','READY_HANDSHAKE','INBOX_WORKER_START']);
+const startupTypes=new Set(['PermissionError','FileNotFoundError','OSError','ValueError','TypeError','RuntimeError','ImportError','ModuleNotFoundError','OperationalError','DatabaseError','IntegrityError','TransportError','TimeoutError','Error','RangeError','ReferenceError','OTHER_EXCEPTION']);
+function safeStartupDiagnostic(value){
+ if(value?.component==='PYTHON'&&!['PYTHON_STARTUP','PYTHON_CONFIG','LOCK_DIRECTORY','JOURNAL_DIRECTORY','BOT_LOCK','JOURNAL_OPEN','JOURNAL_SEED','TELEGRAM_IDENTITY','INGRESS_POLICY','WORKER_LEASE','READY_HANDSHAKE'].includes(value.phase))return null;
+ if(value?.component==='NODE'&&!['SECRET_LOAD','BACKEND_START','PYTHON_STARTUP','READY_HANDSHAKE','INBOX_WORKER_START'].includes(value.phase))return null;
+ if(!['NODE','PYTHON'].includes(value?.component)||!startupPhases.has(value.phase)||!startupTypes.has(value.exceptionType))return null;
+ return {component:value.component,phase:value.phase,exceptionType:value.exceptionType,...([400,401,403,409,429,503].includes(value.httpStatus)?{httpStatus:value.httpStatus}:{}),...(Number.isInteger(value.osError)&&value.osError>0&&value.osError<256?{osError:value.osError}:{})};
+}
 function regular(file){const p=path.resolve(file),s=fs.lstatSync(p),real=fs.realpathSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>16*1024*1024||(process.platform==='win32'?real.toLowerCase()!==p.toLowerCase():real!==p))throw Error('TASK_INPUT_REJECTED');return fs.readFileSync(p);}
 function verify(file,expected){if(hash(regular(file))!==expected)throw Error('TASK_VERSION_DRIFT');}
 function configuration(file,expected){
@@ -23,8 +31,8 @@ async function run(argv=process.argv.slice(2)){
  log.emit('TASK_START',{status:'STARTING'});
  const originalSpawn=cp.spawn,originalLog=console.log;
  let python,ready=false,ownerGone=false,forceTimer,heartbeat;
- const startedAt=new Date().toISOString();let status='STARTING';
- const record=code=>{log.emit('TASK_STATE',{status,reason:code});return save({status,code,runtimeMode:config.runtimeMode||'delivery',nodePid:process.pid,pythonPid:python?.pid||null,startedAt,updatedAt:new Date().toISOString(),ownerSid:config.ownerSid,botId:config.botId,telegramBotId:config.telegramBotId,baseCommit:config.baseCommit,patchCommit:config.patchCommit,configSha256:argv[3],productionPlanSha256:config.productionPlanSha256,liveChatEndToEndVerified:false});};
+ const startedAt=new Date().toISOString();let status='STARTING',failureDiagnostic=null;
+ const record=code=>{log.emit('TASK_STATE',{status,reason:code});return save({status,code,runtimeMode:config.runtimeMode||'delivery',nodePid:process.pid,pythonPid:python?.pid||null,startedAt,updatedAt:new Date().toISOString(),ownerSid:config.ownerSid,botId:config.botId,telegramBotId:config.telegramBotId,baseCommit:config.baseCommit,patchCommit:config.patchCommit,configSha256:argv[3],productionPlanSha256:config.productionPlanSha256,liveChatEndToEndVerified:false,...(failureDiagnostic?{startupDiagnostic:failureDiagnostic}:{})});};
  const stop=()=>{
   if(ownerGone)return;ownerGone=true;status='STOPPING';record('OWNER_STOP');
   if(python&&python.exitCode===null){python.stdin.end('STOP\n');if(process.env.HDWORK2_NATIVE_GRACEFUL_ONLY!=='true')forceTimer=setTimeout(()=>{if(python.exitCode===null)python.kill();},15000);}
@@ -33,7 +41,7 @@ async function run(argv=process.argv.slice(2)){
  process.stdin.once('end',stop);process.stdin.on('data',data=>{if(data.toString('utf8').includes('STOP'))stop();});process.stdin.resume();
  cp.spawn=(exe,args,options)=>{
   if(ownerGone)throw Error('TASK_OWNER_STOPPED');
-  const target=exe==='python'&&args?.join(' ')==='-B -m courier --run';
+  const target=exe==='python'&&(args?.join(' ')==='-B -m courier --run'||(args?.[0]==='-B'&&args?.[1]==='-c'&&args?.[3]==='--run'));
   const child=originalSpawn(target?config.pythonExecutable:exe,args,options);
   if(target){python=child;child.stdin.on('error',()=>{});}return child;
  };
@@ -51,8 +59,8 @@ async function run(argv=process.argv.slice(2)){
    status='STOPPED';record('FLAGS_OFF_STOPPED');return;
   }
   await require(path.join(config.snapshot,'scripts/run-production-live-chat-courier.js')).run(['--run-production-approved','--plan',config.productionPlan]);status='STOPPED';record('COURIER_STOPPED');}
- catch(error){log.emit('TASK_FAILURE',{status:'ERROR'},error);status=ownerGone?'STOPPED':'FAILED';const code=/^(ER_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT|ECONNREFUSED|ETIMEDOUT|PRIVATE_DB_CONFIG_REJECTED|DPAPI_[A-Z_]+)$/.test(error.code||'')?error.code:'COURIER_TASK_FAILED';record(code);if(!ownerGone)process.exitCode=1;}
+ catch(error){log.emit('TASK_FAILURE',{status:'ERROR'},error);status=ownerGone?'STOPPED':'FAILED';failureDiagnostic=safeStartupDiagnostic(error?.startupDiagnostic);const code=failureDiagnostic?'COURIER_STARTUP_FAILED':/^(ER_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT|ECONNREFUSED|ETIMEDOUT|PRIVATE_DB_CONFIG_REJECTED|DPAPI_[A-Z_]+)$/.test(error.code||'')?error.code:'COURIER_TASK_FAILED';record(code);if(!ownerGone)process.exitCode=1;}
  finally{clearInterval(heartbeat);clearTimeout(forceTimer);cp.spawn=originalSpawn;console.log=originalLog;process.stdin.destroy();restoreOutput();await log.flush();}
 }
 if(require.main===module)run().catch(()=>{console.error('COURIER_TASK_BOOTSTRAP_REJECTED');process.exitCode=1;});
-module.exports={configuration,verify,hash,run};
+module.exports={configuration,verify,hash,run,safeStartupDiagnostic};

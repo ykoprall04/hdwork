@@ -48,9 +48,9 @@ test('receive-only inbox commits a new order without writing outbox or touching 
  const worker=require('../src/b2c-workflow/workflow').createB2CProcessor({store,config:config.workflow});
  assert.equal(await worker.processNext(),true);assert.equal(pool.state.orders.length,1);assert.equal(pool.state.orders[0].message_id,'42');assert.equal(pool.state.inbox[0].state,'PROCESSED');assert.equal(originalChatRecords,1);assert.deepEqual(pool.state.outbox,[]);
 });
-async function launcher(p,event){
+async function launcher(p,event,diagnostic){
  const module={exports:{}},events=[],handlers={},child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.stdin=new EventEmitter();child.exitCode=null;
- child.stdin.end=value=>{assert.equal(value,'STOP\n');events.push('stop-owned-child');queueMicrotask(()=>{child.exitCode=0;child.emit('exit',0);});};child.kill=()=>{throw Error('UNEXPECTED_KILL');};
+ child.stdin.end=value=>{assert.equal(value,'STOP\n');events.push('stop-owned-child');queueMicrotask(()=>{child.exitCode=0;child.emit('exit',0);child.emit('close',0);});};child.kill=()=>{throw Error('UNEXPECTED_KILL');};
  const file=path.resolve('synthetic-plan.json'),bytes=Buffer.from(JSON.stringify(p));
  const deps={
   'node:fs':{lstatSync:()=>({isFile:()=>true,isSymbolicLink:()=>false,nlink:1,size:bytes.length}),realpathSync:p=>p,readFileSync:()=>bytes},'node:path':path,'node:crypto':require('node:crypto'),
@@ -59,7 +59,7 @@ async function launcher(p,event){
   '../src/config/private-courier-env':require('../src/config/private-courier-env'),
   '../src/observability/raw-log':{logger:()=>({emit(){}})},
   '../courier-b2c-server':{async startIntegration({env,deferInboxWorker}){assert.equal(deferInboxWorker,true);assert.equal(env.COURIER_OUTBOX_ENABLED,p.receiveOnly?'false':'true');events.push('backend-start');return {startWorker(){events.push('worker-start');},async close(){events.push('backend-close');}};}},
-  'node:child_process':{spawn(_exe,_args,options){assert.equal(options.windowsHide,true);assert.equal(options.env.COURIER_SEND_ENABLED,p.receiveOnly?'false':'true');assert.equal(options.env.DB_PASSWORD,undefined);assert.equal(options.env.COURIER_DB_PASSWORD,undefined);events.push('spawn');queueMicrotask(()=>child.stdout.emit('data',Buffer.from(JSON.stringify(event)+'\n')));return child;}}
+  'node:child_process':{spawn(_exe,args,options){assert.equal(options.windowsHide,true);assert.equal(args[0],'-B');assert.equal(args[1],'-c');assert.equal(args[3],'--run');assert.equal(options.env.COURIER_SEND_ENABLED,p.receiveOnly?'false':'true');assert.equal(options.env.DB_PASSWORD,undefined);assert.equal(options.env.COURIER_DB_PASSWORD,undefined);events.push('spawn');queueMicrotask(()=>{if(diagnostic)child.stderr.emit('data',Buffer.from(JSON.stringify(diagnostic)+'\n'));child.stdout.emit('data',Buffer.from(JSON.stringify(event)+'\n'));});return child;}}
  };
  const mocked=name=>{if(!Object.hasOwn(deps,name))throw Error('UNEXPECTED_DEPENDENCY '+name);return deps[name];};mocked.main={};
  vm.runInNewContext(fs.readFileSync('scripts/run-production-live-chat-courier.js','utf8'),{module,require:mocked,__dirname:path.resolve('scripts'),process:{env:{COURIER_SEND_ENABLED:'true',DB_PASSWORD:'must-not-inherit'},once:(name,fn)=>handlers[name]=fn},console:{log(value){const report=JSON.parse(value);assert.equal(report.send,!p.receiveOnly);queueMicrotask(()=>handlers.SIGTERM());}},Buffer,setTimeout,clearTimeout});
@@ -75,4 +75,14 @@ test('legacy sender mode still requires send=true READY',async()=>{
  const p=plan();delete p.receiveOnly;
  assert.ok((await launcher(p,{event:'READY',productionIdentityVerified:true,send:true})).includes('worker-start'));
  await assert.rejects(launcher(p,{event:'READY',productionIdentityVerified:true,send:false}),/START_FAILED/);
+});
+test('startup failure handshake accepts only finite Python diagnostics and preserves the owned cleanup path',async()=>{
+ const diagnostic={event:'STARTUP_FAILURE',phase:'JOURNAL_SEED',exceptionType:'PermissionError',osError:13,token:'must-not-survive'};
+ await assert.rejects(launcher(plan(),{event:'FAILED',code:'COURIER_RUNTIME_FAILED'},diagnostic),error=>{
+  assert.deepEqual(JSON.parse(JSON.stringify(error.startupDiagnostic)),{component:'PYTHON',phase:'JOURNAL_SEED',exceptionType:'PermissionError',osError:13});
+  assert.deepEqual(error.events,['backend-start','spawn','stop-owned-child','backend-close']);return true;
+ });
+ const {safeStartupDiagnostic}=require('../scripts/run-production-live-chat-courier');
+ assert.equal(safeStartupDiagnostic({...diagnostic,phase:'SECRET_VALUE'}),null);
+ assert.equal(safeStartupDiagnostic({...diagnostic,exceptionType:'SecretValue'}),null);
 });
