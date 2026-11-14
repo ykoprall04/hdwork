@@ -9,8 +9,11 @@ import { duration, formatTimestamp, type DemoOrder, type MonitoringStatus } from
 export function DemoNotice() {
   return <div role="note" className="flex items-start gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4 text-sm"><FlaskConical className="mt-0.5 size-5 shrink-0 text-primary"/><div><strong className="text-primary">DEMO · Prototipe Tahap 2</strong><p className="mt-1 text-xs leading-5 text-muted-foreground">Seluruh data pada tampilan ini fiktif. Tidak terhubung ke API operasional, Telegram, atau pembaruan real-time. Aksi pekerjaan belum diaktifkan.</p></div></div>
 }
-export function Section({title, description, children}: {title:string; description?:string; children:ReactNode}) {
-  return <Card className="min-w-0 shadow-sm"><div className="border-b px-5 pb-4"><h2 className="font-semibold">{title}</h2>{description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}</div><CardContent className="px-5">{children}</CardContent></Card>
+export function Section({title, description, children, hideHeader=false, className='', contentClassName=''}: {title:string; description?:string; children:ReactNode; hideHeader?:boolean; className?:string; contentClassName?:string}) {
+  return <Card className={`min-w-0 shadow-sm ${className}`}>
+    {!hideHeader&&<div className="border-b px-5 pb-4"><h2 className="font-semibold">{title}</h2>{description&&<p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}</div>}
+    <CardContent className={`px-5 ${contentClassName}`}>{children}</CardContent>
+  </Card>
 }
 export function Metric({label,value,detail}: {label:string;value:string|number;detail:string}) {
   return <Card className="shadow-sm"><CardContent className="space-y-3 px-5"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="text-3xl font-semibold tracking-tight tabular-nums">{value}</p><p className="text-xs text-muted-foreground">{detail}</p></CardContent></Card>

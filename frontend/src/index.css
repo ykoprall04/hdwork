@@ -871,7 +871,14 @@ body {
 .op-chat-composer textarea { max-height: 120px; }
 .op-chat-action-bar { flex-shrink: 0; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .op-chat-action-bar button { min-height: 40px; }
+.op-body:has(.op-process-workspace-card) { display:flex; flex-direction:column; height:100dvh; overflow:hidden; }
+.op-main:has(.op-process-workspace-card) { display:flex; flex:1; flex-direction:column; width:100%; max-width:none; min-height:0; overflow:hidden; padding:10px 20px 14px; }
+.op-page:has(.op-process-workspace-card) { display:flex; flex:1; flex-direction:column; min-height:0; gap:8px; overflow:hidden; }
+.op-page:has(.op-process-workspace-card)>*+* { margin-top:0; }
+.op-process-workspace-card { display:flex; flex:1; min-height:0; overflow:hidden; gap:0!important; padding:0!important; }
+.op-process-workspace-card-content { display:flex; flex:1; min-width:0; min-height:0; overflow:hidden; padding:0!important; }
 .op-process-workspace { display: grid; grid-template-columns: minmax(0,3fr) minmax(0,7fr); height: min(72dvh,820px); min-height: 520px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.op-process-workspace { flex:1; height:100%; min-height:0; }
 .op-process-work-list { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; overflow: hidden; padding: 14px; border-right: 1px solid var(--border); }
 .op-process-work-items { min-height: 0; overflow-y: auto; }
 .op-process-work-items li + li { border-top: 1px solid var(--border); }
@@ -882,12 +889,23 @@ body {
 .op-process-work-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: var(--muted-foreground); }
 .op-process-detail .op-original-message { max-height: 20vh; overflow-y: auto; }
 .op-process-detail .op-order-chat h3, .op-process-detail .op-order-chat .op-chat-history > div:first-child { display: none; }
-.op-process-detail .op-work-panel-content { overflow: hidden; }
+.op-process-detail .op-work-panel-content { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
+.op-process-detail .op-panel-summary { flex:0 0 auto; min-height:0; max-height:none; overflow:hidden; }
+.op-process-detail .op-original-message { max-height:min(18dvh,150px); overflow-y:auto; overscroll-behavior:contain; }
+.op-process-detail .op-order-chat { flex:1 1 0; min-height:0; }
+.op-process-detail .op-chat-history { flex:1 1 0; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.op-process-detail .op-chat-composer { flex:0 0 auto; max-height:none; overflow:visible; }
+.op-process-detail .op-chat-composer form { flex:0 0 auto; overflow:visible; }
+.op-process-detail .op-chat-composer textarea { height:52px; min-height:48px; max-height:64px; resize:vertical; }
+.op-process-detail .op-chat-action-bar { flex:0 0 auto; margin-top:8px; padding-top:8px; }
 @media (max-width: 767px) {
- .op-process-workspace { display: block; height: auto; min-height: 0; overflow: visible; border: 0; }
+ .op-body:has(.op-process-workspace-card) { height:100dvh; }
+ .op-main:has(.op-process-workspace-card) { padding:8px; }
+ .op-process-workspace-card { border:0; }
+ .op-process-workspace { display:block; height:100%; min-height:0; overflow:hidden; border:0; }
  .op-process-workspace[data-selected="true"] .op-process-work-list { display: none; }
- .op-process-work-list { min-height: 55dvh; border: 1px solid var(--border); border-radius: 12px; }
- .op-process-detail { height: min(72dvh,760px); min-height: 460px; border: 1px solid var(--border); border-radius: 12px; }
+ .op-process-work-list { height:100%; min-height:0; border: 1px solid var(--border); border-radius: 12px; }
+ .op-process-detail { height:100%; min-height:0; border: 1px solid var(--border); border-radius: 12px; }
  .op-process-work-empty { display: none; }
 }
 @media (max-width: 767px) {

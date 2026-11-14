@@ -24,6 +24,7 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('hdwork2:sidebar-collapsed') === 'true'; } catch { return false; } });
   const groups = operationalNavigation(user, cookieMode, operationsEnabled, import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true');
   const page = pageContext(pathname);
+  const hideQueueLocalStatus = pathname.startsWith('/work/B2C/') && ['TIAL / REQ', 'LOGIC / SOLVER'].includes(page.label);
   const showBackButton = showOperationalBackButton(pathname);
   function goBack() {
     if (!confirmChatNavigation()) return;
@@ -74,7 +75,7 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
         </div>
       </header>
       <main id="operational-main" tabIndex={-1} className="op-main">
-        {!checkIn && <div className="op-status-bar"><div role="group" aria-label="Pilihan status kerja" className="flex flex-wrap gap-1">{(['ONLINE', 'SIBUK', 'OFFLINE'] as const).map(status => <Button key={status} variant={local.status === status ? 'secondary' : 'ghost'} size="sm" aria-pressed={local.status === status} onClick={() => selectStatus(status)}>{status}</Button>)}</div><p className="text-[10px] text-muted-foreground">{local.status} · status lokal{!operationsEnabled && ' · tindakan order nonaktif'}</p></div>}
+        {!checkIn && !hideQueueLocalStatus && <div className="op-status-bar"><div role="group" aria-label="Pilihan status kerja" className="flex flex-wrap gap-1">{(['ONLINE', 'SIBUK', 'OFFLINE'] as const).map(status => <Button key={status} variant={local.status === status ? 'secondary' : 'ghost'} size="sm" aria-pressed={local.status === status} onClick={() => selectStatus(status)}>{status}</Button>)}</div><p className="text-[10px] text-muted-foreground">{local.status} · status lokal{!operationsEnabled && ' · tindakan order nonaktif'}</p></div>}
 
         <div className="op-page space-y-5">{children}</div>
       </main>

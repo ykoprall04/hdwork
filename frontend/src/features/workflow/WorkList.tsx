@@ -4,7 +4,6 @@ import {Link,useLocation} from 'react-router-dom';
 import {useAuth} from '@/contexts/AuthContext';
 import {Button} from '@/components/ui/button';
 import WorkStatusBadge from './WorkStatusBadge';
-import PageHeader from '../workspace-ui/PageHeader';
 import { Search, SlidersHorizontal } from 'lucide-react';
 import {Section,Empty} from '../operations/components';
 import {jakartaToday} from '../tial/query';
@@ -16,7 +15,6 @@ import ExportButton from './ExportButton';
 import OrderNotifications from './OrderNotifications';
 import {FeedbackStatus,WorkTimer} from './OperationalStatus';
 import {useEffect} from 'react';
-import WorkspaceCounts from './WorkspaceCounts';
 import {useMyActiveWork} from './hooks';
 import {confirmChatNavigation} from './unsent-chat';
 const field='mt-1 block w-full rounded-lg border bg-background p-2 text-sm';
@@ -28,6 +26,7 @@ export default function WorkList(){
  const query={area,command,tab,mine:String(mine),from,to,hd,status,q:debouncedSearch.trim(),page:String(page)};const validDate=(!from&&!to)||(Boolean(from&&to)&&from<=to);
  const path='/orders?'+new URLSearchParams({...query,...(!validDate?{from:'',to:''}:{})});
  const {data,loading,error,arrival,refresh}=useWorkData<Data>(path,{area,page});const mineWork=useMyActiveWork(area,tab==='process'&&workspaceOpen&&inlineWorkspace);const now=useServerClock(data?.serverNow);
+ const processWorkspaceVisible=tab==='process'&&workspaceOpen&&inlineWorkspace;
  const privateOrders=(mineWork.data||[]).filter(order=>`${order.scIn||''} ${order.inetMasked||''} ${order.module} ${order.command}`.toLowerCase().includes(mySearch.trim().toLowerCase()));
  useEffect(()=>{if(inlineWorkspace&&selectedOrder&&mineWork.loaded&&!mineWork.data.some(order=>order.id===selectedOrder)){setSelectedOrder(null);}},[inlineWorkspace,selectedOrder,mineWork.loaded,mineWork.data]);
  function openOrder(event:MouseEvent<HTMLAnchorElement>,id:string){
@@ -38,8 +37,7 @@ export default function WorkList(){
  function selectPrivate(id:string){if(!confirmChatNavigation())return;setSelectedOrder(id);setInlineWorkspace(true);setWorkspaceOpen(true);}
  function change(fn:()=>void){setPage(1);fn();}
  return <>
- <PageHeader eyebrow={`Ruang kerja · ${workspace}`} title={`Daftar pekerjaan ${area==='LOGIC'?'LOGIC / SOLVER':area}`} actions={<OrderNotifications area={area}/>} />
- <WorkspaceCounts key={area} area={area}/>
+ {!processWorkspaceVisible&&<>
  <nav aria-label="Status pekerjaan" className="op-work-tabs">{[['incoming','ORDER MASUK'],['duplicates','DUPLIKAT MENUNGGU'],['process','PROSES CEK'],['finished','SELESAI']].map(([v,label])=><Button key={v} aria-pressed={tab===v} variant={tab===v?'default':'ghost'} onClick={()=>change(()=>{setTab(v);setSelectedOrder(null);setWorkspaceOpen(false);setInlineWorkspace(false);setHd('');setMine(true);setFrom(v==='finished'?jakartaToday():'');setTo(v==='finished'?jakartaToday():'');setStatus('');})}>{label}</Button>)}</nav>
  <section aria-label="Filter pekerjaan" className="op-filter-bar">
  <label className="op-search"><Search aria-hidden="true"/><span className="sr-only">Cari SC/IN, INET/TELP atau STO</span><input aria-label="Pencarian pekerjaan" placeholder="Cari SC/IN, INET/TELP atau STO…" maxLength={100} value={search} onChange={e=>setSearch(e.target.value)}/></label>
@@ -57,8 +55,9 @@ export default function WorkList(){
  {!validDate&&<p role="alert">Isi rentang tanggal lengkap dan benar. Filter belum diterapkan.</p>}
  {arrival&&page>1&&<Button variant="outline" onClick={()=>setPage(1)}>Ada order baru</Button>}
  {tab==='finished'&&user?.role!=='SHOW_ONLY'&&validDate&&search===debouncedSearch&&<ExportButton key={user?.id} query={query}/>}
- <Section title={tab==='incoming'?'ORDER MASUK':tab==='duplicates'?'DUPLIKAT MENUNGGU':tab==='process'?'PROSES CEK':'SELESAI'} description="Data diperbarui otomatis · sesuai filter dan akses modul Anda.">
- {tab==='process'&&workspaceOpen&&inlineWorkspace?<div className="op-process-workspace" data-selected={Boolean(selectedOrder)}>
+ </>}
+ <Section title={tab==='incoming'?'ORDER MASUK':tab==='duplicates'?'DUPLIKAT MENUNGGU':tab==='process'?'PROSES CEK':'SELESAI'} description="Data diperbarui otomatis · sesuai filter dan akses modul Anda." hideHeader={processWorkspaceVisible} className={processWorkspaceVisible?'op-process-workspace-card':''} contentClassName={processWorkspaceVisible?'op-process-workspace-card-content':''}>
+ {processWorkspaceVisible?<div className="op-process-workspace" data-selected={Boolean(selectedOrder)}>
   <aside className="op-process-work-list" aria-label="Pekerjaan Saya"><header className="flex items-center justify-between gap-2"><div><h2 className="font-semibold">Pekerjaan Saya</h2><p className="text-xs text-muted-foreground">Order aktif milik Anda</p></div><Button variant="ghost" size="sm" onClick={closePanel}>Kembali ke tabel</Button></header><input aria-label="Cari pekerjaan saya" className="w-full rounded-lg border bg-background p-2 text-sm" placeholder="Cari order…" value={mySearch} onChange={event=>setMySearch(event.target.value)}/>
    {mineWork.loading&&!mineWork.data.length&&<p role="status" className="text-xs">Memuat pekerjaan…</p>}{mineWork.error&&<p role="alert" className="text-xs">{mineWork.error}<Button variant="outline" onClick={()=>void mineWork.refresh()}>Coba lagi</Button></p>}
    <ul className="op-process-work-items">{privateOrders.map(order=><li key={order.id}><button type="button" data-selected={selectedOrder===order.id} aria-current={selectedOrder===order.id?'true':undefined} onClick={()=>selectPrivate(order.id)}><span className="block break-all font-medium">{order.scIn||order.inetMasked||'Order /'+order.command}</span><span className="mt-1 block text-xs text-muted-foreground">{order.module} /{order.command} · <WorkTimer order={order} now={now}/></span></button></li>)}</ul>
@@ -75,7 +74,8 @@ export default function WorkList(){
  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><span className="text-xs text-muted-foreground">Halaman {page}</span><div className="flex gap-2"><Button variant="outline" disabled={loading||page<=1} onClick={()=>setPage(p=>p-1)}>Sebelumnya</Button><Button variant="outline" disabled={loading||!data?.hasMore||page>=10000} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div>
  </>}
  </Section>
+ {!processWorkspaceVisible&&<OrderNotifications area={area} showSoundControl={false}/>}
  {selectedOrder&&!inlineWorkspace&&<OrderWorkPanel id={selectedOrder} orders={data?.data||[]} onSelect={setSelectedOrder} onClose={closePanel} onChange={refresh}/>}
- <Link className="text-sm text-primary underline" to="/recap">Dashboard Rekap</Link>
+ {!processWorkspaceVisible&&<Link className="text-sm text-primary underline" to="/recap">Dashboard Rekap</Link>}
  </>;
 }

@@ -47,7 +47,7 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
     </div>
     <div className="op-chat-composer">
     <form className="space-y-2" onSubmit={event => { event.preventDefault(); void send(); }}>
-      <label className="block text-sm">Balasan<textarea aria-label="Balasan" rows={3} maxLength={4096} disabled={!allowed || busy} className="mt-1 w-full rounded-lg border bg-background p-3" value={text} onKeyDown={event => {
+      <label className="block text-sm">Balasan<textarea aria-label="Balasan" rows={2} maxLength={4096} disabled={!allowed || busy} className="mt-1 w-full rounded-lg border bg-background p-3" value={text} onKeyDown={event => {
         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
           event.preventDefault(); void send();
         }
