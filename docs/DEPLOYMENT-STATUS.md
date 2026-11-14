@@ -28,4 +28,14 @@ The updater now waits for both the old owner process to exit and the Scheduled T
 
 Handoff fix commit: `818435c`; task-idle and rollback health fix: `b797378`. The subsequent deployment completed with manifest `ACTIVE`, loopback health 5/5 PASS, TLS verified, and the global `Kembali` bundle served over HTTPS. Courier was untouched.
 
+## Web handoff receipt follow-up - 15 November 2026
+
+Candidate `2b40c26892b372fd42e8675274af1743d2ebaa55` reached `WEB_TASK_HANDOFF` and rolled back to the previously active Web pin `b7973784d2a87ef83e24dfe81355e38cae9a54f2`. The candidate `new-control.json` SHA matched its release manifest; task, owner SID, working directory, child, supervisor, and executable paths matched the prior control configuration. Candidate child, supervisor, and Node executable file hashes matched their pins. The old Web task returned READY after rollback.
+
+The original startup exception could not be recovered from this attempt. `failure.json` contains only the READY timeout and task result. Candidate `child-startup-error.json` is absent, `failure.metadata.json` contains `{}`, and `startup.metadata.json` reflects the later rollback startup. Task Scheduler history was not readable in the audit session. Therefore the timeout is the observed failure detector; it does not identify the child exception or its root cause.
+
+The updater now surfaces terminal startup state, exit code, task result, and allowlisted child/supervisor error codes when config SHA and owner PID match the candidate run. Terminal state from an older config and stale diagnostics are ignored. Supervisor diagnostic records carry that run identity. This changes diagnostics only; no updater or production Web run was performed.
+
+Mock verification: updater `-Mock` 38 checks PASS (handoff, rollback, health retries, startup identity/stale-state handling); `web-startup-stderr.test.cjs` 18/18 PASS. The underlying exception from the 14 November attempt remains undetermined.
+
 Before modifying update or deployment mechanisms, read this status and `AGENTS.md`.

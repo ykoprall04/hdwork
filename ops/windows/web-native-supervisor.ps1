@@ -53,6 +53,8 @@ using System.Web.Script.Serialization;
 namespace HDWork2 {
  public sealed class WebStartupStderrCaptureV1 {
   private readonly string path;
+  private readonly string configSha256;
+  private readonly int ownerPid;
   private readonly object gate = new object();
   private bool saved;
   private static readonly HashSet<string> codes = new HashSet<string>(StringComparer.Ordinal) {
@@ -70,7 +72,7 @@ namespace HDWork2 {
    "DPAPI_TIMEOUT", "DPAPI_FILE_READ_FAILED", "DPAPI_UNPROTECT_FAILED",
    "DPAPI_MEMORY_READ_FAILED", "DPAPI_PIPE_FAILED", "DPAPI_DECRYPT_FAILED"
   };
-  public WebStartupStderrCaptureV1(string outputPath) { path = outputPath; }
+  public WebStartupStderrCaptureV1(string outputPath, string runConfigSha256, int ownerProcessId) { path = outputPath; configSha256 = runConfigSha256; ownerPid = ownerProcessId; }
   public DataReceivedEventHandler Handler { get { return Receive; } }
   private void Receive(object sender, DataReceivedEventArgs args) {
    if (String.IsNullOrEmpty(args.Data) || args.Data.Length > 4096) return;
@@ -86,7 +88,7 @@ namespace HDWork2 {
     lock (gate) {
      if (saved) return;
      temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-     File.WriteAllText(temporary, "{\"status\":\"FAILED\",\"code\":\"" + code + "\"}", new UTF8Encoding(false));
+     File.WriteAllText(temporary, "{\"status\":\"FAILED\",\"code\":\"" + code + "\",\"configSha256\":\"" + configSha256 + "\",\"ownerPid\":" + ownerPid.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}", new UTF8Encoding(false));
      if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
      temporary = null;
      saved = true; // Preserve the first failure, not a later cleanup error.
@@ -115,7 +117,7 @@ namespace HDWork2 {
   if($webEnv.COURIER_ENABLED -cne 'false' -or $webEnv.HDWORK2_TESTING_SOLVER_ENABLED -cne 'false'){throw 'WEB_EXTERNAL_SENDER_REJECTED'}
  }
  $child=New-Object Diagnostics.Process;$child.StartInfo=$info
- $stderrCapture=New-Object HDWork2.WebStartupStderrCaptureV1((Join-Path ([IO.Path]::GetDirectoryName($cfg.stateFile)) 'child-startup-error.json'))
+ $stderrCapture=New-Object HDWork2.WebStartupStderrCaptureV1 -ArgumentList @((Join-Path ([IO.Path]::GetDirectoryName($cfg.stateFile)) 'child-startup-error.json'),$ConfigSha256,$PID)
  $stderrHandler=$stderrCapture.Handler;$child.add_ErrorDataReceived($stderrHandler)
  [IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),'{"phase":"CHILD_START"}');[void]$child.Start();$childPid=$child.Id;$childStartedAtUtc=$child.StartTime.ToUniversalTime().ToString('o');
  $child.BeginOutputReadLine();$child.BeginErrorReadLine()
@@ -149,7 +151,7 @@ namespace HDWork2 {
  }
  if($child.HasExited){$child.WaitForExit();SaveState $(if($requested){'STOPPED'}else{'CHILD_EXITED'}) $child.ExitCode}
 }catch{
- $failure=@{phase=$phase;type=$_.Exception.GetType().Name;code=($_.FullyQualifiedErrorId -split ',')[0]}
+ $failure=@{phase=$phase;type=$_.Exception.GetType().Name;code=($_.FullyQualifiedErrorId -split ',')[0];configSha256=$ConfigSha256;ownerPid=$PID}
  try{[IO.File]::WriteAllText((Join-Path $root 'failure.metadata.json'),($failure|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)));SaveState 'CONTROL_FAILED'}catch{}
  if($child -and -not $child.HasExited){$child.StandardInput.Close();$child.WaitForExit()}
  throw 'NATIVE_OWNER_CONTROL_FAILED'

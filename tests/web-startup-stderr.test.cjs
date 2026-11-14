@@ -15,7 +15,7 @@ async function fixture(code,expected){
   assert.equal(exit,0,'Synthetic supervisor must complete normally');
   const owner=JSON.parse(fs.readFileSync(cfg.stateFile));assert.equal(owner.status,'CHILD_EXITED');assert.equal(owner.forced,false);
   const file=path.join(state,'child-startup-error.json');
-  if(expected){const report=JSON.parse(fs.readFileSync(file));assert.deepEqual(report,{status:'FAILED',code:expected});assert.deepEqual(Object.keys(report).sort(),['code','status']);}
+  if(expected){const report=JSON.parse(fs.readFileSync(file));assert.deepEqual(report,{status:'FAILED',code:expected,configSha256:sha(config),ownerPid:owner.ownerPid});assert.deepEqual(Object.keys(report).sort(),['code','configSha256','ownerPid','status']);}
   else assert.equal(fs.existsSync(file),false);
   const metadata=[output,errors,...[file,cfg.stateFile,path.join(root,'startup.metadata.json'),path.join(root,'failure.metadata.json')].filter(f=>fs.existsSync(f)).map(f=>fs.readFileSync(f,'utf8'))].join('\n');assert.equal(metadata.includes(marker),false);assert.equal(fs.readdirSync(state).some(n=>n.endsWith('.tmp')),false);
   return {root,cfg,owner,expected};
