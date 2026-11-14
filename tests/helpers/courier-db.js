@@ -25,12 +25,12 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
         }else if (sql.startsWith('INSERT INTO hd2_courier_')) {
           const inbox = sql.includes('inbox'), table = inbox ? state.inbox : state.outbox, key = inbox ? 'update_id' : 'idem_key';
           if (!table.some(r => r.bot_id === p[1] && r[key] === p[2])) table.push({ id: p[0], bot_id: p[1], [key]: p[2], payload_hash: p[3], payload: p[4], due_ms: p[5], state: inbox ? 'PENDING' : 'QUEUED', attempts: 0,...(!inbox&&p.length>6?{conversation_key:p[6],conversation_seq:p[7]}:{}) });
-        } else if (sql.startsWith('SELECT a.detail FROM hd2_courier_inbox i JOIN hd2_audit a')) {
+        } else if (sql.startsWith('SELECT payload FROM hd2_courier_inbox')) {
           const [botId,chatId,messageId]=p;
-          rows=state.audit.filter(a=>a.action==='ORDER_FORMAT_REJECTED').map(a=>({audit:a,inbox:state.inbox.find(i=>i.id===a.inbox_id)})).filter(x=>{
-            if(!x.inbox||x.inbox.bot_id!==botId||x.inbox.state!=='PROCESSED')return false;
-            const event=JSON.parse(x.inbox.payload).event;return event.chat_id===chatId&&event.message_id===messageId;
-          }).slice(0,1).map(x=>({detail:x.audit.detail}));
+          rows=state.inbox.filter(inbox=>{
+            if(inbox.bot_id!==botId||inbox.state!=='PROCESSED')return false;
+            const event=JSON.parse(inbox.payload).event;return event.chat_id===chatId&&event.message_id===messageId;
+          }).slice(0,1).map(inbox=>({payload:inbox.payload}));
         } else if (sql.startsWith('SELECT command,thread_id FROM hd2_orders')) {
           rows=state.orders.filter(r=>r.bot_id===p[0]&&r.chat_id===p[1]&&r.message_id===p[2]);
         } else if (sql.startsWith('SELECT') && sql.includes('hd2_courier_')) {

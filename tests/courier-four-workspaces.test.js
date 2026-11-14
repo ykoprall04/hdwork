@@ -35,7 +35,8 @@ test('four workspaces persist through the actual inbox processor into isolated S
  while(await processor.processNext()){}
  assert.equal(pool.state.orders.length,4);assert.deepEqual(pool.state.orders.map(moduleOf),['TIAL','ASSUREN','B2B','REPLACEMENT']);
  assert.ok(pool.state.orders.every(o=>o.status==='WAITING'&&o.inet==='00012345'&&o.telegram_timestamp===1700000000));
- assert.deepEqual(pool.state.liveEvents.map(e=>e.module),['TIAL','ASSUREN','B2B','REPLACEMENT']);assert.equal(pool.state.outbox.length,0);
+  assert.deepEqual(pool.state.liveEvents.map(e=>e.module),['TIAL','ASSUREN','B2B','REPLACEMENT']);assert.equal(pool.state.outbox.length,4);
+  assert.ok(pool.state.outbox.every(row=>JSON.parse(row.payload).text==='✅ Berhasil! Order diterima.'));
  assert.ok(pool.calls.every(sql=>!/^USE /i.test(sql)&&!sql.includes('hd_b2c')));
 });
 test('concurrent replay inserts one inbox/order; distinct duplicates retain the first canonical order',async()=>{
@@ -46,7 +47,8 @@ test('concurrent replay inserts one inbox/order; distinct duplicates retain the 
  await store.accept({...e,update_id:'900',event:{...e.event,message_id:'900'}});await processor.processNext();
  const duplicate=pool.state.orders[1];assert.equal(duplicate.status,'DUPLICATE');assert.deepEqual(pool.state.liveEvents.map(e=>e.kind),['arrival','change']);assert.equal(duplicate.duplicate_of,original.id);assert.deepEqual(pool.state.orders[0],original);
  await store.accept({...e,update_id:'901',event:{...e.event,message_id:'901',reply_to_message_id:'900',text:'DONE'}});await processor.processNext();
- assert.deepEqual(pool.state.orders[0],original);assert.equal(duplicate.status,'DUPLICATE');assert.equal(pool.state.outbox.length,0);
+  assert.deepEqual(pool.state.orders[0],original);assert.equal(duplicate.status,'DUPLICATE');assert.equal(pool.state.outbox.length,2);
+  assert.equal(new Set(pool.state.outbox.map(row=>row.idem_key)).size,2);
 });
 test('failed insert rolls reservation back; ordered retry cannot let later duplicate win',async()=>{
  const {pool,store,processor}=fixture();let now=1000;store.now=()=>now;
@@ -77,7 +79,8 @@ test('signed Express ingress ACKs four categories after fixture commit; replay c
  try{
   for(let i=0;i<4;i++){const response=await fetch(url+route,signed(event(i)));assert.equal(response.status,200);const ack=await response.json();assert.equal(ack.ok,true);assert.ok(pool.state.inbox.some(row=>row.id===ack.receipt_id));}
   const retry=await fetch(url+route,signed(event(2)));assert.equal((await retry.json()).duplicate,true);
-  while(await processor.processNext()){}assert.equal(pool.state.orders.length,4);assert.equal(pool.state.outbox.length,0);
+  while(await processor.processNext()){}assert.equal(pool.state.orders.length,4);assert.equal(pool.state.outbox.length,4);
+  assert.ok(pool.state.outbox.every(row=>JSON.parse(row.payload).text==='✅ Berhasil! Order diterima.'));
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
 test('insert payload columns and generated workspace mapping fit migration declarations without running SQL',()=>{

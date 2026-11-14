@@ -42,21 +42,25 @@ function createGroupPolicy({ botId, botUsername, groups, allowReplies=false }) {
       try { value = outbound(body); } catch { return false; }
       const group = groupFor(value.chat_id,value.telegram_thread_id);
       if (!group || value.thread_mode !== group.threadMode || !value.reply_to_message_id) return false;
+      const prefix='\u274c Gagal! Format order salah. Alasan: ';
+      if(value.text.startsWith(prefix)){
+        const [[original]]=await connection.execute(
+          "SELECT payload FROM hd2_courier_inbox WHERE bot_id=? AND state='PROCESSED' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.event.chat_id'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.event.message_id'))=? LIMIT 1",
+          [botId,value.chat_id,value.reply_to_message_id]
+        );
+        if(!original)return false;
+        let payload;try{payload=typeof original.payload==='string'?JSON.parse(original.payload):original.payload;}catch{return false;}
+        let event;try{event=eventEnvelope(payload,botId).event;}catch{return false;}
+        if(event.kind!=='message'||event.chat_id!==value.chat_id||event.message_id!==value.reply_to_message_id||event.telegram_thread_id!==group.threadId||event.reply_to_message_id!==null)return false;
+        const parsed=parseCommand(event.text,group.profile,botUsername);
+        if(parsed.valid||!parsed.command||!group.commands.includes(parsed.command)||!Array.isArray(parsed.errors)||!parsed.errors.length||parsed.errors.some(x=>typeof x!=='string'||! /^[A-Za-z0-9 /().&_-]{1,100}$/.test(x)))return false;
+        return value.text===prefix+parsed.errors.join(', ');
+      }
       const [[order]] = await connection.execute(
         'SELECT command,thread_id FROM hd2_orders WHERE bot_id=? AND chat_id=? AND message_id=?',
         [botId, value.chat_id, value.reply_to_message_id]
       );
-      if(order)return (order.thread_id??null)===group.threadId&&group.commands.includes(order.command);
-      const prefix='❌ Gagal! Format order salah. Alasan: ';
-      if(!value.text.startsWith(prefix))return false;
-      const [[rejection]]=await connection.execute(
-        "SELECT a.detail FROM hd2_courier_inbox i JOIN hd2_audit a ON a.inbox_id=i.id WHERE i.bot_id=? AND i.state='PROCESSED' AND a.action='ORDER_FORMAT_REJECTED' AND JSON_UNQUOTE(JSON_EXTRACT(i.payload,'$.event.chat_id'))=? AND JSON_UNQUOTE(JSON_EXTRACT(i.payload,'$.event.message_id'))=? LIMIT 1",
-        [botId,value.chat_id,value.reply_to_message_id]
-      );
-      if(!rejection)return false;
-      let detail;try{detail=typeof rejection.detail==='string'?JSON.parse(rejection.detail):rejection.detail;}catch{return false;}
-      if(!detail||!group.commands.includes(detail.command)||!Array.isArray(detail.errors)||!detail.errors.length||detail.errors.some(x=>typeof x!=='string'||! /^[A-Za-z0-9 /().&_-]{1,100}$/.test(x)))return false;
-      return value.text===prefix+detail.errors.join(', ');
+      return !!order&&(order.thread_id??null)===group.threadId&&group.commands.includes(order.command);
     }
   };
 }
