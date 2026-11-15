@@ -19,7 +19,10 @@ async function formatOrder(detail,pool){
  const pots=parsed.valid?fields['NO VOICE']:rawField(raw,['NO VOICE']);
  let vlan;try{vlan=await lookup(pool,network.ip_olt,sto);}catch(e){if(e.code!=='ER_NO_SUCH_TABLE')throw e;vlan={status:'manual',reason:'REFERENCE_UNAVAILABLE',wilayah:regionForSto(sto),text:'CEK VLAN MANUAL'};}
  const value=v=>v??'-';
- const text=['#PELURUSAN #PSB',`INET / POTS : ${value(inet)} / ${value(pots)}`,`STO : ${value(sto)}`,`ODP : ${value(network.odp)}`,`IP OLT : ${value(network.ip_olt)}`,`SLOT / PORT : ${value(network.slot)} / ${value(network.port)}`,`ID VALINS : ${value(valins)}`,'PESAN : 1P INET',fields['SC/IN']||fields['ORDER ID']||detail.data.scIn||'-',`DATA VLAN INET ${vlan.status==='found'?vlan.vlan_inet:'CEK VLAN MANUAL'}`,`DATA VLAN VOIP ${vlan.status==='found'?vlan.vlan_voip:'CEK VLAN MANUAL'}`].join('\n');
+ const hasPots=pots!=null&&String(pots).trim()!==''&&String(pots).trim()!=='-';
+ const numbers=hasPots?`${value(inet)} / ${pots}`:value(inet);
+ const identity=String(fields['SC/IN']||fields['ORDER ID']||detail.data.scIn||'-').split(/-AO/i,1)[0];
+ const text=['#PELURUSAN #PSB',`INET / POTS : ${numbers}`,`STO : ${value(sto)}`,`ODP : ${value(network.odp)}`,`IP OLT : ${value(network.ip_olt)}`,`SLOT / PORT : ${value(network.slot)} / ${value(network.port)}`,`ID VALINS : ${value(valins)}`,'PESAN : IP INET',identity,`DATA VLAN INET ${vlan.status==='found'?vlan.vlan_inet:'CEK VLAN MANUAL'}`,`DATA VLAN VOIP ${vlan.status==='found'?vlan.vlan_voip:'CEK VLAN MANUAL'}`].join('\n');
  return {text,lookup:vlan};
 }
 module.exports={formatOrder,rawField};

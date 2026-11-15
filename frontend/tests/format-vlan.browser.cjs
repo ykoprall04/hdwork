@@ -13,7 +13,7 @@ let vite,browser;
  let role='HD',reference=[{id:'1',ip_olt:'192.0.2.1',wilayah:'SBU',vlan_inet:'1035',vlan_voip:'0'}];
  const id='10000001-1000-4000-8000-000000000001';
  const work={id,command:'config_psb',module:'LOGIC_PSB',status:'IN_PROGRESS',decision:null,duplicateOf:null,ownerId:2,ownerName:'Fixture',finalName:null,version:1,scIn:'DGPS-AO123',inetMasked:'••••0123',receivedAt:'2026-11-15T00:00:00Z',startedAt:'2026-11-15T00:00:00Z',finishedAt:null,note:null,feedback:null};
- const template='#PELURUSAN #PSB\nINET / POTS : 000123 / -\nSTO : BBA\nODP : ODP-TEST/04\nIP OLT : 192.0.2.1\nSLOT / PORT : 2 / 3\nID VALINS : VALINS1\nPESAN : 1P INET\nDGPS-AO123\nDATA VLAN INET 1035\nDATA VLAN VOIP 0';
+ const template='#PELURUSAN #PSB\nINET / POTS : 000123\nSTO : BBA\nODP : ODP-TEST/04\nIP OLT : 192.0.2.1\nSLOT / PORT : 2 / 3\nID VALINS : VALINS1\nPESAN : IP INET\nDGPS\nDATA VLAN INET 1035\nDATA VLAN VOIP 0';
  await context.addInitScript(()=>{
   sessionStorage.setItem('hdwork:operational:checkin:2','ONLINE');window.EventSource=class extends EventTarget{close(){}};
   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__vlanCopied=text;}}});
@@ -38,7 +38,7 @@ let vite,browser;
  await page.goto(base+'/orders/'+id);await page.getByRole('button',{name:'FORMAT VLAN',exact:true}).click();
  const popup=page.getByRole('dialog',{name:'FORMAT VLAN',exact:true}),text=page.getByLabel('Teks FORMAT VLAN');await popup.waitFor();
  for(let i=0;i<60&&(await text.inputValue())!==template;i++)await sleep(50);assert.equal(await text.inputValue(),template);
- const edited=template.replace('PESAN : 1P INET','PESAN : EDITABLE')+'\ncatatan lokal';await text.fill(edited);await popup.getByRole('button',{name:'SALIN',exact:true}).click();assert.equal(await page.evaluate(()=>window.__vlanCopied),edited);
+ const edited=template.replace('PESAN : IP INET','PESAN : EDITABLE')+'\ncatatan lokal';await text.fill(edited);await popup.getByRole('button',{name:'SALIN',exact:true}).click();assert.equal(await page.evaluate(()=>window.__vlanCopied),edited);
  assert.equal(await popup.getByRole('button').count(),2);await popup.getByRole('button',{name:'TUTUP',exact:true}).click();await popup.waitFor({state:'hidden'});
  await page.getByRole('button',{name:'FORMAT VLAN',exact:true}).click();await popup.waitFor();for(let i=0;i<60&&(await text.inputValue())!==template;i++)await sleep(50);assert.equal(await text.inputValue(),template);await page.keyboard.press('Escape');await popup.waitFor({state:'hidden'});
  assert.equal(mutations.length,0);assert.equal(await page.evaluate(()=>Object.keys(localStorage).filter(k=>/vlan/i.test(k)).length+Object.keys(sessionStorage).filter(k=>/vlan/i.test(k)).length),0);
