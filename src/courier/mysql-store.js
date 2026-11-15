@@ -49,7 +49,7 @@ class MysqlStore {
     const payload = outbound(body), hash = digest(payload), id = randomUUID();
     if(this.writerV2){if(!activeTransactions.has(c))throw Object.assign(fail(503),{code:'WRITER_TRANSACTION_REQUIRED'});await require('./writer-fence').enter(c,this.botId);}
     if(this.routeFence){const [[route]]=await c.execute('SELECT id FROM hd2_system_mappings WHERE bot_id=? AND chat_id=? AND thread_id<=>? AND enabled=TRUE AND verified=TRUE FOR SHARE',[this.botId,payload.chat_id,payload.telegram_thread_id]);if(!route)throw fail(403);}
-    const lane=this.fifo?await (this.fifoRelease?require('./fifo-release').allocateOrder(c,this.botId,payload):require('./fifo').allocate(c,this.botId,payload)):null;
+    const lane=this.fifo?await (this.fifoRelease?require('./fifo-release').allocateOrder(c,this.botId,payload,key):require('./fifo').allocate(c,this.botId,payload)):null;
     if(this.writerV2&&!lane)throw Object.assign(fail(503),{code:'WRITER_FIFO_ORDER_REQUIRED'});
     await c.execute('INSERT INTO hd2_courier_outbox (id,bot_id,idem_key,payload_hash,payload,due_ms'+(lane?',conversation_key,conversation_seq':'')+(lane&&this.fifoRelease?',fifo_order_id':'')+') VALUES (?,?,?,?,?,?'+(lane?',?,?':'')+(lane&&this.fifoRelease?',?':'')+') ON DUPLICATE KEY UPDATE id=id', [id, this.botId, key, hash, JSON.stringify(payload), this.now(),...(lane?[lane.key,lane.sequence]:[]),...(lane&&this.fifoRelease?[lane.orderId]:[])]);
     const [[row]] = await c.execute('SELECT id,payload_hash FROM hd2_courier_outbox WHERE bot_id=? AND idem_key=? FOR UPDATE', [this.botId, key]);

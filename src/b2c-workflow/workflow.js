@@ -25,8 +25,10 @@ function createB2CProcessor({ store, config }) {
       if (!parsed.valid) {
         if (!parsed.command) return ignore('COMMAND_VALIDATION_REJECTED');
         const errors=Array.isArray(parsed.errors)&&parsed.errors.length?parsed.errors:['format pesan'];
+        const text=require('./rejection').rejectionText({...parsed,errors});
+        if(!text)return ignore('COMMAND_VALIDATION_REJECTED');
         await audit('ORDER_FORMAT_REJECTED',null,null,{command:parsed.command,errors});
-        await tx.enqueue(`b2c:${tx.inboxId}:format-rejected`,reply(e,group,'❌ Gagal! Format order salah. Alasan: '+errors.join(', ')));
+        await tx.enqueue(`b2c:${tx.inboxId}:format-rejected`,reply(e,group,text));
         return {disposition:'PROCESSED'};
       }
       const targetGroup=group.commandProfile==='ALL'?{...group,module:require('../courier/shared-group').moduleFor(parsed.command)}:group;

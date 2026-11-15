@@ -5,14 +5,14 @@ $ErrorActionPreference='Stop'
 if($env:OS -ne 'Windows_NT'){throw 'WINDOWS_REQUIRED'}
 $Root=[IO.Path]::GetFullPath($Root)
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
-foreach($folder in @($Root,(Join-Path $Root 'Logs'),(Join-Path $Root 'Tools'))){
+foreach($folder in @($Root,(Join-Path $Root 'Logs'),(Join-Path $Root 'Tools'),(Join-Path $Root 'Logs\Telegram'))){
  $created=-not (Test-Path -LiteralPath $folder)
  if(Test-Path -LiteralPath $folder){if((Get-Item -LiteralPath $folder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'REPARSE_DIRECTORY_REJECTED'}}
  [void][IO.Directory]::CreateDirectory($folder)
- if($folder -eq $Root -and -not $created){
-  if($IncludeWebLocalService){$parentAcl=Get-Acl -LiteralPath $folder;$rule=New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-5-19')),'ReadAndExecute','Allow');$parentAcl.AddAccessRule($rule);Set-Acl -LiteralPath $folder -AclObject $parentAcl}
+ if(-not $created){
+  if($IncludeWebLocalService -and $folder -in @($Root,(Join-Path $Root 'Logs'))){$parentAcl=Get-Acl -LiteralPath $folder;$rights=if($folder -eq $Root){'ReadAndExecute'}else{'Modify'};$rule=New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-5-19')),$rights,'Allow');$parentAcl.AddAccessRule($rule);Set-Acl -LiteralPath $folder -AclObject $parentAcl}
   continue
- } # preserve an existing parent ACL
+ } # preserve existing Web/other logging ACLs
  $acl=New-Object Security.AccessControl.DirectorySecurity
  $acl.SetAccessRuleProtection($true,$false)
  foreach($sid in @($identity.User,(New-Object Security.Principal.SecurityIdentifier('S-1-5-18')))){
@@ -26,10 +26,11 @@ foreach($folder in @($Root,(Join-Path $Root 'Logs'),(Join-Path $Root 'Tools'))){
  Set-Acl -LiteralPath $folder -AclObject $acl
 }
 $tools=Join-Path $Root 'Tools'
-foreach($name in @('courier-log.js','courier-log.ps1','courier-log-view.js')){
+foreach($name in @('courier-log.js','courier-log.ps1','courier-log-view.js','telegram-log.js')){
  $target=Join-Path $tools $name
  if(Test-Path -LiteralPath $target){
-  if((Get-FileHash -LiteralPath $target).Hash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name)).Hash){throw 'EXISTING_VIEWER_DIFFERS_USE_NEW_ROOT'}
+  if((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'VIEWER_LINK_REJECTED'}
+  if((Get-FileHash -LiteralPath $target).Hash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $name)).Hash){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $target -Force}
  }else{Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $target}
 }
 # The profile gets only a dot-source line; enable logging separately in an approved release.

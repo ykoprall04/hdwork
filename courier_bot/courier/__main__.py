@@ -5,13 +5,14 @@ import threading
 import json
 from pathlib import Path
 from urllib.request import build_opener, HTTPRedirectHandler, ProxyHandler
+from .raw_log import logger, observe, capture_streams
+capture_streams()
 from .runtime_config import RuntimeConfig, private_directory
 from .http import JsonTransport, TransportError
 from .clients import InternalClient, TelegramClient
 from .groups import IngressPolicy
 from .journal import Journal
 from .lock import PollingLock
-from .raw_log import logger, observe
 from .durable_runner import DurableCourier, WorkerLease
 
 
@@ -44,6 +45,7 @@ def serve(courier, stop, report=lambda code: print(code, file=sys.stderr)):
             stop.wait(wait)
 
 def main():
+    capture_streams()
     if sys.argv[1:] != ['--run']:
         print('Courier disabled; explicit --run required', file=sys.stderr)
         return 1

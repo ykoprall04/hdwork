@@ -108,6 +108,8 @@ class IngressPolicy:
         parsed = parse_command(event['text'], group['profile'], self.bot_username)
         if parsed.get('command') not in group['commands']:
             return None, 'IGNORED', 'command_not_allowed_or_invalid'
+        from .raw_log import logger
+        logger().emit('TELEGRAM_COMMAND', command=parsed['command'], status='VALID' if parsed['valid'] else 'INVALID')
         if not parsed['valid']:
             if self.test_window:
                 return None, 'IGNORED', 'outside_single_order_window'

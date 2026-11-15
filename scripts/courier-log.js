@@ -2,10 +2,10 @@
 const fs=require('node:fs'),path=require('node:path'),{StringDecoder}=require('node:string_decoder');
 const view=require('./courier-log-view');
 const pattern=/^hdwork2-\d{4}-\d{2}-\d{2}-[a-z-]+-\d+\.jsonl$/;
-function snapshot(directory){try{return fs.readdirSync(directory).filter(f=>pattern.test(f)).sort();}catch{return [];}}
-async function initial(directory,tail=100,accept=()=>true){
+function snapshot(directory,fileFilter=()=>true){try{return fs.readdirSync(directory).filter(f=>pattern.test(f)&&fileFilter(f)).sort();}catch{return [];}}
+async function initial(directory,tail=100,accept=()=>true,fileFilter=()=>true){
  const offsets=new Map(),rows=[];
- for(const name of snapshot(directory)){
+ for(const name of snapshot(directory,fileFilter)){
   let fd;try{fd=await fs.promises.open(path.join(directory,name),'r');const stat=await fd.stat();let end=stat.size,carry=Buffer.alloc(0),trailing=true,partial=Buffer.alloc(0),selected=[];
    while(end>0&&selected.length<tail){const size=Math.min(65536,end),buffer=Buffer.alloc(size);end-=size;const {bytesRead}=await fd.read(buffer,0,size,end);const data=Buffer.concat([buffer.subarray(0,bytesRead),carry]);let stop=data.length;
     for(let i=data.length-1;i>=0;i--)if(data[i]===10){const line=data.subarray(i+1,stop);stop=i;if(trailing){partial=Buffer.from(line);trailing=false;}else if(line.length){const text=line.toString('utf8');if(accept(text))selected.push(text);if(selected.length>=tail)break;}}
@@ -18,8 +18,8 @@ async function initial(directory,tail=100,accept=()=>true){
  rows.sort((a,b)=>{try{return String(JSON.parse(a).timestamp).localeCompare(String(JSON.parse(b).timestamp));}catch{return 0;}});
  return {offsets,lines:rows.slice(-tail)};
 }
-async function readNew(directory,offsets){const lines=[];
- for(const name of snapshot(directory)){
+async function readNew(directory,offsets,fileFilter=()=>true){const lines=[];
+ for(const name of snapshot(directory,fileFilter)){
   let fd;try{fd=await fs.promises.open(path.join(directory,name),'r');const stat=await fd.stat();let state=offsets.get(name)||{position:0,partial:'',decoder:new StringDecoder('utf8')};if(stat.size<state.position)state={position:0,partial:'',decoder:new StringDecoder('utf8')};
    // One chunk per file per tick bounds observer overhead; subsequent ticks drain the rest.
    const length=Math.min(stat.size-state.position,65536);if(length){const buffer=Buffer.alloc(length);const {bytesRead}=await fd.read(buffer,0,length,state.position);state.position+=bytesRead;const text=state.partial+state.decoder.write(buffer.subarray(0,bytesRead));const parts=text.split('\n');state.partial=parts.pop();lines.push(...parts.filter(Boolean));}offsets.set(name,state);

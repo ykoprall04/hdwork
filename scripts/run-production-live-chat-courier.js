@@ -31,7 +31,10 @@ async function run(argv=process.argv.slice(2)){
   phase='BACKEND_START';
   backend=await require('../courier-b2c-server').startIntegration({env:backendEnv,deferInboxWorker:true});
   const childEnv=Object.fromEntries(['SystemRoot','WINDIR','PATH','Path','PATHEXT','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA','ProgramData','HDWORK2_RAW_LOG_ENABLED','HDWORK2_LOG_DIRECTORY'].filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
-  Object.assign(childEnv,pythonEnv,{PYTHONDONTWRITEBYTECODE:'1'});
+  // Python owns Telegram logging; native supervisor intentionally clears inherited env.
+  // Keep this separate from Web/Node logs and never persist unredacted parent pipes.
+  Object.assign(childEnv,pythonEnv,{PYTHONDONTWRITEBYTECODE:'1',PYTHONUNBUFFERED:'1',
+   HDWORK2_RAW_LOG_ENABLED:'true',HDWORK2_LOG_DIRECTORY:path.join(process.env.ProgramData||'C:\\ProgramData','HDWork2','Logs','Telegram')});
   phase='PYTHON_STARTUP';
   const startupTrace=fs.readFileSync(path.join(__dirname,'courier-startup-trace.py'),'utf8');
   child=spawn('python',['-B','-c',startupTrace,'--run'],{cwd:path.resolve(__dirname,'../courier_bot'),env:childEnv,windowsHide:true,stdio:['pipe','pipe','pipe']});clearSecrets(childEnv);

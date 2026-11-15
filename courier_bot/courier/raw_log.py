@@ -10,17 +10,59 @@ import re
 import threading
 import time
 import traceback
+import sys
 from pathlib import Path
 
 _context = contextvars.ContextVar('courier_log_context', default=None)
 _ID = re.compile(r'^[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}$')
+
+def redact(text):
+    """Redact before queueing, including credentials split across stream writes."""
+    for key, value in os.environ.items():
+        if re.search(r'TOKEN|PASSWORD|SECRET|SESSION|SERVICE_KEY|IDENTITY_KEY', key, re.I) and len(value) >= 4:
+            text = text.replace(value, '[REDACTED]')
+    text = re.sub(r'\b\d{6,12}:[A-Za-z0-9_-]{20,}\b', '[REDACTED_TOKEN]', text)
+    text = re.sub(r'(?i)(https?://)[^\s/]+@', r'\1[REDACTED]@', text)
+    # Payloads are never debugging metadata. Preserve surrounding traceback/HTTP details.
+    text = re.sub(r'''(?ix)(["']?(?:authorization|cookie|set-cookie|token|password|secret|session|service_key|identity_key|lease_token|text|caption|payload|raw_text|first_name|last_name|username|phone_number|chat_id|sender_id|SC\s*/\s*IN|NO\s+INET|NIK|SN\s+ONT|alamat|nama\s+pelanggan)["']?\s*[:=]\s*).*''', r'\1[REDACTED]', text)
+    text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', '[REDACTED_EMAIL]', text)
+    text = re.sub(r'(?<![\w.])\+?\d{9,}(?![\w.])', '[REDACTED_ID]', text)
+    return text
+
+def exception_text(error, seen=None):
+    # Do not include source lines or locals, which may embed customer input/secrets.
+    seen = set() if seen is None else seen
+    if id(error) in seen:
+        return ''
+    seen.add(id(error))
+    lines = []
+    cause = error.__cause__ or (error.__context__ if not error.__suppress_context__ else None)
+    if cause is not None:
+        lines.extend([exception_text(cause, seen), '\nThe above exception was the direct cause of the following exception:\n\n' if error.__cause__ else '\nDuring handling of the above exception, another exception occurred:\n\n'])
+    lines.append('Traceback (most recent call last):\n')
+    for f in traceback.extract_tb(error.__traceback__):
+        lines.append(f'  File "{f.filename}", line {f.lineno}, in {f.name}\n')
+    message = '[REDACTED_EXCEPTION_MESSAGE]'
+    if type(error).__module__ == 'builtins' and isinstance(error, OSError) and error.errno:
+        message = f'[Errno {error.errno}] {os.strerror(error.errno)}'
+    elif str(error) in ('courier_transport_error', 'timed out', 'The read operation timed out', 'Connection refused', 'Connection reset by peer'):
+        message = str(error)
+    lines.append(f'{type(error).__name__}: {message}\n')
+    for attr in ('status', 'code', 'retry_after', 'errno', 'sqlite_errorcode'):
+        value = getattr(error, attr, None)
+        if type(value) is int:
+            lines.append(f'{attr}={value}\n')
+    reason = getattr(error, 'reason', None)
+    if isinstance(reason, BaseException):
+        lines.append(exception_text(reason, seen))
+    return redact(''.join(lines))
 
 def safe_error(error):
     frames = []
     for frame in traceback.extract_tb(error.__traceback__):
         frames.append({'file': Path(frame.filename).name, 'line': frame.lineno, 'function': frame.name if re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*|<module>|<lambda>', frame.name) else '[redacted]'})
     result = {'type': type(error).__name__ if type(error).__module__ in ('builtins', 'courier.http', 'sqlite3') else 'Exception',
-              'message': '[redacted]', 'traceback': frames}
+              'message': '[redacted]', 'traceback': frames, 'nativeTraceback': exception_text(error)}
     for key in ('status', 'retry_after', 'errno', 'sqlite_errorcode'):
         value = getattr(error, key, None)
         if type(value) is int:
@@ -54,6 +96,10 @@ class RawLog:
             elif key == 'groupHash' and isinstance(value,str) and re.fullmatch('[a-f0-9]{64}',value):
                 row[key] = value
             elif key in ('status', 'reason') and isinstance(value, str) and re.fullmatch('[A-Z_]{2,64}', value):
+                row[key] = value
+            elif key == 'apiMethod' and value in ('getMe', 'getWebhookInfo', 'getUpdates', 'sendMessage'):
+                row[key] = value
+            elif key == 'command' and value in ('order', 'req', 'config_psb', 'mo', 'assuren', 'b2b', 'replacement'):
                 row[key] = value
         if error is not None:
             row['error'] = safe_error(error)
@@ -95,6 +141,17 @@ class RawLog:
                 self.dropped += 1
             finally:
                 self.queue.task_done()
+
+    def stream(self, name, text):
+        if not self.enabled:
+            return
+        row = {'timestamp': datetime.datetime.fromtimestamp(self.now(), datetime.timezone.utc).isoformat(timespec='milliseconds'),
+               'source': 'python', 'pid': os.getpid(), 'event': 'PYTHON_' + name.upper(),
+               'stream': name, 'text': redact(text)}
+        try:
+            self.queue.put_nowait(row)
+        except queue.Full:
+            self.dropped += 1
 
     def shutdown(self):
         if self.thread:
@@ -138,3 +195,52 @@ def observe(event, run, **values):
 
 def current_trace_id():
     return (_context.get() or {}).get('traceId')
+
+class CapturedStream:
+    def __init__(self, original, name, log):
+        self.original, self.name, self.log = original, name, log
+        self.pending = ''
+        self.in_traceback = False
+        self.lock = threading.RLock()
+
+    def write(self, text):
+        with self.lock:
+            self.pending += text
+            while '\n' in self.pending:
+                line, self.pending = self.pending.split('\n', 1)
+                if line.startswith('Traceback (most recent call last):'):
+                    self.in_traceback = True
+                elif self.in_traceback and line.startswith('    '):
+                    # Keep code structure but never source literals or caret snippets.
+                    line = re.sub(r'''(['"])(?:\\.|(?!\1).)*\1''', "'[REDACTED_LITERAL]'", line)
+                elif self.in_traceback and re.match(r'^[A-Za-z_][\w.]*:', line):
+                    kind, message = line.split(':', 1)
+                    if message.strip() not in ('timed out', 'The read operation timed out', 'courier_transport_error', 'Connection refused', 'Connection reset by peer'):
+                        line = kind + ': [REDACTED_EXCEPTION_MESSAGE]'
+                    self.in_traceback = False
+                safe = redact(line) + '\n'
+                self.log.stream(self.name, safe)
+                self.original.write(safe)
+            if len(self.pending) > 65536:
+                self.pending = '[REDACTED_OVERSIZED_LINE]'
+        return len(text)
+
+    def flush(self):
+        # Keep unfinished lines buffered so fragmented secrets cannot escape redaction.
+        self.original.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.original, name)
+
+def capture_streams():
+    log = logger()
+    if log.enabled:
+        for name in ('stdout', 'stderr'):
+            original = getattr(sys, name)
+            if not isinstance(original, CapturedStream):
+                stream = CapturedStream(original, name, log)
+                setattr(sys, name, stream)
+                def finish(stream=stream):
+                    if stream.pending:
+                        stream.write('\n')
+                atexit.register(finish)

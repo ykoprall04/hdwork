@@ -5,7 +5,7 @@ import re
 import time
 import uuid
 from .http import TransportError
-from .raw_log import current_trace_id
+from .raw_log import current_trace_id, observe, logger
 
 class InternalClient:
     def __init__(self, config, transport, clock=time.time, nonce=lambda: uuid.uuid4().hex, fifo_ack=False, budget=None):
@@ -57,12 +57,17 @@ class TelegramClient:
     def __init__(self, token, transport):
         self._base, self.transport = 'https://api.telegram.org/bot' + token + '/', transport
 
+    def request(self, method, body):
+        # Never log URL, token, payload, response body or customer identifiers.
+        logger().emit('TELEGRAM_REQUEST_START', apiMethod=method)
+        return observe('TELEGRAM_REQUEST', lambda: self.transport.post(self._base + method, body), apiMethod=method)
+
     def verify_identity(self, expected_id, username):
-        me = self.transport.post(self._base + 'getMe', {})['result']
+        me = self.request('getMe', {})['result']
         if (me.get('is_bot') is not True or str(me.get('id')) != expected_id or
                 str(me.get('username', '')).lower() != username.lower()):
             raise ValueError('production_bot_identity_mismatch')
-        webhook = self.transport.post(self._base + 'getWebhookInfo', {})['result']
+        webhook = self.request('getWebhookInfo', {})['result']
         if webhook.get('url'):
             raise ValueError('production_webhook_already_configured')
 
@@ -71,7 +76,7 @@ class TelegramClient:
         payload = {'timeout': timeout, 'limit': 10, 'allowed_updates': ['message', 'edited_message']}
         if offset is not None:
             payload['offset'] = offset
-        return self.transport.post(self._base + 'getUpdates', payload)['result']
+        return self.request('getUpdates', payload)['result']
 
     def send(self, payload):
         if payload.get('method') != 'sendMessage' or payload.get('thread_mode') not in ('thread', 'non_topic'):
@@ -90,7 +95,7 @@ class TelegramClient:
         if payload.get('reply_to_message_id') is not None:
             body['reply_parameters'] = {'message_id': message_id(payload['reply_to_message_id']), 'allow_sending_without_reply': False}
         try:
-            result = self.transport.post(self._base + 'sendMessage', body)['result']['message_id']
+            result = self.request('sendMessage', body)['result']['message_id']
         except TransportError as error:
             evidence = getattr(error, 'api_failure', None)
             if evidence:
