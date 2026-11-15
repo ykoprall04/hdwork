@@ -20,6 +20,42 @@ result contract. The adapter does not attach to or modify the running Web proces
 Actual launcher/Windows identity integration remains a separately approved step;
 an ordinary terminal without protected stdin cannot run apply successfully.
 
+## One-shot operator connection check (source only; not activated)
+
+The existing `run-protected-web.ps1` wrapper accepts `-CheckVlanAdapter`.
+It uses the existing protected bundle bootstrap and runs the existing
+`protected-web-service.js` entry with `--check-vlan-adapter`. This branch never
+starts HTTP, auth pools, trial senders, raw logging or Web state writers.
+It checks the adapter's database/account/UUID gates plus server hostname `woc`
+and port 3306, closes connections and exits. The wrapper applies a 30-second
+child timeout, emits only fixed PASS/FAILED JSON and never retries this mode.
+
+Later, after approval, prepare an ACL-protected candidate snapshot containing
+the reviewed wrapper, entry point, helper and adapter dependencies. Prepare its
+existing-format Web control config with matching source hashes, Node pin and
+encrypted-bundle pin; do not reuse stale pins or modify the active task/config.
+The control path supplied here is a pin manifest, not a request to start its Web
+supervisor. The mode requires LocalService (`S-1-5-19`), protected directory ACLs
+and matching pins before bootstrap. It is not runnable from an ordinary user
+terminal and does not grant itself elevation.
+
+From a separately authorized operator execution context running as LocalService:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "<reviewed-snapshot>\scripts\run-protected-web.ps1" -CheckVlanAdapter -ExpectedServerUuid "<trusted-operator-UUID>" -ControlConfig "<reviewed-control-config>" -ConfigSha256 "<reviewed-config-SHA256>"
+```
+
+This is not an import and does not use `--apply`. Provisioning any one-time
+LocalService execution context or candidate artifacts needs separate approval;
+the active Scheduled Task target must remain unchanged. Do not run the normal
+wrapper without the check switch as a connection test: that starts a Web child.
+
+Mock verification:
+
+```powershell
+node --test tests/vlan-connection-check.test.cjs tests/vlan-import-bundle.test.cjs tests/vlan.test.js tests/production-control.test.js
+```
+
 Also supply `VLAN_IMPORT_SERVER_UUID`, obtained and independently checked through
 an authorized operator session. Do not discover and automatically trust a UUID
 from an unverified import connection. Before exposing the pool, and for each

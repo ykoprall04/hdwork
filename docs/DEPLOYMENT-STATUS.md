@@ -131,3 +131,13 @@ Status: IMPLEMENTED AND TESTED OFFLINE, NOT DEPLOYED. Development branch `feat/f
 The final external workbook `D:\VLAN_GABUNGAN (2).xlsx` was read and imported only into owned TCP-disabled MySQL test instances: 426 rows (SBU 249 / SBS 83 / MDR 94), exact-value comparison and repeated-import idempotency passed. The workbook SHA-256 remains `6856571e0ca9b567d6546c9e305f4f789cc1bd5cf5b05afb7d299ac366c9d7bb`. No production database/credentials, Telegram calls, production migration/import, Courier/Web/MySQL/personal-bot restart or deployment was used. Local test servers/browsers were closed after tests.
 
 Validation PASS: 91 Python tests; 66 distinct selected Node unit/regression checks (including 7 VLAN checks); 31 selected isolated-SQL/integration tests, including INVALID/FIFO/ACK/idempotency/writer-fence regressions; 81 frontend model tests; production frontend build; fully mocked desktop/mobile/embedded browser workflow including copy/edit/reset, Escape, role-restricted navigation, search/CRUD/delete confirmation and zero popup mutations. Grant compatibility is additive and the Web formatter supports the existing four-key network helper, preserving independent Web/Courier updates. See `docs/format-vlan.md` for implementation, test commands and pending migration/import/activation requirements. The user subsequently authorized committing and pushing only the feat/format-vlan development branch. Source publication does not merge to main or activate the feature; production migration/import and deployment remain pending approval.
+# Pending local preparation: one-shot VLAN connection verification
+
+Source now provides an explicit one-time check in the existing protected Web
+wrapper/entry point. It reuses protected bundle stdin and the guarded VLAN
+adapter, verifies database/writer/UUID plus host/port, and closes without starting
+Web or writing its supervisor state. LocalService identity, ACLs and reviewed
+config/source pins are required. No production task/runtime was changed or
+connection attempted; candidate staging and authorized operator execution remain
+pending. See `docs/vlan-import-adapter.md`. This does not add an updater mode or
+authorize import, deployment or secret access.
