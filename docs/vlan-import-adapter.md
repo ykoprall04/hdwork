@@ -2,17 +2,23 @@
 
 `scripts/lib/vlan-import-session.cjs` implements the existing importer's
 `create() -> {pool, close}` contract. Merely requiring it opens no connection.
-It reuses `operational-pools.options('write', env)` and the existing
-`private-database-env.readPrivateDpapi` helper, without dotenv or automatic
-production-runtime discovery. No Courier identity is used.
+It reuses `operational-pools.options('write', env)` and the same protected bundle
+bootstrap and validation used by Web. No Courier identity is used. No dotenv,
+DPAPI file discovery or separate password storage is added.
 
 An approved operator must supply the existing Web writer settings in the process
 environment, including its existing `OP_WRITE_DB_PASSWORD_DPAPI_FILE` reference
-and writer approval flags. No plaintext password environment variable is allowed
-by the existing options validator. The DPAPI helper retains its existing file,
-scope and Windows identity requirements; this adapter adds no secret storage.
-Compatibility with the actual production credential reference and executing
-Windows identity must be verified during a separately approved activation.
+and writer approval flags. This reference is a callback scope key, not a file
+the adapter decrypts. No plaintext password environment variable is allowed.
+The existing protected launcher must supply its validated bundle through owned
+stdin, as it does for Web. The adapter selects only `writePassword` under the
+`operational-write` policy, rejects equal reader/writer references, and clears
+the parsed bundle fields after selection. Password remains in driver memory only.
+An in-process approved caller can instead inject the existing scoped `readSecret`
+callback via `adapter({env, readSecret}).create()`; this does not change `create()`'s
+result contract. The adapter does not attach to or modify the running Web process.
+Actual launcher/Windows identity integration remains a separately approved step;
+an ordinary terminal without protected stdin cannot run apply successfully.
 
 Also supply `VLAN_IMPORT_SERVER_UUID`, obtained and independently checked through
 an authorized operator session. Do not discover and automatically trust a UUID
@@ -45,6 +51,13 @@ Offline verification (owned TCP-disabled MySQL; synthetic credentials only):
 
 ```powershell
 node --test tests/vlan-import-session.test.cjs
+```
+
+Mock-only bundle/adapter verification without MySQL or secret access:
+
+```powershell
+node --test --test-name-pattern="bundle|mock|preview" tests/vlan-import-bundle.test.cjs tests/vlan-import-session.test.cjs
+node --test tests/vlan.test.js
 ```
 
 The fixture verifies all 426 Excel tuples, idempotent repeat import, account,

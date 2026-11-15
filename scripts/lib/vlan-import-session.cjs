@@ -1,7 +1,13 @@
 // Importer adapter only; loading this module never opens a database connection.
 const {options}=require('../../src/config/operational-pools');
 const reject=()=>Object.assign(Error('VLAN_IMPORT_CONNECTION_REJECTED'),{code:'VLAN_IMPORT_CONNECTION_REJECTED'});
-function adapter({env=process.env,readSecret=file=>require('../../src/config/private-database-env').readPrivateDpapi(file),createPool=opts=>require('mysql2/promise').createPool(opts)}={}){
+async function writerSecret(env,stream,reference){
+ if(env.HDWORK2_SERVICE_AUTH_POLICY!=='operational-write'||reference!==env.OP_WRITE_DB_PASSWORD_DPAPI_FILE||reference===env.OP_READ_DB_PASSWORD_DPAPI_FILE)throw reject();
+ const {bootstrap,validateOperationalBundle}=require('../office-web-service');
+ const secrets=await bootstrap(stream,{validate:value=>require('../../src/config/protected-service-bundle').validateProtectedBundle(value,env,{validateOperationalBundle})});
+ try{return secrets.writePassword;}finally{for(const key of Object.keys(secrets))secrets[key]='';}
+}
+function adapter({env=process.env,stream=process.stdin,readSecret=file=>writerSecret(env,stream,file),createPool=opts=>require('mysql2/promise').createPool(opts)}={}){
  return {async create(){
   let raw;
   try{
