@@ -152,13 +152,13 @@ namespace HDWork2 {
   $fence=if(Test-Path -LiteralPath $cfg.fenceFile){Get-Content -LiteralPath $cfg.fenceFile -Raw|ConvertFrom-Json}else{$null}
   $valid=$request.action -ceq 'STOP' -and $request.configSha256 -ceq $ConfigSha256 -and [int]$request.childPid -eq $childPid -and $request.childStartedAtUtc -ceq $childStartedAtUtc -and $fence -and $fence.barrierId -ceq $request.barrierId -and $fence.configSha256 -ceq $ConfigSha256
   if(-not $valid){$writer.WriteLine('{"status":"REJECTED"}');$server.Dispose();$server=$null;continue}
-  $phase='STOPPING';$requested=$true;SaveState 'STOPPING'
+  $phase='STOPPING';$requested=$true;SaveState 'STOPPING';SaveAttempt 'STOPPING'
   $child.StandardInput.WriteLine('STOP');$child.StandardInput.Close()
   if($child.WaitForExit([int]$cfg.graceSeconds*1000)){
-   SaveState 'STOPPED' $child.ExitCode
+   SaveState 'STOPPED' $child.ExitCode;SaveAttempt 'STOPPED'
    $writer.WriteLine((@{status='STOPPED';clean=($child.ExitCode -eq 0);forced=$false;childExitCode=$child.ExitCode;configSha256=$ConfigSha256;barrierId=$request.barrierId}|ConvertTo-Json -Compress));break
   }
-  SaveState 'STOP_TIMEOUT';try{$writer.WriteLine('{"status":"STOP_TIMEOUT","clean":false,"forced":false}')}catch{}
+  SaveState 'STOP_TIMEOUT';SaveAttempt 'STOP_TIMEOUT';try{$writer.WriteLine('{"status":"STOP_TIMEOUT","clean":false,"forced":false}')}catch{}
   # Keep ownership after timeout. Never orphan/kill a possibly active sender.
   $server.Dispose();$server=$null;$child.WaitForExit();break
  }

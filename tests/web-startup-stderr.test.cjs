@@ -52,7 +52,7 @@ for(const [name,code,expected] of cases)test(name,{skip:process.platform!=='win3
 test('records a PowerShell pre-state exception with attempt identity',{skip:process.platform!=='win32'},async()=>{await fixture('process.exitCode=0;',null,true);});
 test('records candidate READY under its unique attempt ID',{skip:process.platform!=='win32'},async()=>{const r=await readyFixture();assert.equal(r.ready.status,'READY');assert.equal(r.diag.role,'candidate');});
 test('PowerShell source parses and stderr is drained before bootstrap input',{skip:process.platform!=='win32'},()=>{
- const source=fs.readFileSync(supervisor,'utf8');assert.ok(source.indexOf('$child.add_ErrorDataReceived($stderrHandler)')<source.indexOf('[void]$child.Start()'));assert.ok(source.indexOf('$child.BeginErrorReadLine()')<source.indexOf('$child.StandardInput.WriteLine([Text.Encoding]::UTF8.GetString($plain))'));
+ const source=fs.readFileSync(supervisor,'utf8');assert.ok(source.indexOf('$child.add_ErrorDataReceived($stderrHandler)')<source.indexOf('[void]$child.Start()'));assert.ok(source.indexOf('$child.BeginErrorReadLine()')<source.indexOf('$child.StandardInput.WriteLine([Text.Encoding]::UTF8.GetString($plain))'));assert.ok(source.includes("SaveState 'STOPPED' $child.ExitCode;SaveAttempt 'STOPPED'"));assert.ok(source.includes("SaveAttempt 'READY'"));
  const script=path.join(fs.mkdtempSync(path.join(repo,'.local/stderr-parse-')),'parse.ps1');fs.writeFileSync(script,"$tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile($args[0],[ref]$tokens,[ref]$errors);if($errors.Count){exit 1}\n");
  cp.execFileSync(powershell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',script,supervisor],{windowsHide:true,stdio:'pipe'});
 });
