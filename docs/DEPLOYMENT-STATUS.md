@@ -55,3 +55,13 @@ The updater now rewrites the matched argument using captured substring offsets i
 Offline verification: updater mock 51/51 PASS, including reproduction of `$1413...`, candidate/rollback action validation, config file hash mismatch rejection, invalid candidate action preserving old Web, and candidate failure with rollback restoring READY. `web-task-action.test.cjs` 1/1 PASS; `web-startup-stderr.test.cjs` 20/20 PASS; PowerShell parsing and `git diff --check` PASS. No production task, service, Web runtime, Courier, or personal bot was changed. Production deployment remains untested for this fix.
 
 Before modifying update or deployment mechanisms, read this status and `AGENTS.md`.
+
+## Batch 3 notes schema and minimal Web compatibility - 15 November 2026
+
+Migration `database/manual/019_hdwork2_order_notes.sql` from source commit `378e6f0` was applied to operational `hdwork2` after the existing private backup/restore rehearsal passed. The notes table, utf8mb4 text, ascii_bin order key, primary/FK indexes, two foreign keys, and exact reader/writer notes grants were verified. Existing Web grants outside notes and Courier account grants were preserved.
+
+The user explicitly authorized temporary Web downtime and the prepared minimal compatibility patch. The existing cooperative Web control stopped `HDWork2-Web-Standby`; only runtime `src/config/operational-grants.js` was replaced, with matching source/control/task SHA pins. Web restarted READY with both operational pools initialized. Verified loopback health: 5/5 PASS with TLS validation. No Courier task, runtime, or personal bot was changed.
+
+This is a one-file compatibility overlay. The active full Web release pin remains `7ceb012717936e4092e09d87f36e80e6734af927` (control target remains `1d388748c2c838b014ca3efcbfb57f2e71fdb74f`); it must not be reported as a full deployment of `378e6f0` or the Batch 3 UI/API. New control SHA: `cb7faa0d45a18e61033b0f4378b858bd466dafbef74ac2aad1bc3e07c389fa6b`. The routine updater still compares against that full release pin and validates runtime bytes using the updated source hashes. No updater mechanism or feature flags were changed, and no push occurred.
+
+Private evidence is retained under `.local/notes019-controlled-ba71a5a9e1a245b6893369a11057d7b8/`: backup and restore verification, migration receipt, Web control/source backups, handoff/READY receipts, and post-migration health. Credentials and database contents are excluded from source control.
