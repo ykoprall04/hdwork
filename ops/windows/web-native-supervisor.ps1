@@ -2,18 +2,24 @@
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$ControlConfig,[Parameter(Mandatory=$true)][string]$ConfigSha256)
 $ErrorActionPreference='Stop'
-$child=$null;$server=$null;$requested=$false;$childStartedAtUtc=$null;$childPid=0;$phase='START';$stderrCapture=$null;$stderrHandler=$null
+$child=$null;$server=$null;$requested=$false;$childStartedAtUtc=$null;$childPid=0;$phase='START';$stderrCapture=$null;$stderrHandler=$null;$stdoutHandler=$null;$stderrSummaryHandler=$null;$attemptId='';$attemptPath=''
 $previousStopClean=$false
 function HashFile($p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
-if((HashFile $ControlConfig) -cne $ConfigSha256){throw 'CONTROL_CONFIG_CHANGED'}
-$cfg=Get-Content -LiteralPath $ControlConfig -Raw|ConvertFrom-Json
-$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-if($cfg.kind -cne 'HDWORK2_WEB_SUPERVISOR' -or $cfg.version -ne 1 -or $cfg.ownerSid -cne $sid -or $cfg.taskName -notmatch '^(HDWork2-Web(?:-Standby|-Rollback)?|HDWork2-WebFixture-[a-f0-9]{32})$' -or $cfg.pipeName -notmatch '^hdwork2-web-[a-f0-9]{32}$' -or $cfg.graceSeconds -lt 1 -or $cfg.graceSeconds -gt 60){throw 'NATIVE_OWNER_REJECTED'}
 $root=[IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ControlConfig))
-foreach($file in @($cfg.stateFile,$cfg.fenceFile)){if(-not ([IO.Path]::GetFullPath($file)).StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'CONTROL_PATH_ESCAPE'}}
-if((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'CONTROL_DIRECTORY_LINK'}
+function SaveAttempt([string]$eventPhase,[string]$exceptionType='',[string]$code='',[int]$taskResult=-1){
+ if($attemptId -notmatch '^[a-f0-9]{32}$' -or -not $attemptPath){return}
+ try{$safeRole=if([string]$cfg.attemptRole -in @('candidate','rollback')){[string]$cfg.attemptRole}else{'runtime'};$safeCode=if($code -match '^[A-Za-z][A-Za-z0-9_.-]{0,63}$'){$code}else{''};$safeType=if($exceptionType -match '^[A-Za-z][A-Za-z0-9_.+`]{0,127}$'){$exceptionType}else{''};$row=@{version=1;attemptId=$attemptId;role=$safeRole;phase=$eventPhase;expectedConfigSha256=$ConfigSha256;ownerPid=$PID;childPid=$childPid;childExitCode=$(if($child -and $child.HasExited){$child.ExitCode}else{$null});exceptionType=$safeType;code=$safeCode;taskResult=$(if($taskResult -ge 0){$taskResult}else{$null});eventAtUtc=[DateTimeOffset]::UtcNow.ToString('o')};$tmp=$attemptPath+'.'+[Guid]::NewGuid().ToString('N')+'.tmp';[IO.File]::WriteAllText($tmp,($row|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)));if(Test-Path -LiteralPath $attemptPath){[IO.File]::Replace($tmp,$attemptPath,[NullString]::Value)}else{[IO.File]::Move($tmp,$attemptPath)}}catch{}
+}
+try{if((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'CONTROL_DIRECTORY_LINK'};$cfg=Get-Content -LiteralPath $ControlConfig -Raw|ConvertFrom-Json;if([string]$cfg.attemptId -match '^[a-f0-9]{32}$'){$attemptId=[string]$cfg.attemptId}else{$attemptId=[Guid]::NewGuid().ToString('N')};$attemptPath=Join-Path $root ('startup-attempt-'+$attemptId+'.json');SaveAttempt 'CONFIG_READ';if((HashFile $ControlConfig) -cne $ConfigSha256){throw 'CONTROL_CONFIG_CHANGED'}}catch{$code=($_.FullyQualifiedErrorId -split ',')[0];SaveAttempt 'CONFIG_VALIDATION_FAILED' $_.Exception.GetType().Name $code 1;throw}
+$ownerMutex=$null;$mutexHeld=$false
+try {
+ $phase='SUPERVISOR_IDENTITY';$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+ if($cfg.kind -cne 'HDWORK2_WEB_SUPERVISOR' -or $cfg.version -ne 1 -or $cfg.ownerSid -cne $sid -or $cfg.taskName -notmatch '^(HDWork2-Web(?:-Standby|-Rollback)?|HDWork2-WebFixture-[a-f0-9]{32})$' -or $cfg.pipeName -notmatch '^hdwork2-web-[a-f0-9]{32}$' -or $cfg.graceSeconds -lt 1 -or $cfg.graceSeconds -gt 60){throw 'NATIVE_OWNER_REJECTED'}
+ $phase='CONTROL_PATH_VALIDATION';foreach($file in @($cfg.stateFile,$cfg.fenceFile)){if(-not ([IO.Path]::GetFullPath($file)).StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'CONTROL_PATH_ESCAPE'}}
+ if((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'CONTROL_DIRECTORY_LINK'}
+ SaveAttempt 'SUPERVISOR_VALIDATED'
 function SaveState($status,$exitCode=$null){
- $row=@{version=1;protocol='HDWORK2_WEB_OWNER_V1';status=$status;ownerPid=$PID;ownerSid=$sid;taskName=$cfg.taskName;configSha256=$ConfigSha256;pipeName=$cfg.pipeName;childPid=$childPid;childStartedAtUtc=$childStartedAtUtc;updatedAtUtc=[DateTimeOffset]::UtcNow.ToString('o');exitCode=$exitCode;forced=$false;previousStopClean=$previousStopClean}
+ $row=@{version=1;protocol='HDWORK2_WEB_OWNER_V1';status=$status;attemptId=$attemptId;ownerPid=$PID;ownerSid=$sid;taskName=$cfg.taskName;configSha256=$ConfigSha256;pipeName=$cfg.pipeName;childPid=$childPid;childStartedAtUtc=$childStartedAtUtc;updatedAtUtc=[DateTimeOffset]::UtcNow.ToString('o');exitCode=$exitCode;forced=$false;previousStopClean=$previousStopClean}
  $temp=$cfg.stateFile+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
  [IO.File]::WriteAllText($temp,($row|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
  # Windows readers can briefly hold a handle without FileShare.Delete.
@@ -26,16 +32,15 @@ function SaveState($status,$exitCode=$null){
  if(-not $saved){throw 'NATIVE_STATE_NOT_SAVED'}
 }
 # A Scheduled Task policy alone does not fence a second direct invocation.
-$ownerMutex=New-Object Threading.Mutex($false,('Global\HDWork2Web-'+$cfg.taskName))
-$mutexHeld=$false
-try {
+ $ownerMutex=New-Object Threading.Mutex($false,('Global\HDWork2Web-'+$cfg.taskName))
+ $phase='OWNER_MUTEX'
  try {$mutexHeld=$ownerMutex.WaitOne(0)} catch [Threading.AbandonedMutexException] {throw 'NATIVE_PREVIOUS_OWNER_UNCLEAN'}
  if(-not $mutexHeld){throw 'NATIVE_OWNER_ALREADY_RUNNING'}
 if(Test-Path -LiteralPath $cfg.fenceFile){
  if(Test-Path -LiteralPath $cfg.stateFile){try{$old=Get-Content -LiteralPath $cfg.stateFile -Raw|ConvertFrom-Json;$previousStopClean=$old.configSha256 -ceq $ConfigSha256 -and (($old.status -ceq 'STOPPED' -and $null -ne $old.exitCode -and $old.exitCode -eq 0) -or $old.previousStopClean -eq $true)}catch{}}
  SaveState 'FENCED_START_REFUSED';exit 0
 }
-if((HashFile $cfg.childCodeFile) -cne $cfg.childCodeSha256 -or (HashFile $cfg.supervisorScript) -cne $cfg.supervisorSha256){throw 'NATIVE_SOURCE_DRIFT'}
+$phase='SOURCE_VALIDATION';if((HashFile $cfg.childCodeFile) -cne $cfg.childCodeSha256 -or (HashFile $cfg.supervisorScript) -cne $cfg.supervisorSha256){throw 'NATIVE_SOURCE_DRIFT'}
 if([IO.Path]::GetFileName($cfg.childExecutable) -cne 'node.exe' -or $cfg.childArguments.Count -lt 1 -or $cfg.childArguments[0] -cne $cfg.childCodeFile){throw 'NATIVE_CHILD_REJECTED'}
 if($cfg.taskName -in @('HDWork2-Web','HDWork2-Web-Standby','HDWork2-Web-Rollback') -and ((HashFile $cfg.childExecutable) -cne $cfg.childExecutableSha256 -or ([IO.Path]::GetFileName($cfg.childCodeFile) -cne 'protected-web-service.js' -or $cfg.childArguments.Count -ne 1))){throw 'WEB_CHILD_REJECTED'}
 foreach($arg in $cfg.childArguments){if($arg.Contains('"') -or $arg.Contains("`r") -or $arg.Contains("`n")){throw 'CHILD_ARGUMENT_REJECTED'}}
@@ -54,9 +59,12 @@ namespace HDWork2 {
  public sealed class WebStartupStderrCaptureV1 {
   private readonly string path;
   private readonly string configSha256;
+  private readonly string attemptId;
   private readonly int ownerPid;
+  private readonly string summaryPath;
   private readonly object gate = new object();
   private bool saved;
+  private long stdoutLines, stderrLines, stdoutBytes, stderrBytes;
   private static readonly HashSet<string> codes = new HashSet<string>(StringComparer.Ordinal) {
    "WEB_STARTUP_FAILED", "PROTECTED_WEB_START_FAILED", "PRIVATE_DB_CONFIG_REJECTED",
    "WEB_STAGE_CONFIG_FAILED", "WEB_STAGE_BOOTSTRAP_FAILED", "WEB_STAGE_API_CONFIG_FAILED",
@@ -72,8 +80,13 @@ namespace HDWork2 {
    "DPAPI_TIMEOUT", "DPAPI_FILE_READ_FAILED", "DPAPI_UNPROTECT_FAILED",
    "DPAPI_MEMORY_READ_FAILED", "DPAPI_PIPE_FAILED", "DPAPI_DECRYPT_FAILED"
   };
-  public WebStartupStderrCaptureV1(string outputPath, string runConfigSha256, int ownerProcessId) { path = outputPath; configSha256 = runConfigSha256; ownerPid = ownerProcessId; }
+  public WebStartupStderrCaptureV1(string outputPath, string summaryOutputPath, string runConfigSha256, string runAttemptId, int ownerProcessId) { path = outputPath; summaryPath=summaryOutputPath; configSha256 = runConfigSha256; attemptId = runAttemptId; ownerPid = ownerProcessId; }
   public DataReceivedEventHandler Handler { get { return Receive; } }
+  public DataReceivedEventHandler StdoutSummaryHandler { get { return CountStdout; } }
+  public DataReceivedEventHandler StderrSummaryHandler { get { return CountStderr; } }
+  private void CountStdout(object sender, DataReceivedEventArgs args) { if(args.Data!=null) lock(gate){stdoutLines++;stdoutBytes+=Encoding.UTF8.GetByteCount(args.Data); } }
+  private void CountStderr(object sender, DataReceivedEventArgs args) { if(args.Data!=null) lock(gate){stderrLines++;stderrBytes+=Encoding.UTF8.GetByteCount(args.Data); } }
+  public void FlushSummary() { string temporary=null;try{lock(gate){temporary=summaryPath+"."+Guid.NewGuid().ToString("N")+".tmp";string json="{\"attemptId\":\""+attemptId+"\",\"configSha256\":\""+configSha256+"\",\"ownerPid\":"+ownerPid.ToString(System.Globalization.CultureInfo.InvariantCulture)+",\"stdout\":{\"lines\":"+stdoutLines.ToString(System.Globalization.CultureInfo.InvariantCulture)+",\"utf8Bytes\":"+stdoutBytes.ToString(System.Globalization.CultureInfo.InvariantCulture)+"},\"stderr\":{\"lines\":"+stderrLines.ToString(System.Globalization.CultureInfo.InvariantCulture)+",\"utf8Bytes\":"+stderrBytes.ToString(System.Globalization.CultureInfo.InvariantCulture)+"},\"rawContentStored\":false}";File.WriteAllText(temporary,json,new UTF8Encoding(false));if(File.Exists(summaryPath))File.Replace(temporary,summaryPath,null);else File.Move(temporary,summaryPath);temporary=null;}}catch{}finally{if(temporary!=null)try{File.Delete(temporary);}catch{}} }
   private void Receive(object sender, DataReceivedEventArgs args) {
    if (String.IsNullOrEmpty(args.Data) || args.Data.Length > 4096) return;
    string temporary = null;
@@ -88,7 +101,7 @@ namespace HDWork2 {
     lock (gate) {
      if (saved) return;
      temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-     File.WriteAllText(temporary, "{\"status\":\"FAILED\",\"code\":\"" + code + "\",\"configSha256\":\"" + configSha256 + "\",\"ownerPid\":" + ownerPid.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}", new UTF8Encoding(false));
+     File.WriteAllText(temporary, "{\"status\":\"FAILED\",\"code\":\"" + code + "\",\"attemptId\":\"" + attemptId + "\",\"configSha256\":\"" + configSha256 + "\",\"ownerPid\":" + ownerPid.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}", new UTF8Encoding(false));
      if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
      temporary = null;
      saved = true; // Preserve the first failure, not a later cleanup error.
@@ -100,7 +113,7 @@ namespace HDWork2 {
 }
 '@
  }
- [IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),'{"phase":"CHILD_PREPARE"}')
+ $phase='CHILD_PREPARE';SaveAttempt $phase;[IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),(@{attemptId=$attemptId;configSha256=$ConfigSha256;phase=$phase;ownerPid=$PID;at=[DateTimeOffset]::UtcNow.ToString('o')}|ConvertTo-Json -Compress))
  $info=New-Object Diagnostics.ProcessStartInfo
  $info.FileName=$cfg.childExecutable;$info.Arguments=(@($cfg.childArguments|ForEach-Object {'"'+$_+'"'}) -join ' ');$info.WorkingDirectory=$cfg.childWorkingDirectory
  $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardInput=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
@@ -117,9 +130,9 @@ namespace HDWork2 {
   if($webEnv.COURIER_ENABLED -cne 'false' -or $webEnv.HDWORK2_TESTING_SOLVER_ENABLED -cne 'false'){throw 'WEB_EXTERNAL_SENDER_REJECTED'}
  }
  $child=New-Object Diagnostics.Process;$child.StartInfo=$info
- $stderrCapture=New-Object HDWork2.WebStartupStderrCaptureV1 -ArgumentList @((Join-Path ([IO.Path]::GetDirectoryName($cfg.stateFile)) 'child-startup-error.json'),$ConfigSha256,$PID)
- $stderrHandler=$stderrCapture.Handler;$child.add_ErrorDataReceived($stderrHandler)
- [IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),'{"phase":"CHILD_START"}');[void]$child.Start();$childPid=$child.Id;$childStartedAtUtc=$child.StartTime.ToUniversalTime().ToString('o');
+ $stderrCapture=New-Object HDWork2.WebStartupStderrCaptureV1 -ArgumentList @((Join-Path ([IO.Path]::GetDirectoryName($cfg.stateFile)) ('child-startup-error-'+$attemptId+'.json')),(Join-Path ([IO.Path]::GetDirectoryName($cfg.stateFile)) ('startup-streams-'+$attemptId+'.json')),$ConfigSha256,$attemptId,$PID)
+ $stderrHandler=$stderrCapture.Handler;$stdoutHandler=$stderrCapture.StdoutSummaryHandler;$stderrSummaryHandler=$stderrCapture.StderrSummaryHandler;$child.add_ErrorDataReceived($stderrHandler);$child.add_OutputDataReceived($stdoutHandler);$child.add_ErrorDataReceived($stderrSummaryHandler)
+ $phase='CHILD_START';SaveAttempt $phase;[IO.File]::WriteAllText((Join-Path $root 'startup.metadata.json'),(@{attemptId=$attemptId;configSha256=$ConfigSha256;phase=$phase;ownerPid=$PID;at=[DateTimeOffset]::UtcNow.ToString('o')}|ConvertTo-Json -Compress));[void]$child.Start();$childPid=$child.Id;$childStartedAtUtc=$child.StartTime.ToUniversalTime().ToString('o');SaveAttempt 'CHILD_STARTED'
  $child.BeginOutputReadLine();$child.BeginErrorReadLine()
  if($cfg.secretBundleFile){
   Add-Type -AssemblyName System.Security
@@ -129,7 +142,7 @@ namespace HDWork2 {
  foreach($account in @($sid,'S-1-5-18','S-1-5-32-544')){$security.AddAccessRule((New-Object IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier($account)),[IO.Pipes.PipeAccessRights]::ReadWrite,[Security.AccessControl.AccessControlType]::Allow)))}
  while(-not $child.HasExited){
   $server=New-Object IO.Pipes.NamedPipeServerStream($cfg.pipeName,[IO.Pipes.PipeDirection]::InOut,1,[IO.Pipes.PipeTransmissionMode]::Byte,[IO.Pipes.PipeOptions]::Asynchronous,4096,4096,$security)
-  $phase='PIPE_WAIT';$pending=$server.WaitForConnectionAsync();SaveState 'READY'
+  $phase='PIPE_WAIT';$pending=$server.WaitForConnectionAsync();SaveState 'READY';SaveAttempt 'READY';if($stderrCapture){$stderrCapture.FlushSummary()}
   while(-not $pending.Wait(250)){if($child.HasExited){break}}
   if($child.HasExited){break}
   $phase='REQUEST_READ';$reader=New-Object IO.StreamReader($server);$writer=New-Object IO.StreamWriter($server);$writer.AutoFlush=$true
@@ -149,15 +162,20 @@ namespace HDWork2 {
   # Keep ownership after timeout. Never orphan/kill a possibly active sender.
   $server.Dispose();$server=$null;$child.WaitForExit();break
  }
- if($child.HasExited){$child.WaitForExit();SaveState $(if($requested){'STOPPED'}else{'CHILD_EXITED'}) $child.ExitCode}
+ if($child.HasExited){$child.WaitForExit();SaveState $(if($requested){'STOPPED'}else{'CHILD_EXITED'}) $child.ExitCode;if(-not $requested){SaveAttempt 'CHILD_EXITED'}}
 }catch{
- $failure=@{phase=$phase;type=$_.Exception.GetType().Name;code=($_.FullyQualifiedErrorId -split ',')[0];configSha256=$ConfigSha256;ownerPid=$PID}
- try{[IO.File]::WriteAllText((Join-Path $root 'failure.metadata.json'),($failure|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)));SaveState 'CONTROL_FAILED'}catch{}
- if($child -and -not $child.HasExited){$child.StandardInput.Close();$child.WaitForExit()}
+ $failure=@{attemptId=$attemptId;phase=$phase;type=$_.Exception.GetType().Name;code=($_.FullyQualifiedErrorId -split ',')[0];configSha256=$ConfigSha256;ownerPid=$PID}
+ SaveAttempt ('FAILED_'+$phase) $_.Exception.GetType().Name (($_.FullyQualifiedErrorId -split ',')[0]) 1
+ try{[IO.File]::WriteAllText((Join-Path $root ('failure-attempt-'+$attemptId+'.json')),($failure|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)));SaveState 'CONTROL_FAILED'}catch{}
+ if($child -and -not $child.HasExited){$child.StandardInput.Close();$child.WaitForExit()};SaveAttempt ('FAILED_'+$failure.phase) $failure.type $failure.code 1
+ $phase='CONTROL_FAILED'
  throw 'NATIVE_OWNER_CONTROL_FAILED'
 }finally{
  if($server){$server.Dispose()}
- if($child -and $child.HasExited){$child.WaitForExit();if($stderrHandler){$child.remove_ErrorDataReceived($stderrHandler)};$child.Dispose()}
+ if($child -and $child.HasExited){$child.WaitForExit();if($stderrCapture){$stderrCapture.FlushSummary()};if($stderrHandler){$child.remove_ErrorDataReceived($stderrHandler)};if($stdoutHandler){$child.remove_OutputDataReceived($stdoutHandler)};if($stderrSummaryHandler){$child.remove_ErrorDataReceived($stderrSummaryHandler)};$child.Dispose()}
 }
 
-} finally {if($mutexHeld){$ownerMutex.ReleaseMutex()};$ownerMutex.Dispose()}
+}catch{
+ if($phase -notin @('CONTROL_FAILED','PRECHECK_FAILED')){SaveAttempt ('FAILED_'+$phase) $_.Exception.GetType().Name (($_.FullyQualifiedErrorId -split ',')[0]) 1;$phase='PRECHECK_FAILED'}
+ throw
+} finally {if($mutexHeld){$ownerMutex.ReleaseMutex()};if($ownerMutex){$ownerMutex.Dispose()}}

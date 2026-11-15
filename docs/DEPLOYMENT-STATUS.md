@@ -38,4 +38,12 @@ The updater now surfaces terminal startup state, exit code, task result, and all
 
 Mock verification: updater `-Mock` 38 checks PASS (handoff, rollback, health retries, startup identity/stale-state handling); `web-startup-stderr.test.cjs` 18/18 PASS. The underlying exception from the 14 November attempt remains undetermined.
 
+## Per-attempt Web startup diagnostics - 15 November 2026
+
+The updater now assigns a fresh 32-character `attemptId` to each candidate and rollback configuration. Supervisor state and diagnostics carry that ID and the expected config SHA, so `WaitReady` only accepts state from the current attempt. A prior supervisor's clean `STOPPED` state is reported as stale state, not as the candidate's failure cause.
+
+Each attempt writes `startup-attempt-<attemptId>.json` beside the control config. It records role, phase, timestamps, owner/child PIDs, expected SHA, exception type, allowlisted error code, and exit/task result when available. Child stderr failure frames are stored separately as `child-startup-error-<attemptId>.json`; stdout/stderr content is never persisted. A bounded summary file records only line/byte counts and `rawContentStored=false`, avoiding token/password/cookie leakage from arbitrary process output. Rollback uses a distinct attempt ID and config pin, so its diagnostics cannot overwrite candidate evidence. The operator can inspect the `attemptId` and attempt JSON named in the release manifest/failure receipt after a failed update; `failure-attempt-<attemptId>.json` contains the supervisor exception projection.
+
+Offline verification: updater mock 44 checks PASS; Windows supervisor fixtures 20/20 PASS, including READY, child exit, PowerShell pre-state exception, stale state, distinct candidate/rollback records, and secret-marker exclusion. No production task, Web runtime, Courier, or Windows logging configuration was changed. These diagnostics identify future failure phases; they do not retroactively reveal the missing exception from the earlier deployment.
+
 Before modifying update or deployment mechanisms, read this status and `AGENTS.md`.
