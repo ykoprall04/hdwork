@@ -39,3 +39,7 @@ CATATAN HD tersedia sebagai kolom ringkas pada tabel dan editor lipat `HdNote.ts
 Source lokal saja; belum push/deploy. Aktivasi penyimpanan catatan memerlukan migrasi manual 019; migrasi belum dijalankan.
 
 Validasi Batch 3: 81 tes model frontend PASS; browser workflow dengan API sintetis PASS pada desktop/mobile, termasuk baseline, badge/sorting, fetch gagal, pesan belum terlihat, pembaruan cursor setelah terlihat, storage event, simpan/retry catatan dan regresi chat/tindakan. Build TypeScript/Vite PASS dan lint selesai tanpa error (warning existing tetap ada). Selector CSS workspace yang sebelumnya menyembunyikan elemen pertama riwayat diperbaiki agar error dan pagination chat tetap terlihat. Fixture browser menunggu dialog eskalasi selesai ditutup sebelum mengetik balasan.
+
+## Status deployment Batch 3 - 2026-11-15
+
+Status source lokal/belum deploy sebelumnya digantikan: fitur PESAN BARU dan CATATAN HD sudah aktif pada Web commit `ae68a97` melalui updater resmi. Production build dan 81 tes model PASS; fixture browser kini menunggu tabel PROSES CEK selesai dimuat sebelum memeriksa header. Uji UI pada aset publik terdeploy PASS dengan seluruh API dimock, termasuk badge/cursor/sorting, catatan save/retry, desktop/mobile dan isolasi akun. Aset publik cocok dengan hash runtime aktif. Preview publik sengaja 404; demo Preview hanya diperiksa pada server lokal. Tidak ada aksi order atau Telegram nyata selama uji UI publik.
