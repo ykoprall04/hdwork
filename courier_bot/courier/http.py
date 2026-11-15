@@ -1,6 +1,9 @@
 import json
+import errno
+import socket
+import ssl
 from urllib.request import Request, urlopen
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from .raw_log import logger
 
 SAFE_TELEGRAM_DESCRIPTIONS = frozenset((
@@ -21,10 +24,26 @@ def api_failure(data, http_status=None):
     return {'code': code, 'description': description if isinstance(description, str) and description in SAFE_TELEGRAM_DESCRIPTIONS else '[TELEGRAM_DESCRIPTION_REDACTED]', 'rejected': True}
 
 class TransportError(Exception):
-    def __init__(self, status=0, retry_after=0):
+    def __init__(self, status=0, retry_after=0, transient_network=False):
         super().__init__('courier_transport_error')
         self.status = status
         self.retry_after = retry_after
+        self.transient_network = transient_network
+
+def temporary_network(error):
+    if isinstance(error, URLError):
+        error = error.reason
+    if isinstance(error, (ssl.SSLCertVerificationError, ssl.CertificateError)):
+        return False
+    if isinstance(error, (TimeoutError, socket.timeout, ssl.SSLEOFError,
+                          ConnectionResetError, ConnectionRefusedError,
+                          ConnectionAbortedError, BrokenPipeError)):
+        return True
+    if isinstance(error, socket.gaierror):
+        return error.errno == socket.EAI_AGAIN
+    return isinstance(error, OSError) and error.errno in (
+        errno.ETIMEDOUT, errno.ECONNRESET, errno.ECONNREFUSED,
+        errno.ECONNABORTED, errno.ENETUNREACH, errno.EHOSTUNREACH, errno.EPIPE)
 
 class JsonTransport:
     def __init__(self, opener=None, timeout=10):
@@ -71,4 +90,4 @@ class JsonTransport:
             raise
         except Exception as error:
             logger().emit('HTTP_FAILURE', error=error, status='ERROR')
-            raise TransportError() from None
+            raise TransportError(transient_network=temporary_network(error)) from None

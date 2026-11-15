@@ -118,7 +118,7 @@ def main():
     except Exception as error:
         logger().emit('COURIER_START_FAILED', error=error)
         print('Courier configuration or journal rejected', file=sys.stderr)
-        return 1
+        return 75 if getattr(error, 'startup_retryable', False) is True else 1
     finally:
         if courier:
             courier.close()

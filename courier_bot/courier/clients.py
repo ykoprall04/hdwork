@@ -4,6 +4,8 @@ import json
 import re
 import time
 import uuid
+import random
+from pathlib import Path
 from .http import TransportError
 from .raw_log import current_trace_id, observe, logger
 
@@ -63,6 +65,26 @@ class TelegramClient:
         return observe('TELEGRAM_REQUEST', lambda: self.transport.post(self._base + method, body), apiMethod=method)
 
     def verify_identity(self, expected_id, username):
+        policy = json.loads((Path(__file__).resolve().parents[2] / 'contracts' / 'courier-startup-recovery.json').read_text())
+        original_timeout = getattr(self.transport, 'timeout', policy['requestTimeoutSeconds'])
+        self.transport.timeout = policy['requestTimeoutSeconds']
+        try:
+            for attempt in range(policy['identityAttempts']):
+                try:
+                    return self._verify_identity_once(expected_id, username)
+                except TransportError as error:
+                    if not error.transient_network:
+                        raise
+                    if attempt + 1 == policy['identityAttempts']:
+                        error.startup_retryable = True
+                        raise
+                    delay = policy['backoffSeconds'][attempt] + random.uniform(0, policy['jitterSeconds'])
+                    logger().emit('TELEGRAM_IDENTITY_RETRY', attempt=attempt+1, retryAfterMs=round(delay*1000))
+                    time.sleep(delay)
+        finally:
+            self.transport.timeout = original_timeout
+
+    def _verify_identity_once(self, expected_id, username):
         me = self.request('getMe', {})['result']
         if (me.get('is_bot') is not True or str(me.get('id')) != expected_id or
                 str(me.get('username', '')).lower() != username.lower()):

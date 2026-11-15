@@ -4,6 +4,7 @@ param([Parameter(Mandatory=$true)][string]$ControlConfig,[Parameter(Mandatory=$t
 $ErrorActionPreference='Stop'
 $child=$null;$server=$null;$requested=$false;$childStartedAtUtc=$null;$childPid=0;$phase='START'
 $previousStopClean=$false
+$supervisorExit=0
 function HashFile($p){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
 if((HashFile $ControlConfig) -cne $ConfigSha256){throw 'CONTROL_CONFIG_CHANGED'}
 $cfg=Get-Content -LiteralPath $ControlConfig -Raw|ConvertFrom-Json
@@ -70,7 +71,26 @@ try{
   # Keep ownership after timeout. Never orphan/kill a possibly active sender.
   $server.Dispose();$server=$null;$child.WaitForExit();break
  }
- if($child.HasExited){SaveState $(if($requested){'STOPPED'}else{'CHILD_EXITED'}) $child.ExitCode}
+ if($child.HasExited){
+  # A dead Node can leave its Python child draining after stdin EOF. Hold the
+  # mutex until every direct child from this run is gone; never kill a sender.
+  do {
+   $descendants=@(Get-CimInstance Win32_Process -Filter ('ParentProcessId='+$childPid) | Where-Object {$_.CreationDate.ToUniversalTime() -ge [DateTimeOffset]::Parse($childStartedAtUtc).UtcDateTime})
+   if($descendants.Count){SaveState 'DRAINING_DESCENDANTS' $child.ExitCode;Start-Sleep -Milliseconds 250}
+  }while($descendants.Count)
+  SaveState $(if($requested){'STOPPED'}else{'CHILD_EXITED'}) $child.ExitCode
+  if(-not $requested){
+   $supervisorExit=if($child.ExitCode -eq 1){1}else{75}
+   # An unhandled Node crash commonly exits 1 too. Only a READY receipt bound
+   # to this exact Node run can distinguish that from a permanent startup error.
+   if($child.ExitCode -eq 1 -and $cfg.childArguments.Count -eq 5 -and $cfg.childArguments[1] -ceq '--config'){
+    try{
+     $runnerState=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $cfg.childArguments[2]) 'state.json') -Raw|ConvertFrom-Json
+     if($runnerState.nodePid -eq $childPid -and $runnerState.configSha256 -ceq $cfg.childArguments[4] -and $runnerState.status -ceq 'READY' -and [DateTimeOffset]::Parse($runnerState.startedAt) -ge [DateTimeOffset]::Parse($childStartedAtUtc)){$supervisorExit=75}
+    }catch{} # Missing/stale/invalid proof fails closed, without restart.
+   }
+  }
+ }
 }catch{
  $failure=@{phase=$phase;type=$_.Exception.GetType().Name;code=($_.FullyQualifiedErrorId -split ',')[0]}
  try{[IO.File]::WriteAllText((Join-Path $root 'failure.metadata.json'),($failure|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)));SaveState 'CONTROL_FAILED'}catch{}
@@ -82,3 +102,4 @@ try{
 }
 
 } finally {if($mutexHeld){$ownerMutex.ReleaseMutex()};$ownerMutex.Dispose()}
+exit $supervisorExit

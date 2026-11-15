@@ -246,3 +246,24 @@ Verification: 44 focused Node tests, 61 updater mock checks, PowerShell parsing,
 and physical payload validation against the current production runtime source
 PASS without database access. The existing frontend build/browser checks also
 passed; authenticated production lookup remains a postdeployment requirement.
+
+## Courier bounded startup recovery — source only
+
+A separate development branch prepares bounded transient-network identity retry,
+a shared Python/Node startup budget, nonzero native child failure exits, selective
+retry via the existing scheduled-owner wrapper and a stopped-task-only restart
+policy installer. No running Courier or Scheduled Task was changed. Four identity
+attempts use 2/4/8-second backoff plus jitter; Node READY budget is 120 seconds.
+Future task retry is limited to three attempts at 60-second intervals with
+IgnoreNew. Permanent failures are explicitly suppressed from scheduler retry;
+native failure state remains authoritative. Old Node/Python must fully exit
+before restart eligibility. See `docs/courier-auto-recovery.md` for activation,
+rollback and offline validation. Production remains on its existing snapshot.
+
+Offline checks PASS: 100 Python tests, 36 distinct focused Node tests (including
+real isolated supervisor/Node/Python crash, duplicate-owner and repeated-start
+fixtures), and parsing of four Courier PowerShell scripts. No real Scheduled
+Task was registered or modified. Task Scheduler engine behavior still requires
+a separately approved controlled activation check. Final read-only observation
+retained supervisor/Node/Python PIDs 21928/12304/10896 and their READY heartbeat;
+production RestartCount remains 0 and config/source pins are unchanged.

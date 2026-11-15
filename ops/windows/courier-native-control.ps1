@@ -22,6 +22,7 @@ try{
  if($cfg.launcherScript){
   if($cfg.childArguments.Count -ne 5 -or $cfg.childArguments[0] -cne $cfg.childCodeFile -or $cfg.childArguments[1] -cne '--config' -or $cfg.childArguments[3] -cne '--config-sha256'){Reject 'NATIVE_RUNTIME_BINDING_MISMATCH'}
   $expectedAction='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+$launcher+'" -Config "'+$cfg.childArguments[2]+'" -ConfigSha256 '+$cfg.childArguments[4]+' -ControlConfig "'+$ControlConfig+'" -ControlConfigSha256 '+$ConfigSha256
+  if($cfg.recovery.enabled -eq $true){$expectedAction+=' -Recovery'}
  }
  if($task.Actions[0].Execute -ine $expectedExecutable -or $task.Actions[0].Arguments -cne $expectedAction){Reject 'TASK_ACTION_MISMATCH'}
  $principal=[string]$task.Principal.UserId

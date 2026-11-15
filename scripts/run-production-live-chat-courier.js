@@ -4,11 +4,15 @@ const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:chil
 const {operatorJson}=require('../src/config/operator-json');
 const {load,validate}=require('../src/config/production-courier');
 const {clearSecrets}=require('../src/config/private-courier-env');
+const recovery=require('../contracts/courier-startup-recovery.json');
 const startupPhases=new Set(['PYTHON_STARTUP','PYTHON_CONFIG','LOCK_DIRECTORY','JOURNAL_DIRECTORY','BOT_LOCK','JOURNAL_OPEN','JOURNAL_SEED','TELEGRAM_IDENTITY','INGRESS_POLICY','WORKER_LEASE']);
 const startupTypes=new Set(['PermissionError','FileNotFoundError','OSError','ValueError','TypeError','RuntimeError','ImportError','ModuleNotFoundError','OperationalError','DatabaseError','IntegrityError','TransportError','TimeoutError','OTHER_EXCEPTION']);
 function safeStartupDiagnostic(value){
  if(value?.event!=='STARTUP_FAILURE'||!startupPhases.has(value.phase)||!startupTypes.has(value.exceptionType))return null;
- return {component:'PYTHON',phase:value.phase,exceptionType:value.exceptionType,...([400,401,403,409,429,503].includes(value.httpStatus)?{httpStatus:value.httpStatus}:{}),...(Number.isInteger(value.osError)&&value.osError>0&&value.osError<256?{osError:value.osError}:{})};
+ return {component:'PYTHON',phase:value.phase,exceptionType:value.exceptionType,...(value.phase==='TELEGRAM_IDENTITY'&&value.exceptionType==='TransportError'&&value.retryable===true&&value.httpStatus===undefined?{retryable:true}:{}),...([400,401,403,409,429,503].includes(value.httpStatus)?{httpStatus:value.httpStatus}:{}),...(Number.isInteger(value.osError)&&value.osError>0&&value.osError<256?{osError:value.osError}:{})};
+}
+function startupMayRetry(diagnostic,exitCode){
+ return exitCode===recovery.transientExitCode&&diagnostic?.phase==='TELEGRAM_IDENTITY'&&diagnostic?.exceptionType==='TransportError'&&diagnostic?.retryable===true&&diagnostic?.httpStatus===undefined;
 }
 async function run(argv=process.argv.slice(2)){
  if(argv.length!==3||argv[0]!=='--run-production-approved'||argv[1]!=='--plan')throw Error('EXPLICIT_PRODUCTION_DEPLOYMENT_APPROVAL_REQUIRED');
@@ -49,8 +53,8 @@ async function run(argv=process.argv.slice(2)){
   });
   phase='READY_HANDSHAKE';
   await new Promise((resolve,reject)=>{
-   let output='';const timeout=setTimeout(()=>reject(Error('PRODUCTION_COURIER_READY_TIMEOUT')),30000);
-   const fail=()=>{clearTimeout(timeout);const error=Error('PRODUCTION_COURIER_START_FAILED');error.code='COURIER_STARTUP_FAILED';error.startupDiagnostic=startupDiagnostic||{component:'PYTHON',phase:'READY_HANDSHAKE',exceptionType:'OTHER_EXCEPTION'};reject(error);};
+   let output='';const timeout=setTimeout(()=>reject(Error('PRODUCTION_COURIER_READY_TIMEOUT')),recovery.readyTimeoutMs);
+   const fail=exitCode=>{clearTimeout(timeout);const error=Error('PRODUCTION_COURIER_START_FAILED');error.code='COURIER_STARTUP_FAILED';error.startupDiagnostic=startupDiagnostic||{component:'PYTHON',phase:'READY_HANDSHAKE',exceptionType:'OTHER_EXCEPTION'};error.retryable=startupMayRetry(startupDiagnostic,exitCode);reject(error);};
    // `exit` can precede the final stderr bytes; wait for stdio closure so the
    // sanitized Python failure receipt reaches the supervisor before failing.
    child.once('error',fail);child.once('close',fail);
@@ -65,11 +69,11 @@ async function run(argv=process.argv.slice(2)){
   console.log(JSON.stringify({status:'COURIER_STARTED_IDENTITY_AND_LEASE_VERIFIED',botId:plan.botId,telegramBotId:plan.telegramBotId,activationNotBefore:plan.activationNotBefore,receiveOnly:plan.receiveOnly===true,send:plan.receiveOnly!==true,liveChatEndToEndVerified:false}));
   process.once('SIGINT',()=>void stop());process.once('SIGTERM',()=>void stop());
   await childDone;
-  if(!closing)throw Error('PRODUCTION_COURIER_EXITED');
+  if(!closing)throw Object.assign(Error('PRODUCTION_COURIER_EXITED'),{retryable:true});
  }catch(error){
   if(!error.startupDiagnostic)error.startupDiagnostic={component:'NODE',phase,exceptionType:['Error','TypeError','RangeError','ReferenceError'].includes(error?.name)?error.name:'OTHER_EXCEPTION',...(Number.isInteger(error?.errno)&&error.errno>0&&error.errno<256?{osError:error.errno}:{})};
   if(!error.code)error.code='COURIER_STARTUP_FAILED';throw error;
  }finally{await stop();}
 }
 if(require.main===module)run().catch(()=>{console.error(JSON.stringify({status:'STOPPED',code:'PRODUCTION_COURIER_NOT_READY_OR_STOPPED',queueRetained:true}));process.exitCode=1;});
-module.exports={run,safeStartupDiagnostic};
+module.exports={run,safeStartupDiagnostic,startupMayRetry};

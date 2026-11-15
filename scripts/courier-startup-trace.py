@@ -29,6 +29,8 @@ def trace(frame, event, arg):
         error = arg[1]
         state['reported'] = True
         result = {'event': 'STARTUP_FAILURE', 'phase': state['phase'], 'exceptionType': type(error).__name__ if type(error).__name__ in types else 'OTHER_EXCEPTION'}
+        if state['phase'] == 'TELEGRAM_IDENTITY' and getattr(error, 'startup_retryable', False) is True:
+            result['retryable'] = True
         if getattr(error, 'status', None) in (400, 401, 403, 409, 429, 503):
             result['httpStatus'] = error.status
         if type(getattr(error, 'errno', None)) is int and 0 < error.errno < 256:

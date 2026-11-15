@@ -43,6 +43,15 @@ class StartupTraceTests(unittest.TestCase):
         self.assertEqual(json.loads(lines[0])['httpStatus'], 409)
         self.assertEqual(json.loads(lines[0])['phase'], 'WORKER_LEASE')
 
+    def test_exhausted_identity_network_retry_propagates_only_safe_boolean(self):
+        from courier.http import TransportError
+        error = TransportError(transient_network=True)
+        error.startup_retryable = True
+        module.trace(self.frame('courier.clients', 'verify_identity'), 'call', None)
+        with patch('sys.stderr', io.StringIO()) as output:
+            module.trace(self.frame('__main__', 'main'), 'exception', (type(error), error, None))
+        self.assertEqual(json.loads(output.getvalue()), {'event':'STARTUP_FAILURE', 'phase':'TELEGRAM_IDENTITY', 'exceptionType':'TransportError', 'retryable':True})
+
     def test_real_module_wrapper_preserves_run_argument_and_disables_trace_after_ready(self):
         source = (Path(__file__).resolve().parents[2] / 'scripts/courier-startup-trace.py').read_text()
         with tempfile.TemporaryDirectory() as folder:

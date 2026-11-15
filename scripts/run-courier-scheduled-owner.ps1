@@ -1,8 +1,9 @@
 # Hidden owner for exactly one Node supervisor. Closing owned stdin requests clean shutdown.
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$Config,[Parameter(Mandatory=$true)][string]$ConfigSha256,[string]$ControlConfig,[string]$ControlConfigSha256)
+param([Parameter(Mandatory=$true)][string]$Config,[Parameter(Mandatory=$true)][string]$ConfigSha256,[string]$ControlConfig,[string]$ControlConfigSha256,[switch]$Recovery)
 $ErrorActionPreference='Stop'
 if($ControlConfig -or $ControlConfigSha256){
+ try {
  # Opt-in on a FUTURE approved launch only. Never attaches to a running legacy
  # owner. This branch delegates before the legacy kill-fallback finally block.
  if(-not $ControlConfig -or $ControlConfigSha256 -notmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $ControlConfig -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ControlConfigSha256){throw 'NATIVE_CONTROL_PIN_REQUIRED'}
@@ -10,14 +11,28 @@ if($ControlConfig -or $ControlConfigSha256){
  $self=[IO.Path]::GetFullPath($PSCommandPath);$runnerPath=Join-Path $PSScriptRoot 'courier-task-runner.js'
  $nativeOwner=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
  if($native.kind -cne 'HDWORK2_NATIVE_SUPERVISOR' -or $native.ownerSid -cne $nativeOwner -or $native.launcherScript -ine $self -or (Get-FileHash -LiteralPath $self -Algorithm SHA256).Hash.ToLowerInvariant() -cne $native.launcherSha256 -or $native.childCodeFile -ine $runnerPath){throw 'NATIVE_LAUNCHER_SCOPE_REJECTED'}
+ if($Recovery -and $native.recovery.enabled -ne $true){throw 'RECOVERY_POLICY_NOT_PINNED'}
  $expected=@($runnerPath,'--config',$Config,'--config-sha256',$ConfigSha256)
  if($native.childArguments.Count -ne $expected.Count){throw 'NATIVE_RUNTIME_BINDING_MISMATCH'}
  for($i=0;$i -lt $expected.Count;$i++){if($native.childArguments[$i] -cne $expected[$i]){throw 'NATIVE_RUNTIME_BINDING_MISMATCH'}}
  $supervisorPath=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\ops\windows\courier-native-supervisor.ps1'))
  if($native.supervisorScript -ine $supervisorPath -or (Get-FileHash -LiteralPath $supervisorPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $native.supervisorSha256){throw 'NATIVE_SUPERVISOR_PIN_MISMATCH'}
  & $supervisorPath -ControlConfig $ControlConfig -ConfigSha256 $ControlConfigSha256
- exit 0
+ $nativeExit=$LASTEXITCODE
+ if($Recovery){
+  if($nativeExit -eq 75){Write-Output '{"status":"TRANSIENT_FAILURE_RESTART_ELIGIBLE","exitCode":75}';exit 75}
+  if($nativeExit -ne 0){Write-Output '{"status":"PERMANENT_FAILURE_NO_RESTART","exitCode":1}'}
+  # Task Scheduler retries all nonzero exits. Explicitly suppress retries for
+  # permanent failures; the native supervisor still reports its real failure.
+  exit 0
+ }
+ exit $nativeExit
+ }catch{
+  if($Recovery){Write-Output '{"status":"PERMANENT_FAILURE_NO_RESTART","exitCode":1}';exit 0}
+  throw
+ }
 }
+if($Recovery){Write-Output '{"status":"PERMANENT_FAILURE_NO_RESTART","exitCode":1}';exit 0}
 $child=$null
 function WriteOwnerLog([string]$Event,$Failure=$null) {
  if($env:HDWORK2_RAW_LOG_ENABLED -ne 'true'){return}
