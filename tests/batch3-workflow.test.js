@@ -19,9 +19,10 @@ test('batch notes filter module scope, validate IDs, and reject non-HD/trial bef
  for(const actor of [{...user,role:'SHOW_ONLY'},{...user,role:'ADMIN'},{...user,username:'trial_yanto'}])await assert.rejects(notes.list(id,actor),{statusCode:403});
  await assert.rejects(notes.list('invalid',user),{statusCode:400});assert.equal(calls.length,1);
 });
-function writer({module='TIAL',active=1,session=true,failInsert=false}={}){
+function writer({module='TIAL',active=1,session=true,failInsert=false,failRestore=false}={}){
  const calls=[];let text='';
- const c={async beginTransaction(){calls.push('begin');},async commit(){calls.push('commit');},async rollback(){calls.push('rollback');},release(){calls.push('release');},async execute(sql,p){
+ const sessionCalls=[];
+ const c={async query(sql,p){sessionCalls.push([sql,p]);if(p&&failRestore)throw Error('synthetic restore failure');if(sql.startsWith('SELECT @@SESSION'))return [[{metadataTimeout:31536000,rowTimeout:50}]];return [{}];},destroy(){calls.push('destroy');},async beginTransaction(){calls.push('begin');},async commit(){calls.push('commit');},async rollback(){calls.push('rollback');},release(){calls.push('release');},async execute(sql,p){
   calls.push(sql);
   if(sql.startsWith('SELECT id,role'))return [[{id:2,role:'HD',is_active:active}]];
   if(sql.includes('FROM hd2_sessions'))return [session?[{token_hash:'synthetic'}]:[]];
@@ -31,12 +32,13 @@ function writer({module='TIAL',active=1,session=true,failInsert=false}={}){
   if(sql.startsWith('INSERT INTO hd2_live_events'))return [{affectedRows:1}];
   throw Error('Unexpected query '+sql);
  }};
- return {calls,get text(){return text;},pool:{async getConnection(){return c;}}};
+ return {calls,sessionCalls,get text(){return text;},pool:{async getConnection(){return c;}}};
 }
 test('notes save in a transaction independently of order version, status, chat and Telegram outbox',async()=>{
  const w=writer(),notes=createNotes({writePool:w.pool});const id=randomUUID();
  assert.equal((await notes.save(id,'synthetic',user,{text:' note '})).text,'note');assert.equal(w.text,'note');
  assert.ok(w.calls.some(sql=>sql.includes('ON DUPLICATE KEY UPDATE body=?')));assert.deepEqual(w.calls.slice(-2),['commit','release']);
+ assert.equal(w.sessionCalls[1][0],'SET SESSION lock_wait_timeout=5, innodb_lock_wait_timeout=5');assert.deepEqual(w.sessionCalls.at(-1)[1],[31536000,50]);
  assert.equal(w.calls.some(sql=>/UPDATE hd2_orders|hd2_courier_outbox|hd2_chat_messages|hd2_audit/.test(sql)),false);
  await notes.save(id,'synthetic',user,{text:''});assert.equal(w.text,'');
 });
@@ -45,7 +47,13 @@ test('notes recheck active actor/session/module in transaction; failures roll ba
   const w=writer(options),notes=createNotes({writePool:w.pool});
   await assert.rejects(notes.save(randomUUID(),'synthetic',user,{text:'private'}),status?{statusCode:status}:/synthetic database failure/);
   assert.deepEqual(w.calls.slice(-2),['rollback','release']);assert.equal(w.calls.includes('commit'),false);
+  assert.deepEqual(w.sessionCalls.at(-1)[1],[31536000,50]);
  }
+});
+test('failed session restoration discards the connection rather than leaking changed timeouts into the pool',async()=>{
+ const w=writer({failRestore:true}),notes=createNotes({writePool:w.pool});
+ assert.equal((await notes.save(randomUUID(),'synthetic',user,{text:'saved'})).text,'saved');
+ assert.deepEqual(w.calls.slice(-2),['commit','destroy']);assert.equal(w.calls.includes('release'),false);
 });
 test('optional note grants accept only backend SELECT/INSERT/UPDATE and never grant Courier notes access',()=>{
  const {policies,reviewOperationalGrants}=require('../src/config/operational-grants');

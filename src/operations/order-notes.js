@@ -18,8 +18,10 @@ function createNotes({readPool,writePool}){return {
   return {data:rows};
  },
  async save(id,token,user,body){
-  authorize(user);uuid(id);const text=input(body),c=await writePool.getConnection();
+  authorize(user);uuid(id);const text=input(body),c=await writePool.getConnection();let limits;
   try{
+   [[limits]]=await c.query('SELECT @@SESSION.lock_wait_timeout AS metadataTimeout,@@SESSION.innodb_lock_wait_timeout AS rowTimeout');
+   await c.query('SET SESSION lock_wait_timeout=5, innodb_lock_wait_timeout=5');
    await c.beginTransaction();
    const [[actor]]=await c.execute('SELECT id,role,is_active FROM users WHERE id=? FOR SHARE',[user.id]);
    if(!actor||actor.role!=='HD'||![1,true].includes(actor.is_active))throw fail(403);
@@ -31,7 +33,11 @@ function createNotes({readPool,writePool}){return {
    await c.execute('INSERT INTO hd2_order_notes(order_id,body,updated_by) VALUES (?,?,?) ON DUPLICATE KEY UPDATE body=?,updated_by=?,updated_at=UTC_TIMESTAMP(3)',[id,text,user.id,text,user.id]);
    await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,'change')",[order.access_module]);
    await c.commit();return {success:true,text};
-  }catch(e){await c.rollback();throw e;}finally{c.release();}
+  }catch(e){await c.rollback();throw e;}finally{
+   let reusable=true;
+   if(limits)try{await c.query('SET SESSION lock_wait_timeout=?, innodb_lock_wait_timeout=?',[limits.metadataTimeout,limits.rowTimeout]);}catch{reusable=false;c.destroy();}
+   if(reusable)c.release();
+  }
  }
 };}
 module.exports={createNotes,input,authorize};
