@@ -75,12 +75,25 @@ function StartupStopped($state,[string]$expectedSha,[string]$attemptId=''){retur
 
 function WebPath([string]$path){
  $p=$path.Replace('\','/')
+ if($p -ceq 'src/b2c-workflow/order-network.js'){return $true}
  if($DatabasePrerequisitesVerified -and $p -match '^database/.*\.sql$'){return $false}
  if($p -match '^(src/courier/|src/b2c-workflow/|src/config/production-courier\.js$|courier[-_]|courier_bot/|contracts/|docs/|tests/|scripts/hdwork-web-update\.ps1$|hdwork-update\.cmd$)'){return $false}
  if($p -match '(^|/)(migrations?|schema)(/|\.|$)|\.sql$|operational-grants\.js$|(^|/)\.env'){Fail 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW'}
  return $p -match '^(frontend/|public/|views/|server\.js$|api-only-server\.js$|local-web-server\.js$|src/|scripts/(protected-web-service|run-protected-web|check-operational-release|build-operational-frontend)\.|ops/windows/web-|package\.json$|package-lock\.json$)'
 }
 function InvokeGit([string[]]$gitArgs){$out=& git.exe -C $root @gitArgs;if($LASTEXITCODE -ne 0){Fail 'GIT_UPDATE_FAILED'};return ($out -join [Environment]::NewLine)}
+function RequiredVlanHelper($web,[string]$target){
+ $format=Join-Path $web.Runtime 'src/vlan/format.js'
+ & git.exe -C $root cat-file -e ($target+':src/vlan/format.js') 2>$null
+ if($LASTEXITCODE -ne 0){return}
+ $relative='src/b2c-workflow/order-network.js';$file=Join-Path $web.Runtime $relative
+ $targetBlob=(InvokeGit @('rev-parse',($target+':'+$relative))).Trim()
+ if(-not(Test-Path -LiteralPath $file)){return $relative}
+ Need (-not((Get-Item -LiteralPath $file).Attributes -band [IO.FileAttributes]::ReparsePoint)) 'WEB_RUNTIME_LINK_REJECTED'
+ $pin=$web.Config.sourceHashes.PSObject.Properties[$relative]
+ Need ($pin -and (Hash $file) -ceq [string]$pin.Value) 'WEB_RUNTIME_SOURCE_DRIFT'
+ if((InvokeGit @('hash-object',('--path='+$relative),$file)).Trim() -cne $targetBlob){return $relative}
+}
 function PinnedGrantMatches([string]$actualSha,[string]$pinnedSha,[string]$runtimeBlob,[string]$targetBlob){
  return ($actualSha -match '^[a-f0-9]{64}$' -and $actualSha -ceq $pinnedSha -and $runtimeBlob -match '^([a-f0-9]{40}|[a-f0-9]{64})$' -and $runtimeBlob -ceq $targetBlob)
 }
@@ -110,6 +123,8 @@ function MockTests{
  $n=0
  foreach($p in @('frontend/src/App.tsx','server.js','src/operations/routes.js','package-lock.json')){Need ([bool](WebPath $p)) 'MOCK_WEB_CLASSIFICATION_FAILED';$n++}
  foreach($p in @('src/courier/groups.js','src/b2c-workflow/workflow.js','courier_bot/courier/groups.py','contracts/b2c-commands.json','docs/release.md','tests/web.test.js','scripts/hdwork-web-update.ps1')){Need (-not (WebPath $p)) 'MOCK_COMPONENT_ISOLATION_FAILED';$n++}
+ Need (WebPath 'src/b2c-workflow/order-network.js') 'MOCK_VLAN_HELPER_EXCLUDED';$n++
+ Need (-not(WebPath 'src/b2c-workflow/commands.js')) 'MOCK_COMMAND_PARSER_EXPOSED';$n++
  $priorDatabaseReview=$script:DatabasePrerequisitesVerified
  try{$script:DatabasePrerequisitesVerified=$false;try{[void](WebPath 'database/migrations/018.sql');Fail 'MOCK_MIGRATION_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW') 'MOCK_MIGRATION_GUARD_FAILED';$n++};$script:DatabasePrerequisitesVerified=$true;Need (-not(WebPath 'database/manual/019_hdwork2_order_notes.sql')) 'MOCK_REVIEWED_SQL_MUST_NOT_DEPLOY';$n++;try{[void](WebPath 'src/config/operational-grants.js');Fail 'MOCK_UNPINNED_GRANT_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW') 'MOCK_GRANT_GUARD_FAILED';$n++}}finally{$script:DatabasePrerequisitesVerified=$priorDatabaseReview}
  $validSha='a'*64;$validBlob='b'*40;Need (PinnedGrantMatches $validSha $validSha $validBlob $validBlob) 'MOCK_PINNED_GRANT_NOT_ACCEPTED';$n++
@@ -216,6 +231,7 @@ function Main{
  if(-not $DryRun -and $target -ne $localHead){InvokeGit @('pull','--ff-only','origin','main')|Out-Null;$target=(InvokeGit @('rev-parse','HEAD')).Trim()}
  $script:WebUpdatePhase='READ_ACTIVE_WEB_TASK';Write-Output 'READING_ACTIVE_WEB_TASK';$web=GetActiveWeb;$activeCommit=if($web.Config.webTargetCommit){[string]$web.Config.webTargetCommit}else{[string]$web.Config.targetCommit};$ancestor=& git -C $root merge-base --is-ancestor $activeCommit $target;if($LASTEXITCODE -ne 0){Fail 'ACTIVE_WEB_PIN_NOT_ANCESTOR_OF_MAIN'}
  $changed=@((InvokeGit @('diff','--name-only',($activeCommit+'..'+$target))).Split([Environment]::NewLine,[StringSplitOptions]::RemoveEmptyEntries));$webPaths=@();foreach($p in $changed){if($p -ceq 'src/config/operational-grants.js' -and $DatabasePrerequisitesVerified){Need (ReviewedGrantInstalled $web $target $p) 'WEB_REVIEWED_GRANT_NOT_INSTALLED_OR_PINNED';Write-Output 'WEB_REVIEWED_GRANT_ALREADY_INSTALLED';continue};if(WebPath $p){$webPaths+=,$p}}
+ $webPaths=@(@($webPaths)+@(RequiredVlanHelper $web $target)|Sort-Object -Unique)
  if($DryRun){Write-Output ('DRY_RUN target='+$target+' webChanges='+$webPaths.Count+' activeTask='+$web.Task.TaskName+' runtimeChanged=false courierTouched=false');return}
  if($webPaths.Count -eq 0){$receipt=Join-Path $env:TEMP ('hdwork-web-health-'+[Guid]::NewGuid().ToString('N')+'.json');RetryTransientHealth { $null=Health $web $receipt };$h=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json;Remove-Item -LiteralPath $receipt -Force;Write-Output ('SUCCESS commit='+$target+' activeWebPin='+$activeCommit+' web=UNCHANGED health=PASS courier=UNTOUCHED rounds='+$h.rounds.Count);return}
  DeployWeb $web $target $webPaths
@@ -234,6 +250,11 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
  if($frontendChanged){$script:WebUpdatePhase='WEB_FRONTEND_BUILD';$envPath=Join-Path $runtime 'service/environment.json';$envMap=Get-Content -LiteralPath $envPath -Raw|ConvertFrom-Json;$env:VITE_API_BASE_URL=[string]$envMap.HDWORK2_PUBLIC_ORIGIN;& node (Join-Path $root 'scripts/build-operational-frontend.js') --build;if($LASTEXITCODE -ne 0){Fail 'WEB_FRONTEND_BUILD_FAILED'};$script:WebUpdatePhase='WEB_FRONTEND_PACKAGE_COPY';$dist=Join-Path $root 'frontend/dist';Get-ChildItem -LiteralPath $dist -File -Recurse|Where-Object{$_.Name -ne 'release-manifest.json'}|ForEach-Object{$rel='frontend/dist/'+(RelativePath $dist $_.FullName);$to=Join-Path $payload $rel;[void][IO.Directory]::CreateDirectory((Split-Path -Parent $to));Copy-Item -LiteralPath $_.FullName -Destination $to}}
  $script:WebUpdatePhase='WEB_RELEASE_ENTRY_HASHES';$entries=@();$all=@($paths);if($frontendChanged){$payloadDist=Join-Path $payload 'frontend/dist';$all+=@(Get-ChildItem -LiteralPath $payloadDist -File -Recurse|ForEach-Object{'frontend/dist/'+(RelativePath $payloadDist $_.FullName)})};$all=@($all|Sort-Object -Unique)
  foreach($rel in $all){$dest=Join-Path $runtime $rel;$payloadFile=Join-Path $payload $rel;$oldHash=$null;$newHash=$null;if(Test-Path -LiteralPath $dest){$oldHash=Hash $dest;$b=Join-Path $backup $rel;[void][IO.Directory]::CreateDirectory((Split-Path -Parent $b));Copy-Item -LiteralPath $dest -Destination $b};if(Test-Path -LiteralPath $payloadFile){$newHash=Hash $payloadFile};$entries+=,[pscustomobject]@{path=$rel;before=$oldHash;after=$newHash}}
+ if((Test-Path -LiteralPath (Join-Path $runtime 'src/vlan/format.js')) -or (Test-Path -LiteralPath (Join-Path $payload 'src/vlan/format.js'))){
+  $script:WebUpdatePhase='WEB_VLAN_PAYLOAD_CHECK'
+  & node (Join-Path $root 'scripts/check-web-vlan-payload.cjs') $runtime $payload $cfgPath $target
+  if($LASTEXITCODE -ne 0){Fail 'WEB_VLAN_PAYLOAD_CHECK_FAILED'}
+ }
  $oldConfigBytes=[IO.File]::ReadAllBytes($cfgPath);[IO.File]::WriteAllBytes((Join-Path $backup 'web-control.json'),$oldConfigBytes);$oldAction=$web.Task.Actions[0]
  $script:WebUpdatePhase='WEB_CONTROL_CONFIG';$next=$cfg|ConvertTo-Json -Depth 100|ConvertFrom-Json;$candidateAttemptId=[Guid]::NewGuid().ToString('N');$script:WebUpdateCandidateAttemptId=$candidateAttemptId;SetJsonProperty $next 'attemptId' $candidateAttemptId;SetJsonProperty $next 'attemptRole' 'candidate';SetJsonProperty $next 'webTargetCommit' $target
  foreach($entry in $entries){if($entry.after){$next.sourceHashes|Add-Member -NotePropertyName $entry.path -NotePropertyValue $entry.after -Force}else{$next.sourceHashes.PSObject.Properties.Remove($entry.path)}}

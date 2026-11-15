@@ -141,3 +141,108 @@ config/source pins are required. No production task/runtime was changed or
 connection attempted; candidate staging and authorized operator execution remain
 pending. See `docs/vlan-import-adapter.md`. This does not add an updater mode or
 authorize import, deployment or secret access.
+
+## VLAN grant validator activated only — 15 November 2026
+
+The user authorized Stage 1 only. The existing native Web updater handoff,
+backup, cooperative fence, task config pin validation, READY gate and health
+rollback implementation were reused for a one-file validator overlay from
+`798750cc6b5da2fa53c0b8eb24aefa87946520a4`. No full feature release was activated:
+`webTargetCommit` remains `8121b3db216218953ce4fd01e25448070dea1f72`; the overlay
+source is recorded separately as `validatorSourceCommit`.
+
+Only runtime `src/config/operational-grants.js` changed, alongside its control
+source hash/config hash and Scheduled Task pin. Candidate SHA256 is
+`e6e0d7d6f0195153d9fcdb4c39f592406f4b00094a16ab7a81a33434ea749a9c`;
+active control SHA256 is
+`68bbd9eaba0c26dc67820f53f653e0a529141ceef798336217344e0fb076b642`.
+Existing table policies are byte-equivalent as serialized objects; optional VLAN
+reader/writer grants are accepted without requiring migration 020 at startup.
+Seven VLAN tests and 59 updater mock checks passed before handoff.
+
+Web returned READY (owner PID 9712, Node PID 7028); five health/readiness/TLS
+boundary rounds passed. Local/public HTTPS login returned 200 and local
+unauthenticated auth/me returned 401 with TLS validation. One-file release
+manifest is ACTIVE; backup validator and rollback configuration hashes match.
+No rollback was needed. Previous releases were retained.
+
+Evidence: `.local/vlan-validator-stage1-evidence.json`. Rollback packet is
+`control-candidate/updates/798750cc6b5d-f6ee37a15a684345855ce8825cba97b5/`
+under the existing Web control root. Original-validator rollback is applicable
+only while VLAN grants remain absent; after grant activation retain a compatible
+validator and matching config/task pins.
+
+All 24 unrelated baseline Node/Python/MySQL process identities/start times were
+unchanged. Final inspection found Courier task Ready (enabled), no active runner,
+and stale READY state referencing absent PIDs 18348/2324/11216. The pre-handoff
+process baseline already lacked Courier Node/Python PIDs 2324/11216. Its last
+task result was 3221225786; the cause/timing was not established in this stage.
+No Courier task/process was changed or started. Migration, grants, import,
+connection-check mode, merge, push and full feature deployment were not run.
+
+## FORMAT VLAN Web activated through PR 2 — 15 November 2026
+
+PR #2 was reviewed and merged as `85f4e9a6bbee3f9f32f8979dfaa2c65afe4225af`.
+The official `hdwork-update.cmd -DatabasePrerequisitesVerified -KeepPrevious`
+deployed Web only. Operator-reported production reference counts are SBU 249,
+SBS 83, MDR 94 (426 total); this run did not independently query those rows or
+execute schema/grant/import statements. Existing VLAN validator overlay was
+verified installed/pinned and preserved. A local activation-status edit was
+stashed for the updater's clean-checkout gate and restored afterward; the stash
+is retained. No additional source commit was created.
+
+Focused backend/parser/INVALID/FIFO/adapter tests: 41 PASS. Mocked browser popup,
+copy/edit/reset and management CRUD/permissions tests PASS. Official production
+frontend build/attestation PASS. Final release manifest ACTIVE; Web READY, owner
+PID 8432, Node PID 13200; five loopback health/readiness/TLS-boundary rounds PASS.
+One transient ECONNREFUSED health attempt was retried successfully. Public home
+and login HTTP 200; three entry asset hashes match runtime. Auth/me and new VLAN
+routes return 401 without a session. Active control SHA256:
+`db30459f55353ecaef750caa8aa7e3ed3d029cf5c13e96b7aeb2c175d1d4a5cc`.
+Validator SHA remains
+`e6e0d7d6f0195153d9fcdb4c39f592406f4b00094a16ab7a81a33434ea749a9c`.
+Rollback packet under existing Web control root:
+`updates/85f4e9a6bbee-2e5d6ed1e82547dfac96f1dfa488d52b/`.
+Its config hash verifies and retains the compatible VLAN validator; rollback was
+not needed. Previous releases were retained.
+
+No Courier/parser/contracts payload was deployed. No Courier/personal-bot stop,
+restart, task mutation or PM2 command was performed. Courier task action hash and
+enabled setting match baseline; task remains Ready, not Running. Of 24 non-Web
+Node/Python/MySQL baseline processes, three PIDs (8736,12740,9632) were absent at
+final inspection; cause/timing was not established and no recovery was attempted.
+Do not claim every unrelated process remained alive. Baseline is retained in
+`.local/vlan-web-pr2-before.json`.
+
+Production FORMAT VLAN source/UI/API are deployed, but authenticated popup/API
+verification against live MySQL remains UNVERIFIED: a fresh browser login window
+was offered, no authenticated session became available, and the owned test window
+closed after its wait period. Mock UI results and operator counts do not prove
+that live end-to-end check. No production order was created/mutated or sent to
+Telegram. No further operational action was taken after this limitation and
+process drift were identified.
+
+## FORMAT VLAN payload dependency hotfix — prepared offline
+
+The deployed formatter required `src/b2c-workflow/order-network.js`, which was
+absent because the Web updater excluded that entire directory. Loading the
+actual runtime formatter reproduced MODULE_NOT_FOUND before any database query.
+The updater now allows only that exact pure helper, leaving command processing,
+Courier source and contracts excluded. It selects a missing/outdated helper even
+when it has no Git diff, rejects unpinned runtime drift, and uses normal release
+entries/sourceHashes/task pins and rollback for the addition. An unchanged,
+correctly pinned helper does not trigger a repeat deployment.
+
+Before handoff, a payload check assembles a physical disposable module tree from
+the candidate payload and pinned unchanged runtime source. Nine formatter
+dependencies are verified; the network helper must remain a dependency-free
+leaf. Both order/config_psb formatting are executed with a mocked VLAN reader.
+Only source-content comparison to Git normalizes CRLF pairs to LF, preserving
+every other byte. Runtime integrity continues to use actual-byte SHA256. Tests
+reject non-newline edits, payload tampering and even newline-only drift in pinned
+runtime files. No production source is modified by this preflight.
+
+Verification: 44 focused Node tests, 61 updater mock checks, PowerShell parsing,
+and physical payload validation against the current production runtime source
+PASS without database access. The existing frontend build/browser checks also
+passed; authenticated production lookup remains a postdeployment requirement.
