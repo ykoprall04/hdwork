@@ -12,8 +12,8 @@ from courier.http import TransportError
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMANDS = ['order', 'req', 'config_psb', 'mo']
-TEXTS = ['/order\nSC/IN:X-AO1\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC',
-         '/req Synthetic request', '/config_psb\nORDER ID:X-AO2\nSTO:ABC', '/MO\nSC/IN:X-MO3\nSTO:ABC']
+TEXTS = ['/order\nSC/IN:X-AO1\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC',
+         '/req Synthetic request', '/config_psb\nORDER ID:X-AO2\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC', '/MO\nSC/IN:X-MO3\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC']
 
 
 def effective(groups):

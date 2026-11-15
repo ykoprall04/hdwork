@@ -14,7 +14,7 @@ GROUP = {'chatId': '-1001', 'threadId': None, 'threadMode': 'non_topic', 'profil
 
 class SharedGroupsTests(unittest.TestCase):
     def test_one_group_accepts_all_existing_formats_and_rejects_unknown_commands(self):
-        texts = ['/order\nSC/IN:X-AO1\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC', '/req help', '/config_psb\nOrder ID:X-AO2\nSTO:ABC', '/mo\nSC/IN:X-MO3\nSTO:ABC']
+        texts = ['/order\nSC/IN:X-AO1\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC', '/req help', '/config_psb\nOrder ID:X-AO2\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC', '/mo\nSC/IN:X-MO3\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC']
         texts += [f'/{c}\nSC/IN:{c}-100\nNO INET/TELP:00012345\nSTO:ABC\nTRANSAKSI:PERBAIKAN\nKETERANGAN:fixture' for c in COMMANDS[4:]]
         policy = IngressPolicy('synthetic-all', 'SyntheticAllBot', [GROUP], chat_enabled=True)
         for command, text in zip(COMMANDS, texts):

@@ -11,9 +11,10 @@ function dryRun(fixture){
    const event=policy.ingress(body),receipt=store.accept(event);
    if(receipt.duplicate){result.replayedUpdates++;continue;}
    const group=policy.groups.find(g=>g.chatId===event.event.chat_id&&g.threadId===event.event.telegram_thread_id),parsed=parseCommand(event.event.text,group.profile,fixture.botUsername);
+   if(!parsed.valid){result.rejected++;continue;}
    result.accepted++;result.commands[parsed.command]=(result.commands[parsed.command]||0)+1;
    if(parsed.sc_in)result.fieldCoverage.scIn++;if(parsed.fields['NO INET']||parsed.fields['NO INTERNET']||parsed.fields['NO INET/TELP'])result.fieldCoverage.inet++;
-   if(parsed.fields.STO)result.fieldCoverage.sto++;if(parsed.fields.TRANSAKSI)result.fieldCoverage.transaction++;
+   if(parsed.fields.STO)result.fieldCoverage.sto++;if(parsed.fields['TIPE TRANSAKSI']||parsed.fields.TRANSAKSI)result.fieldCoverage.transaction++;
   }catch(error){if(![400,403,409].includes(error.statusCode))throw error;result.rejected++;}
  }
  return result;

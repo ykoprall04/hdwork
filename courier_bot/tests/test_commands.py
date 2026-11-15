@@ -4,16 +4,17 @@ from courier.gate import CommandGate
 from courier.runner import Courier
 from unittest.mock import Mock
 
-BASE='/order\nSC/IN: free PREFIX-AOi123_suffix\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:TEST'
+BASE='/order\nSC/IN: free PREFIX-AOi123_suffix\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:TEST'
 class CommandTests(unittest.TestCase):
     def test_extraction_and_required(self):
         for code in ('AOi1','PDAk1','MOk1','DOk1'):
             for cmd,label,expected in [('config_psb','Order ID DSC','PREFIX-'+code),('MO','SC / IN',code)]:
-                result=parse_command(f'/{cmd}\n{label}:free PREFIX-{code}_suffix\nSTO:X','TIAL1')
+                extra='\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test' if cmd=='config_psb' else '\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST'
+                result=parse_command(f'/{cmd}\n{label}:free PREFIX-{code}_suffix\nSTO:X'+extra,'TIAL1')
                 self.assertTrue(result['valid']);self.assertEqual(result['sc_in'],expected)
         self.assertTrue(parse_command(BASE,'TIAL2')['valid'])
         self.assertFalse(parse_command(BASE,'SOLVER1')['valid'])
-        for field in ('SC/IN','NO INET','SN ONT','STO','KETERANGAN','NIK'):
+        for field in ('SC/IN','TIPE TRANSAKSI','SN ONT','STO','KETERANGAN','NIK'):
             rest='\n'.join(s for s in BASE.splitlines() if not s.startswith(field+':'))
             for value in (None,'',' ','-'):
                 self.assertFalse(parse_command(rest+(f'\n{field}:{value}' if value is not None else ''),'TIAL1')['valid'])
@@ -40,7 +41,7 @@ class CommandTests(unittest.TestCase):
                 rest=f'/{command}\n'+('STO:X' if field==label else label+':PREFIX-AOi1')
                 for value in (None,'',' ','-'):
                     self.assertFalse(parse_command(rest+(f'\n{field}:{value}' if value is not None else ''),'TIAL1')['valid'])
-        self.assertFalse(parse_command('/req   ','TIAL1')['valid'])
+        self.assertTrue(parse_command('/req   ','TIAL1')['valid'])
         bad=parse_command(BASE.replace('NO INET:000123','NO INET:12x'),'TIAL1')
         self.assertFalse(bad['valid']);self.assertEqual(bad['command'],'order');self.assertEqual(bad['errors'],['NO INET (format)'])
         workspace=parse_command('/b2b\nSC/IN:X-1\nNO INET/TELP:abc\nSTO:ABC\nTRANSAKSI:INSTALL','B2B')

@@ -24,16 +24,20 @@ def parse_command(text, profile, bot_username=None):
     if profile not in ('TIAL1', 'TIAL2', 'SOLVER1') or (profile == 'SOLVER1' and command == 'order'):
         return reject(['perintah tidak diizinkan di grup ini'])
     if command == 'req':
-        return {'valid': True, 'command': command, 'sc_in': None, 'fields': {}, 'request': body, 'original': text} if body.strip() else reject(['teks permintaan'], command)
+        return {'valid': True, 'command': command, 'sc_in': None, 'fields': {}, 'request': body, 'original': text}
     rule, fields, errors = SPEC[command], {}, []
     for line in body.splitlines():
         if ':' not in line: continue
         label, value = line.split(':', 1)
         label = re.sub(r'\s*/\s*', '/', re.sub(r'\s+', ' ', label.strip()).upper())
+        if label == 'ODP': label = 'SUMMARY ODP'
+        if label == 'TIPE ONT BARU': label = 'TIPE ONT'
+        if label == 'TRANSAKSI' and command == 'mo': label = 'TIPE TRANSAKSI'
+        if label == 'USEE TV': label = 'NO USEE'
         if label == 'ORDER ID DSC': label = 'ORDER ID'
         if label == 'NO INET/TELP': label = 'NO INET' if 'NO INET' in rule['required'] + rule['optional'] else 'NO INTERNET'
         if label not in rule['required'] + rule['optional']: continue
-        if label in fields: errors.append(label + ' berulang')
+        if label in rule['required'] and label in fields: errors.append(label + ' berulang')
         value = value.strip()
         fields[label] = value if value and value != '-' else None
     for name in rule['required']:
@@ -51,6 +55,14 @@ def parse_command(text, profile, bot_username=None):
         matches = re.findall(r'\b([A-Za-z0-9]+)-((?:PDA|AO|MO|DO)[A-Za-z0-9]*)(?=_|\s|$)', fields[rule['identity']].split('_')[0], re.I)
         if len(matches) == 1 and any(matches[0][1].upper().startswith(c) for c in rule['codes']):
             code = (matches[0][1] if command == 'mo' else matches[0][0] + '-' + matches[0][1])
+        if command == 'mo' and not code and re.fullmatch(r'(?:PDA|AO|MO|DO)[A-Za-z0-9]+', fields[rule['identity']].strip(), re.I):
+            code = fields[rule['identity']].strip()
         if not code or len(code) > 100: errors.append(rule['identity'] + ' (kode transaksi)')
+    if code:
+        fields[rule['identity']] = code
+        if command != 'config_psb': fields['TIPE TRANSAKSI'] = re.search(r'^(PDA|AO|MO|DO)', code.split('-')[-1], re.I)[1].upper()
+    if command == 'order':
+        from .order_network import parse_network
+        fields.update(parse_network(body))
     for name in rule['optional']: fields.setdefault(name, None)
     return reject(errors, command) if errors else {'valid': True, 'command': command, 'sc_in': code, 'fields': fields, 'original': text}

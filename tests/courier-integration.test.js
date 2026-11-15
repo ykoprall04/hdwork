@@ -13,7 +13,7 @@ const groups = [
   { chatId: '-1002', threadId: null, threadMode: 'non_topic', profile: 'SOLVER1', commands: ['config_psb', 'mo'] }
 ];
 const botId = 'sandbox', key = 'synthetic-service-only-'.repeat(2);
-const text = '/order\nSC/IN:X-AOi123\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC';
+const text = '/order\nSC/IN:X-AOi123\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC';
 const event = (content = text, chat = '-1001') => ({ version: 1, bot_id: botId, update_id: '1', event: {
   kind: 'message', chat_id: chat, message_id: '42', telegram_thread_id: null,
   sender_id: '9', reply_to_message_id: null, timestamp: 1700000000, text: content, attachments: []
@@ -28,7 +28,7 @@ const env = () => ({ HDWORK2_LOCAL_READ_ONLY:'false', COURIER_ENABLED: 'true', C
 test('new ingress reuses four parsers, mentions, explicit allowlist and numeric non-topic groups', () => {
   const p = policy();
   for (const [body, chat, command] of [[text, '-1001', 'order'], [' /ReQ@hdworkopsbot original\n text', '-1001', 'req'],
-    ['/CONFIG_PSB@HDWorkOpsBot\nOrder ID:X-AOi1\nSTO:ABC', '-1002', 'config_psb'], ['/MO\nSC/IN:X-MOk1\nSTO:ABC', '-1002', 'mo']]) {
+    ['/CONFIG_PSB@HDWorkOpsBot\nOrder ID:X-AOi1\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC', '-1002', 'config_psb'], ['/MO\nSC/IN:X-MOk1\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC', '-1002', 'mo']]) {
     const e = p.ingress(event(body, chat));
     assert.equal(parseCommand(e.event.text, 'TIAL1', 'HDWorkOpsBot').command, command);
     assert.equal(e.event.chat_id, chat); assert.equal(e.event.message_id, '42'); assert.equal(e.event.telegram_thread_id, null);

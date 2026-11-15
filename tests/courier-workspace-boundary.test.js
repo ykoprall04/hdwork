@@ -11,7 +11,7 @@ function signed(payload,now,nonce=randomBytes(16).toString('hex')){
 }
 test('signed courier ingress composes parser and update idempotency without accepting new web-only commands',()=>{
  const now=1700000000000,verify=createServiceAuth({botId,key,now:()=>now}),p=policy(),store=new MemoryStore({botId});
- const inputs=[['/order\nSC/IN:X-AOi123\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC','-1009001'],['/req Synthetic work','-1009001'],['/config_psb\nOrder ID:X-AOi1\nSTO:ABC','-1009002'],['/MO\nSC/IN:X-MOk1\nSTO:ABC','-1009002']];
+ const inputs=[['/order\nSC/IN:X-AOi123\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC','-1009001'],['/req Synthetic work','-1009001'],['/config_psb\nOrder ID:X-AOi1\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC','-1009002'],['/MO\nSC/IN:X-MOk1\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC','-1009002']];
  for(const [i,[text,chat]] of inputs.entries()){
   const event={version:1,bot_id:botId,update_id:String(i+1),event:{kind:'message',chat_id:chat,message_id:String(i+10),telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1700000000,text,attachments:[]}};
   const request=signed(event,now);verify(request);assert.equal(store.accept(p.ingress(JSON.parse(request.body))).duplicate,false);
