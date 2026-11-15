@@ -35,3 +35,11 @@ Tidak ditemukan tabel/kolom catatan HD pada SQL yang ditinjau. `hd2_orders.compl
 ## Inventaris migrasi yang ditemukan
 
 `database/manual/004`–`013` berisi baseline Courier, audit, command, auth, workflow, runtime, account approval, monitoring dan chat; `014`–`018` berisi review/rencana/readonly terkait grup, FIFO dan infrastruktur. Migrasi pada `database/migrations/20260907_*` dan `20260908_*` adalah untuk tabel lama `telegram_groups`, `order_results`, dan `local_agents`, bukan migrasi catatan HD. Semua SQL bersifat source lokal; status penerapan pada database mana pun belum diverifikasi.
+
+## Implementasi Batch 3 - 2026-11-15 (menggantikan rencana di atas)
+
+`database/manual/019_hdwork2_order_notes.sql` kini tersedia sebagai migrasi manual aditif: tabel hd2_order_notes (order_id PK/FK, body, updated_by FK, updated_at), grant SELECT untuk hdwork_ops_read dan SELECT/INSERT/UPDATE untuk hdwork_ops_write. Tidak ada grant Courier, perubahan tabel order, penghapusan data, atau eksekusi otomatis saat startup.
+
+Validator operational-grants menerima tambahan notes secara opsional hanya pada role Web; profile/grant Courier tetap sama dan menolak akses notes. Query summary memakai indeks chat_order(order_id,seq) existing dan tidak membutuhkan migrasi cursor.
+
+**Belum dijalankan pada database mana pun dalam pekerjaan ini.** Uji backend memakai mock; uji browser memakai API sintetis. Tidak ada klaim verifikasi MySQL produksi atau aktivasi fitur catatan di produksi.

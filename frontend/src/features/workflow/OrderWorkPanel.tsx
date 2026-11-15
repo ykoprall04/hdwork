@@ -10,6 +10,7 @@ import OrderChat from './OrderChat';
 import WorkStatusBadge from './WorkStatusBadge';
 import { FeedbackStatus } from './OperationalStatus';
 import { confirmChatNavigation } from './unsent-chat';
+import HdNote from './HdNote';
 
 export default function OrderWorkPanel({ id, orders, onSelect, onClose, onChange, embedded = false, onMobileBack }: { id: string; orders: Work[]; onSelect: (id: string) => void; onClose: () => void; onChange: () => Promise<void>; embedded?: boolean; onMobileBack?: () => void }) {
   const panel = useRef<HTMLElement>(null);
@@ -39,6 +40,7 @@ export default function OrderWorkPanel({ id, orders, onSelect, onClose, onChange
       {order && <><div className="op-panel-summary">{!embedded && <div className="flex flex-wrap items-center gap-3"><WorkStatusBadge status={order.status} decision={order.decision} /><span className="text-xs text-muted-foreground">Petugas: {order.ownerName || 'Belum PICK'}</span></div>}
         <section aria-label="Pesan asli Telegram" className="op-original-message">{!embedded && <h3 className="mb-3 font-semibold">Pesan asli Telegram</h3>}<p className="whitespace-pre-wrap break-words text-sm">{detail.data?.originalMessage || detail.data?.requestText || 'Pesan asli belum tersedia dari API.'}</p></section>
         <FeedbackStatus feedback={order.feedback} />
+        {user?.role==='HD'&&user.username!=='trial_yanto'&&<HdNote key={`${user.id}:${id}`} id={id}/>}
         {!embedded && <Link className="text-sm text-primary underline" to={`/orders/${id}`}>Buka halaman detail lengkap</Link>}
         </div>
         {import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true' ? <OrderChat key={`${user?.id}:${id}`} id={id} order={detail.error ? undefined : order} onChange={refresh} originalMessage={detail.data?.originalMessage||detail.data?.requestText||undefined} hideHeading={embedded} actions={detail.error ? <p>Detail belum terverifikasi. Muat ulang sebelum melakukan tindakan.</p> : <Actions key={`${user?.id}:${id}`} order={order} refresh={refresh} escalationEnabled={detail.data?.capabilities?.escalate===true} />} /> : <><p>Live chat belum diaktifkan pada build ini.</p>{!detail.error && <Actions key={`${user?.id}:${id}`} order={order} refresh={refresh} escalationEnabled={detail.data?.capabilities?.escalate===true}/>}</>}

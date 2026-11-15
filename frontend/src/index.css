@@ -888,7 +888,7 @@ body {
 .op-process-detail .op-work-panel-header { flex-wrap: nowrap; }
 .op-process-work-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: var(--muted-foreground); }
 .op-process-detail .op-original-message { max-height: 20vh; overflow-y: auto; }
-.op-process-detail .op-order-chat h3, .op-process-detail .op-order-chat .op-chat-history > div:first-child { display: none; }
+.op-process-detail .op-order-chat h3 { display: none; }
 .op-process-detail .op-work-panel-content { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
 .op-process-detail .op-panel-summary { flex:0 0 auto; min-height:0; max-height:none; overflow:hidden; }
 .op-process-detail .op-original-message { max-height:min(18dvh,150px); overflow-y:auto; overscroll-behavior:contain; }

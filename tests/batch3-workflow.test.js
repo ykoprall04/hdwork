@@ -1,0 +1,60 @@
+const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
+const {createNotes,input}=require('../src/operations/order-notes');
+const {createChat}=require('../src/chat/service');
+const user={id:2,role:'HD',username:'synthetic',modules:['TIAL']};
+test('incoming summary is one scoped query for own active orders, only incoming replies, with exact BIGINT sequences',async()=>{
+ const calls=[],chat=createChat({readPool:{async execute(sql,values){calls.push({sql,values});return [[{id:randomUUID(),sequence:'18446744073709551615'}]];}},writePool:null});
+ const result=await chat.incomingSummary({area:'TIAL'},user);assert.equal(result.data[0].sequence,'18446744073709551615');assert.equal(calls.length,1);
+ const {sql,values}=calls[0];for(const part of ["m.direction='IN'",'m.reply_to_id IS NOT NULL',"o.status='IN_PROGRESS'",'o.owner_user_id=?','o.access_module IN (?)'])assert.ok(sql.includes(part),part);assert.deepEqual(values,['TIAL',2]);
+ await assert.rejects(chat.incomingSummary({area:'LOGIC',ids:'arbitrary'},user),{statusCode:400});
+ await assert.rejects(chat.incomingSummary({}, {...user,username:'trial_yanto'}),{statusCode:403});
+});
+test('note validation accepts clearing and rejects unknown fields, invalid text and overlong content',()=>{
+ assert.equal(input({text:' \n '}),'');assert.equal(input({text:' internal \n note '}),'internal \n note');
+ for(const body of [null,[],{text:2},{text:'x',status:'DONE'},{text:'a'.repeat(2001)},{text:'x\0'}])assert.throws(()=>input(body),{statusCode:400});
+});
+test('batch notes filter module scope, validate IDs, and reject non-HD/trial before SQL',async()=>{
+ const calls=[],notes=createNotes({readPool:{async execute(sql,p){calls.push({sql,p});return [[{id:'visible',text:'internal'}]];}}});
+ const id=randomUUID();await notes.list(id,user);assert.ok(calls[0].sql.includes('o.access_module IN (?)'));assert.deepEqual(calls[0].p,[id,'TIAL']);
+ for(const actor of [{...user,role:'SHOW_ONLY'},{...user,role:'ADMIN'},{...user,username:'trial_yanto'}])await assert.rejects(notes.list(id,actor),{statusCode:403});
+ await assert.rejects(notes.list('invalid',user),{statusCode:400});assert.equal(calls.length,1);
+});
+function writer({module='TIAL',active=1,session=true,failInsert=false}={}){
+ const calls=[];let text='';
+ const c={async beginTransaction(){calls.push('begin');},async commit(){calls.push('commit');},async rollback(){calls.push('rollback');},release(){calls.push('release');},async execute(sql,p){
+  calls.push(sql);
+  if(sql.startsWith('SELECT id,role'))return [[{id:2,role:'HD',is_active:active}]];
+  if(sql.includes('FROM hd2_sessions'))return [session?[{token_hash:'synthetic'}]:[]];
+  if(sql.includes('FROM hd2_user_modules'))return [[{module:'TIAL'}]];
+  if(sql.includes('SELECT access_module'))return [[{access_module:module}]];
+  if(sql.startsWith('INSERT INTO hd2_order_notes')){if(failInsert)throw Error('synthetic database failure');text=p[1];return [{affectedRows:1}];}
+  if(sql.startsWith('INSERT INTO hd2_live_events'))return [{affectedRows:1}];
+  throw Error('Unexpected query '+sql);
+ }};
+ return {calls,get text(){return text;},pool:{async getConnection(){return c;}}};
+}
+test('notes save in a transaction independently of order version, status, chat and Telegram outbox',async()=>{
+ const w=writer(),notes=createNotes({writePool:w.pool});const id=randomUUID();
+ assert.equal((await notes.save(id,'synthetic',user,{text:' note '})).text,'note');assert.equal(w.text,'note');
+ assert.ok(w.calls.some(sql=>sql.includes('ON DUPLICATE KEY UPDATE body=?')));assert.deepEqual(w.calls.slice(-2),['commit','release']);
+ assert.equal(w.calls.some(sql=>/UPDATE hd2_orders|hd2_courier_outbox|hd2_chat_messages|hd2_audit/.test(sql)),false);
+ await notes.save(id,'synthetic',user,{text:''});assert.equal(w.text,'');
+});
+test('notes recheck active actor/session/module in transaction; failures roll back without committing',async()=>{
+ for(const [options,status] of [[{active:0},403],[{session:false},401],[{module:'REQ'},404],[{failInsert:true},undefined]]){
+  const w=writer(options),notes=createNotes({writePool:w.pool});
+  await assert.rejects(notes.save(randomUUID(),'synthetic',user,{text:'private'}),status?{statusCode:status}:/synthetic database failure/);
+  assert.deepEqual(w.calls.slice(-2),['rollback','release']);assert.equal(w.calls.includes('commit'),false);
+ }
+});
+test('optional note grants accept only backend SELECT/INSERT/UPDATE and never grant Courier notes access',()=>{
+ const {policies,reviewOperationalGrants}=require('../src/config/operational-grants');
+ for(const role of ['read','write','chatRead','chatWriteFifo','courier','courierSendChatFifo']){
+  const grants=Object.entries(policies[role]).map(([table,ps])=>({'Grant':`GRANT ${ps.join(', ')} ON hdwork2.${table} TO synthetic`}));
+  assert.equal(reviewOperationalGrants(grants,role).ok,true);
+  const extra=ps=>[...grants,{Grant:`GRANT ${ps} ON hdwork2.hd2_order_notes TO synthetic`}];
+  assert.equal(reviewOperationalGrants(extra('SELECT'),role).ok,!role.startsWith('courier'));
+  if(!role.startsWith('courier'))assert.equal(reviewOperationalGrants(extra('SELECT, INSERT, UPDATE'),role).ok,role.toLowerCase().includes('write'));
+  assert.equal(reviewOperationalGrants(extra('DELETE'),role).ok,false);
+ }
+});

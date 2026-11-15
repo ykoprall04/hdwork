@@ -27,3 +27,15 @@ Endpoint riwayat saat ini per order/paginasi dan SSE hanya memberi modul, sehing
 ## Catatan HD — lokasi rencana
 
 Catatan ringkas di tabel dapat dirender oleh list/table cell pada `WorkList.tsx` atau komponen tabel terpisah; editor sebaiknya komponen kecil tersendiri dengan save state/error yang terikat order. API client ada di `workflow/api.ts`, auth/user scope di `contexts/AuthContext.tsx`. Rencana endpoint, otorisasi, dan migrasi ada di [BACKEND.md](BACKEND.md) dan [MYSQL.md](MYSQL.md). Jangan memetakan Catatan HD ke `Work.note`/`completion_note` karena itu hasil tindakan order.
+
+## Implementasi Batch 3 - 2026-11-15 (menggantikan rencana di atas)
+
+`WorkList.tsx` kini menampilkan PESAN BARU pada tabel PROSES CEK dan daftar kiri workspace pribadi. `use-incoming.ts` mengambil satu ringkasan untuk order aktif milik akun, mengikuti SSE/polling existing. `incoming-cursor.ts` menyimpan sequence desimal tanpa konversi Number, terpisah per akun/order. Snapshot pertama menjadi baseline; histori awal tidak dianggap baru. Unread naik ke atas secara stabil (seluruh daftar kiri, dan halaman tabel yang sedang dimuat). Event storage menyinkronkan tab; status baca tidak disinkronkan lintas perangkat. Bila localStorage gagal, fallback memori disertai peringatan.
+
+`OrderChat.tsx` menandai baca hanya pesan IN yang memiliki replyTo dan sequence valid, setelah response berhasil ter-render dan kartu pesan terlihat pada viewport aktif. Klik order, pesan asli, OUT, tab tersembunyi, dan fetch gagal tidak menandai baca. Cursor tidak pernah mundur.
+
+CATATAN HD tersedia sebagai kolom ringkas pada tabel dan editor lipat `HdNote.tsx` di panel serta halaman detail. Hanya HD berizin (bukan trial); tombol Simpan eksplisit, maksimal 2.000 karakter, boleh dikosongkan. Gagal simpan mempertahankan draft; refresh tidak menimpa edit yang belum disimpan. Catatan bersama per order, penyimpanan terakhir berlaku. Tidak memakai completion_note dan tidak dikirim ke Telegram.
+
+Source lokal saja; belum push/deploy. Aktivasi penyimpanan catatan memerlukan migrasi manual 019; migrasi belum dijalankan.
+
+Validasi Batch 3: 81 tes model frontend PASS; browser workflow dengan API sintetis PASS pada desktop/mobile, termasuk baseline, badge/sorting, fetch gagal, pesan belum terlihat, pembaruan cursor setelah terlihat, storage event, simpan/retry catatan dan regresi chat/tindakan. Build TypeScript/Vite PASS dan lint selesai tanpa error (warning existing tetap ada). Selector CSS workspace yang sebelumnya menyembunyikan elemen pertama riwayat diperbaiki agar error dan pagination chat tetap terlihat. Fixture browser menunggu dialog eskalasi selesai ditutup sebelum mengetik balasan.

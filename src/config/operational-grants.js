@@ -18,12 +18,19 @@ function privileges(text){
 }
 function reviewOperationalGrants(rows,role){
  const policy=policies[role];if(!policy)throw Error('Pool role rejected');
+ // Notes are additive: accept their exact backend grants without making an
+ // unapplied notes migration prevent existing Web/Courier pools from starting.
+ const notePermissions=role.toLowerCase().includes('courier')?null:role.toLowerCase().includes('write')?['SELECT','INSERT','UPDATE']:['SELECT'];
  const found=Object.fromEntries(Object.keys(policy).map(t=>[t,new Set()]));let unsafe=false;
  for(const row of rows){
   const value=String(Object.values(row)[0]);if(/WITH GRANT OPTION/i.test(value)){unsafe=true;continue;}if(/^GRANT USAGE ON \*\.\* TO /i.test(value))continue;
   const m=/^GRANT (.+) ON (.+) TO /i.exec(value);
   if(!m||/WITH GRANT OPTION/i.test(value)){unsafe=true;continue;}
   const scope=m[2].replace(/`/g,'').replace(/\\_/g,'_').split('.');
+  if(scope[0]==='hdwork2'&&scope[1]==='hd2_order_notes'&&notePermissions){
+   try{const ps=privileges(m[1]);if(!ps.length||ps.some(p=>!notePermissions.includes(p)))unsafe=true;}catch{unsafe=true;}
+   continue;
+  }
   if(scope[0]!=='hdwork2'||!Object.hasOwn(policy,scope[1])){unsafe=true;continue;}
   let permissions;try{permissions=privileges(m[1]);}catch{unsafe=true;continue;}
   if(!permissions.length){unsafe=true;continue;}

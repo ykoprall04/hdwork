@@ -12,6 +12,9 @@ let chatRoutes;router.use('/chat',(req,res,next)=>{chatRoutes||=require('../chat
 let systemRoutes;router.use('/system',(req,res,next)=>{systemRoutes||=require('../system/routes').createRoutes({http:h});return systemRoutes(req,res,next);});
 router.get('/b2c/readiness',wrap(async(req,res)=>{if(!['SUPER_ADMIN','ADMIN'].includes(req.user.role))throw fail(403);if(process.env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true')return res.json({success:true,configured:false,readyForControlledTest:false,liveVerified:false,reason:'MONITORING_NOT_ENABLED'});res.json({success:true,...await require('./b2c-readiness').snapshot({pool:pool(),writerAvailable:require('../config/operational-pools').status().write})});}));
 router.get('/orders',wrap(async(req,res)=>res.json({success:true,...await read().list(req.query,req.user)})));
+const notes=()=>require('./order-notes').createNotes({readPool:pool(),writePool:{getConnection:()=>writePool().getConnection()}});
+router.get('/order-notes',wrap(async(req,res)=>res.json({success:true,...await notes().list(req.query.ids,req.user)})));
+router.post('/orders/:id/hd-note',wrap(async(req,res)=>{h.csrf(req,req.sessionToken);res.json(await notes().save(req.params.id,req.sessionToken,req.user,req.body));}));
 router.post('/orders',wrap(async(req,res)=>{h.csrf(req,req.sessionToken);throw fail(403,'Order baru hanya melalui Telegram');}));
 router.get('/orders/:id',wrap(async(req,res)=>res.json({success:true,...await read().detail(req.params.id,req.user,Number(req.query.page||1))})));
 router.post('/orders/:id/actions',wrap(async(req,res)=>{h.csrf(req,req.sessionToken);if(req.user.username==='trial_yanto'){if(!require('./testing-solver-scope').configuration())throw fail(403);return res.json(await require('../config/testing-solver-runtime').act(req.sessionToken,req.user,req.params.id,req.body));}res.json(await require('./mutate').act(writePool(),req.sessionToken,req.user.id,req.params.id,req.body));}));
