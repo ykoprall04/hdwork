@@ -46,4 +46,12 @@ Each attempt writes `startup-attempt-<attemptId>.json` beside the control config
 
 Offline verification: updater mock 44 checks PASS; Windows supervisor fixtures 20/20 PASS, including READY, child exit, PowerShell pre-state exception, stale state, distinct candidate/rollback records, and secret-marker exclusion. No production task, Web runtime, Courier, or Windows logging configuration was changed. These diagnostics identify future failure phases; they do not retroactively reveal the missing exception from the earlier deployment.
 
+## Scheduled Task config pin regression - 15 November 2026
+
+The later `WEB_TASK_HANDOFF` failure was traced to .NET regex replacement parsing, not an incorrect SHA calculation. The updater constructed the replacement as `'$1' + $sha`; with a numeric-leading SHA, the replacement expression concatenated into `$1413...`, which .NET parsed as a different group reference. This generated a malformed `HDWork2-Web-Standby` action for both candidate and rollback.
+
+The updater now rewrites the matched argument using captured substring offsets instead of replacement-string expansion. It validates exactly one `-ControlConfig` and `-ConfigSha256`, validates the SHA against the actual candidate/rollback configuration file, reads the Scheduled Task action back and validates it before starting the task, and precomputes both candidate and rollback action strings before fencing the old Web. An invalid candidate action therefore aborts before stopping the old Web.
+
+Offline verification: updater mock 51/51 PASS, including reproduction of `$1413...`, candidate/rollback action validation, config file hash mismatch rejection, invalid candidate action preserving old Web, and candidate failure with rollback restoring READY. `web-task-action.test.cjs` 1/1 PASS; `web-startup-stderr.test.cjs` 20/20 PASS; PowerShell parsing and `git diff --check` PASS. No production task, service, Web runtime, Courier, or personal bot was changed. Production deployment remains untested for this fix.
+
 Before modifying update or deployment mechanisms, read this status and `AGENTS.md`.
