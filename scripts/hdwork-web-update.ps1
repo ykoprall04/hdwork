@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$Mock,[switch]$DryRun)
+param([switch]$Mock,[switch]$DryRun,[switch]$DatabasePrerequisitesVerified,[switch]$KeepPrevious)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $taskNames=@('HDWork2-Web','HDWork2-Web-Standby','HDWork2-Web-Rollback')
@@ -75,11 +75,25 @@ function StartupStopped($state,[string]$expectedSha,[string]$attemptId=''){retur
 
 function WebPath([string]$path){
  $p=$path.Replace('\','/')
+ if($DatabasePrerequisitesVerified -and $p -match '^database/.*\.sql$'){return $false}
  if($p -match '^(src/courier/|src/b2c-workflow/|src/config/production-courier\.js$|courier[-_]|courier_bot/|contracts/|docs/|tests/|scripts/hdwork-web-update\.ps1$|hdwork-update\.cmd$)'){return $false}
  if($p -match '(^|/)(migrations?|schema)(/|\.|$)|\.sql$|operational-grants\.js$|(^|/)\.env'){Fail 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW'}
  return $p -match '^(frontend/|public/|views/|server\.js$|api-only-server\.js$|local-web-server\.js$|src/|scripts/(protected-web-service|run-protected-web|check-operational-release|build-operational-frontend)\.|ops/windows/web-|package\.json$|package-lock\.json$)'
 }
 function InvokeGit([string[]]$gitArgs){$out=& git.exe -C $root @gitArgs;if($LASTEXITCODE -ne 0){Fail 'GIT_UPDATE_FAILED'};return ($out -join [Environment]::NewLine)}
+function PinnedGrantMatches([string]$actualSha,[string]$pinnedSha,[string]$runtimeBlob,[string]$targetBlob){
+ return ($actualSha -match '^[a-f0-9]{64}$' -and $actualSha -ceq $pinnedSha -and $runtimeBlob -match '^([a-f0-9]{40}|[a-f0-9]{64})$' -and $runtimeBlob -ceq $targetBlob)
+}
+function ReviewedGrantInstalled($web,[string]$target,[string]$relative){
+ if($relative -cne 'src/config/operational-grants.js'){return $false}
+ $file=Join-Path $web.Runtime $relative
+ if(-not(Test-Path -LiteralPath $file) -or ((Get-Item -LiteralPath $file).Attributes -band [IO.FileAttributes]::ReparsePoint)){return $false}
+ $pin=$web.Config.sourceHashes.PSObject.Properties[$relative];if(-not $pin){return $false}
+ # Git's clean filter accounts for CRLF; the separate byte SHA still checks the active pin.
+ $runtimeBlob=(InvokeGit @('hash-object',('--path='+$relative),$file)).Trim()
+ $targetBlob=(InvokeGit @('rev-parse',($target+':'+$relative))).Trim()
+ return (PinnedGrantMatches (Hash $file) ([string]$pin.Value) $runtimeBlob $targetBlob)
+}
 function Atomic([string]$path,[byte[]]$bytes){
  $dir=Split-Path -Parent $path;[void][IO.Directory]::CreateDirectory($dir)
  $tmp=$path+'.update-'+[Guid]::NewGuid().ToString('N')+'.tmp';[IO.File]::WriteAllBytes($tmp,$bytes)
@@ -96,7 +110,11 @@ function MockTests{
  $n=0
  foreach($p in @('frontend/src/App.tsx','server.js','src/operations/routes.js','package-lock.json')){Need ([bool](WebPath $p)) 'MOCK_WEB_CLASSIFICATION_FAILED';$n++}
  foreach($p in @('src/courier/groups.js','src/b2c-workflow/workflow.js','courier_bot/courier/groups.py','contracts/b2c-commands.json','docs/release.md','tests/web.test.js','scripts/hdwork-web-update.ps1')){Need (-not (WebPath $p)) 'MOCK_COMPONENT_ISOLATION_FAILED';$n++}
- try{[void](WebPath 'database/migrations/018.sql');Fail 'MOCK_MIGRATION_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW') 'MOCK_MIGRATION_GUARD_FAILED';$n++}
+ $priorDatabaseReview=$script:DatabasePrerequisitesVerified
+ try{$script:DatabasePrerequisitesVerified=$false;try{[void](WebPath 'database/migrations/018.sql');Fail 'MOCK_MIGRATION_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW') 'MOCK_MIGRATION_GUARD_FAILED';$n++};$script:DatabasePrerequisitesVerified=$true;Need (-not(WebPath 'database/manual/019_hdwork2_order_notes.sql')) 'MOCK_REVIEWED_SQL_MUST_NOT_DEPLOY';$n++;try{[void](WebPath 'src/config/operational-grants.js');Fail 'MOCK_UNPINNED_GRANT_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW') 'MOCK_GRANT_GUARD_FAILED';$n++}}finally{$script:DatabasePrerequisitesVerified=$priorDatabaseReview}
+ $validSha='a'*64;$validBlob='b'*40;Need (PinnedGrantMatches $validSha $validSha $validBlob $validBlob) 'MOCK_PINNED_GRANT_NOT_ACCEPTED';$n++
+ foreach($tuple in @(@(('c'*64),$validSha,$validBlob,$validBlob),@($validSha,'',$validBlob,$validBlob),@($validSha,$validSha,('d'*40),$validBlob),@($validSha,$validSha,'',''))){Need (-not(PinnedGrantMatches $tuple[0] $tuple[1] $tuple[2] $tuple[3])) 'MOCK_GRANT_DRIFT_NOT_BLOCKED';$n++}
+ $priorKeep=$script:KeepPrevious;try{$script:KeepPrevious=$true;PrunePrevious '__MUST_NOT_ENUMERATE__' '__MUST_NOT_ENUMERATE__';$n++}finally{$script:KeepPrevious=$priorKeep}
  $tmp=Join-Path $env:TEMP ('hdwork-web-update-mock-'+[Guid]::NewGuid().ToString('N'));[void][IO.Directory]::CreateDirectory($tmp)
  try{$f=Join-Path $tmp 'service.js';[IO.File]::WriteAllText($f,'old');$old=[IO.File]::ReadAllBytes($f);Atomic $f ([Text.Encoding]::UTF8.GetBytes('new'));Need ([IO.File]::ReadAllText($f) -eq 'new') 'MOCK_APPLY_FAILED';$n++;Atomic $f $old;Need ([IO.File]::ReadAllText($f) -eq 'old') 'MOCK_ROLLBACK_FAILED';$n++;$mockDist=Join-Path $tmp 'frontend/dist';$nested=Join-Path $mockDist 'assets/app.js';[void][IO.Directory]::CreateDirectory((Split-Path -Parent $nested));[IO.File]::WriteAllText($nested,'asset');$releaseManifest=Join-Path $mockDist 'release-manifest.json';[IO.File]::WriteAllText($releaseManifest,'{}');Need ((RelativePath $mockDist $nested) -eq 'assets/app.js') 'MOCK_RELATIVE_PATH_FAILED';$n++;try{[void](RelativePath (Join-Path $mockDist 'assets') $f);Fail 'MOCK_RELATIVE_PATH_ESCAPE_NOT_BLOCKED'}catch{Need ($_.Exception.Message -eq 'WEB_RELEASE_PATH_OUTSIDE_ROOT') 'MOCK_RELATIVE_PATH_GUARD_FAILED';$n++};$mockPayload=Join-Path $tmp 'payload';Get-ChildItem -LiteralPath $mockDist -File -Recurse|Where-Object{$_.Name -ne 'release-manifest.json'}|ForEach-Object{$rel='frontend/dist/'+(RelativePath $mockDist $_.FullName);$to=Join-Path $mockPayload $rel;[void][IO.Directory]::CreateDirectory((Split-Path -Parent $to));Copy-Item -LiteralPath $_.FullName -Destination $to};Need ([IO.File]::ReadAllText((Join-Path $mockPayload 'frontend/dist/assets/app.js')) -eq 'asset') 'MOCK_FRONTEND_PACKAGE_COPY_FAILED';$n++;Need (-not(Test-Path -LiteralPath (Join-Path $mockPayload 'frontend/dist/release-manifest.json'))) 'MOCK_FRONTEND_MANIFEST_SHOULD_NOT_BE_DEPLOYED';$n++;$safe=SafeDiagnostic 'failed token=123456:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_1234';Need ($safe -notmatch '123456:') 'MOCK_DIAGNOSTIC_REDACTION_FAILED';$n++;$json=[pscustomobject]@{targetCommit='old'};SetJsonProperty $json 'webTargetCommit' 'new';Need ($json.webTargetCommit -eq 'new') 'MOCK_JSON_PROPERTY_ADD_FAILED';$n++;SetJsonProperty $json 'webTargetCommit' 'next';Need ($json.webTargetCommit -eq 'next') 'MOCK_JSON_PROPERTY_UPDATE_FAILED';$n++;
   $identity=[pscustomobject]@{pid=15;name='powershell.exe';createdUtc=[DateTimeOffset]::UtcNow.ToString('o')};$same=[pscustomobject]@{ProcessId=15;Name='powershell.exe';CreationDate=[DateTime]::UtcNow};Need (SameProcess $same $identity) 'MOCK_OWNER_IDENTITY_MATCH_FAILED';$n++;$reused=[pscustomobject]@{ProcessId=15;Name='powershell.exe';CreationDate=[DateTime]::UtcNow.AddMinutes(-2)};Need (-not(SameProcess $reused $identity)) 'MOCK_OWNER_PID_REUSE_NOT_DETECTED';$n++;
@@ -171,6 +189,7 @@ function WaitReady([string]$configPath,[string]$sha,[string]$attemptId,[int]$sec
 }
 function IsAdmin{$id=[Security.Principal.WindowsIdentity]::GetCurrent();return (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}
 function PrunePrevious([string]$releaseRoot,[string]$currentRelease){
+ if($KeepPrevious){Write-Output 'WEB_PREVIOUS_RELEASES_RETAINED';return}
  $rootFull=[IO.Path]::GetFullPath($releaseRoot).TrimEnd('\')+'\';$currentFull=[IO.Path]::GetFullPath($currentRelease)
  foreach($dir in Get-ChildItem -LiteralPath $releaseRoot -Directory){
   $full=[IO.Path]::GetFullPath($dir.FullName);if($full -ieq $currentFull -or -not $full.StartsWith($rootFull,[StringComparison]::OrdinalIgnoreCase) -or ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint)){continue}
@@ -181,7 +200,7 @@ function PrunePrevious([string]$releaseRoot,[string]$currentRelease){
  }
 }
 function Elevate{
- $exe=(Get-Process -Id $PID).Path;$arguments='-NoLogo -NoProfile -ExecutionPolicy Bypass -File "'+$PSCommandPath+'"';if($DryRun){$arguments+=' -DryRun'}
+ $exe=(Get-Process -Id $PID).Path;$arguments='-NoLogo -NoProfile -ExecutionPolicy Bypass -File "'+$PSCommandPath+'"';if($DryRun){$arguments+=' -DryRun'};if($DatabasePrerequisitesVerified){$arguments+=' -DatabasePrerequisitesVerified'};if($KeepPrevious){$arguments+=' -KeepPrevious'}
  $p=Start-Process -FilePath $exe -ArgumentList $arguments -WorkingDirectory $root -Verb RunAs -PassThru -Wait;exit $p.ExitCode
 }
 function Main{
@@ -196,7 +215,7 @@ function Main{
  $localHead=(InvokeGit @('rev-parse','HEAD')).Trim();$target=(InvokeGit @('rev-parse',$(if($DryRun){'origin/main'}else{'FETCH_HEAD'}))).Trim()
  if(-not $DryRun -and $target -ne $localHead){InvokeGit @('pull','--ff-only','origin','main')|Out-Null;$target=(InvokeGit @('rev-parse','HEAD')).Trim()}
  $script:WebUpdatePhase='READ_ACTIVE_WEB_TASK';Write-Output 'READING_ACTIVE_WEB_TASK';$web=GetActiveWeb;$activeCommit=if($web.Config.webTargetCommit){[string]$web.Config.webTargetCommit}else{[string]$web.Config.targetCommit};$ancestor=& git -C $root merge-base --is-ancestor $activeCommit $target;if($LASTEXITCODE -ne 0){Fail 'ACTIVE_WEB_PIN_NOT_ANCESTOR_OF_MAIN'}
- $changed=@((InvokeGit @('diff','--name-only',($activeCommit+'..'+$target))).Split([Environment]::NewLine,[StringSplitOptions]::RemoveEmptyEntries));$webPaths=@();foreach($p in $changed){if(WebPath $p){$webPaths+=,$p}}
+ $changed=@((InvokeGit @('diff','--name-only',($activeCommit+'..'+$target))).Split([Environment]::NewLine,[StringSplitOptions]::RemoveEmptyEntries));$webPaths=@();foreach($p in $changed){if($p -ceq 'src/config/operational-grants.js' -and $DatabasePrerequisitesVerified){Need (ReviewedGrantInstalled $web $target $p) 'WEB_REVIEWED_GRANT_NOT_INSTALLED_OR_PINNED';Write-Output 'WEB_REVIEWED_GRANT_ALREADY_INSTALLED';continue};if(WebPath $p){$webPaths+=,$p}}
  if($DryRun){Write-Output ('DRY_RUN target='+$target+' webChanges='+$webPaths.Count+' activeTask='+$web.Task.TaskName+' runtimeChanged=false courierTouched=false');return}
  if($webPaths.Count -eq 0){$receipt=Join-Path $env:TEMP ('hdwork-web-health-'+[Guid]::NewGuid().ToString('N')+'.json');RetryTransientHealth { $null=Health $web $receipt };$h=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json;Remove-Item -LiteralPath $receipt -Force;Write-Output ('SUCCESS commit='+$target+' activeWebPin='+$activeCommit+' web=UNCHANGED health=PASS courier=UNTOUCHED rounds='+$h.rounds.Count);return}
  DeployWeb $web $target $webPaths

@@ -4,5 +4,6 @@ const powershell=path.join(process.env.SystemRoot||'C:/Windows','System32/Window
 
 test('numeric-leading SHA is kept intact in candidate and rollback task actions',{skip:process.platform!=='win32'},()=>{
  const output=cp.execFileSync(powershell,['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',updater,'-Mock'],{cwd:repo,windowsHide:true,encoding:'utf8',stdio:'pipe'});
- assert.match(output,/MOCK_PASS checks=51 webRuntimeChanged=false courierTouched=false/);
+ const result=/MOCK_PASS checks=(\d+) webRuntimeChanged=false courierTouched=false/.exec(output);
+ assert.ok(result&&Number(result[1])>=59,'task action and reviewed database/retention checks must pass');
 });
