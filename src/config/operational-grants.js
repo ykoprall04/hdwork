@@ -31,6 +31,11 @@ function reviewOperationalGrants(rows,role){
    try{const ps=privileges(m[1]);if(!ps.length||ps.some(p=>!notePermissions.includes(p)))unsafe=true;}catch{unsafe=true;}
    continue;
   }
+  if(scope[0]==='hdwork2'&&scope[1]==='hd2_vlan_reference'&&notePermissions){
+   const allowed=role.toLowerCase().includes('write')?['SELECT','INSERT','UPDATE','DELETE']:['SELECT'];
+   try{const ps=privileges(m[1]);if(!ps.length||ps.some(p=>!allowed.includes(p)))unsafe=true;}catch{unsafe=true;}
+   continue;
+  }
   if(scope[0]!=='hdwork2'||!Object.hasOwn(policy,scope[1])){unsafe=true;continue;}
   let permissions;try{permissions=privileges(m[1]);}catch{unsafe=true;continue;}
   if(!permissions.length){unsafe=true;continue;}

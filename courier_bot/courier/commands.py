@@ -61,7 +61,7 @@ def parse_command(text, profile, bot_username=None):
     if code:
         fields[rule['identity']] = code
         if command != 'config_psb': fields['TIPE TRANSAKSI'] = re.search(r'^(PDA|AO|MO|DO)', code.split('-')[-1], re.I)[1].upper()
-    if command == 'order':
+    if command in ('order', 'config_psb'):
         from .order_network import parse_network
         fields.update(parse_network(body))
     for name in rule['optional']: fields.setdefault(name, None)

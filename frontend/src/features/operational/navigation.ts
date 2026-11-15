@@ -20,6 +20,7 @@ export function operationalNavigation(user: User, cookie: boolean, operations: b
       ...(operations ? [{ to: '/recap', label: 'Dashboard Rekap', icon: ChartNoAxesCombined }] : []),
     ] },
     { label: 'Pengelolaan', items: [
+      ...(cookie && operations && ['ADMIN','SUPER_ADMIN'].includes(user.role) ? [{to:'/admin/vlan',label:'Manajemen VLAN',icon:LayoutGrid}] : []),
       ...(cookie && operator ? [{ to: '/admin/system', label: 'Monitoring Sistem', icon: ShieldCheck }] : []),
       ...(['ADMIN', 'SUPER_ADMIN'].includes(user.role) ? [{ to: cookie ? '/admin/users' : '/admin', label: 'Manajemen Pengguna', icon: Users }] : []),
     ] },
@@ -32,7 +33,7 @@ export function pageContext(path: string) {
   const pages: Record<string, string> = {
     '/jobs': 'Pilih pekerjaan', '/check-in': 'Check-in', '/recap': 'Dashboard Rekap',
     '/change-password': 'Ganti Password', '/admin/system': 'Monitoring Sistem', '/admin/users': 'Manajemen Pengguna',
-    '/admin': 'Manajemen Pengguna', '/b2c/staging': 'Staging B2C',
+    '/admin/vlan': 'Manajemen VLAN', '/admin': 'Manajemen Pengguna', '/b2c/staging': 'Staging B2C',
   };
   if (pages[path]) return { label: pages[path], parent: null };
   const area = workspaces.find(area => path === `/work/${area}` || path.startsWith(`/work/${area}/`));
