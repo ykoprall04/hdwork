@@ -53,5 +53,13 @@ async function run(){
  finally{delete process.env.DB_PASSWORD;delete process.env.JWT_SECRET;for(const k of Object.keys(secrets))secrets[k]='';}
  }
 }
-if(require.main===module)run().catch(()=>{process.exitCode=1;});
-module.exports={run};
+async function entry(argv=process.argv.slice(2)){
+ if(argv.length===0)return run();
+ if(argv.length!==2||argv[0]!=='--check-vlan-adapter')throw Error('VLAN_CHECK_ARGUMENTS_REJECTED');
+ const env=JSON.parse(fs.readFileSync(path.join(home,'environment.json'),'utf8'));
+ if(env.HDWORK2_PUBLIC_ORIGIN!=='https://hdwork2.yoloo.space'||env.HDWORK2_EDGE_AUTH_MODE!=='application-session')throw Error('VLAN_CHECK_REJECTED');
+ const result=await require('./lib/vlan-connection-check.cjs').check({env,stream:process.stdin,uuid:argv[1]});
+ console.log(JSON.stringify(result));
+}
+if(require.main===module)entry().catch(()=>{console.error(JSON.stringify({status:'FAILED',code:'PROTECTED_WEB_CHECK_FAILED'}));process.exitCode=1;});
+module.exports={run,entry};

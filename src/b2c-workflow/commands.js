@@ -38,7 +38,7 @@ function parseCommand(text,profile,botUsername) {
     if(!code||code.length>100)errors.push(rule.identity+' (kode transaksi)');
   }
   if(code){fields[rule.identity]=code;if(command!=='config_psb')fields['TIPE TRANSAKSI']=/^(PDA|AO|MO|DO)/i.exec(code.split('-').pop())[1].toUpperCase();}
-  if(command==='order')Object.assign(fields,require('./order-network').parseNetwork(body));
+  if(['order','config_psb'].includes(command))Object.assign(fields,require('./order-network').parseNetwork(body));
   for(const name of rule.optional)if(!Object.hasOwn(fields,name))fields[name]=null;
   return errors.length?reject(errors,command):{valid:true,command,sc_in:code,fields,original:text};
 }

@@ -79,7 +79,12 @@
       "HOSTNAME GPON & IP GPON",
       "RACK/SHELF/SLOT/PORT",
       "NAMA PELAPOR",
-      "NIK PELAPOR"
+      "NIK PELAPOR",
+      "SUMMARY ODP",
+      "IP OLT",
+      "SLOT",
+      "PORT",
+      "VALINS ID"
     ],
     "codes": [
       "AO",
@@ -102,7 +107,12 @@
       "NIK PELAPOR": "person",
       "KETERANGAN": "text",
       "SERVICE (1P/2P/3P/1P-VOICE)": "service",
-      "TIPE ONT": "text"
+      "TIPE ONT": "text",
+      "SUMMARY ODP": "text",
+      "IP OLT": "text",
+      "SLOT": "text",
+      "PORT": "text",
+      "VALINS ID": "serial"
     }
   },
   "mo": {

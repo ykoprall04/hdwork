@@ -10,6 +10,8 @@ const wrap=fn=>async(req,res)=>{try{await fn(req,res);}catch(e){if(res.headersSe
 const exporter=()=>exportService||=(require('./export').createExporter({pool:pool(),authenticate:token=>h.service().me(token)}));
 let chatRoutes;router.use('/chat',(req,res,next)=>{chatRoutes||=require('../chat/routes').createRoutes({http:h});return chatRoutes(req,res,next);});
 let systemRoutes;router.use('/system',(req,res,next)=>{systemRoutes||=require('../system/routes').createRoutes({http:h});return systemRoutes(req,res,next);});
+let vlanRoutes;router.use('/vlan',(req,res,next)=>{vlanRoutes||=require('../vlan/routes').createRoutes({http:h,readPool:pool,writePool});return vlanRoutes(req,res,next);});
+router.get('/orders/:id/vlan-format',wrap(require('../vlan/routes').formatHandler({readOrder:(id,user)=>read().detail(id,user),readPool:pool})));
 router.get('/b2c/readiness',wrap(async(req,res)=>{if(!['SUPER_ADMIN','ADMIN'].includes(req.user.role))throw fail(403);if(process.env.HDWORK2_SYSTEM_MONITORING_ENABLED!=='true')return res.json({success:true,configured:false,readyForControlledTest:false,liveVerified:false,reason:'MONITORING_NOT_ENABLED'});res.json({success:true,...await require('./b2c-readiness').snapshot({pool:pool(),writerAvailable:require('../config/operational-pools').status().write})});}));
 router.get('/orders',wrap(async(req,res)=>res.json({success:true,...await read().list(req.query,req.user)})));
 const notes=()=>require('./order-notes').createNotes({readPool:pool(),writePool:{getConnection:()=>writePool().getConnection()}});
