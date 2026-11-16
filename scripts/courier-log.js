@@ -1,7 +1,7 @@
 // Independent read-only monitor. No process control, stdin ownership, secrets or Courier imports.
 const fs=require('node:fs'),path=require('node:path'),{StringDecoder}=require('node:string_decoder');
 const view=require('./courier-log-view');
-const pattern=/^hdwork2-\d{4}-\d{2}-\d{2}-[a-z-]+-\d+\.jsonl$/;
+const pattern=/^hdwork2-\d{4}-\d{2}-\d{2}-[a-z-]+-\d+(?:\.previous)?\.jsonl$/;
 function snapshot(directory,fileFilter=()=>true){try{return fs.readdirSync(directory).filter(f=>pattern.test(f)&&fileFilter(f)).sort();}catch{return [];}}
 async function initial(directory,tail=100,accept=()=>true,fileFilter=()=>true){
  const offsets=new Map(),rows=[];
@@ -12,15 +12,16 @@ async function initial(directory,tail=100,accept=()=>true,fileFilter=()=>true){
     carry=Buffer.from(data.subarray(0,stop));
    }
    if(end===0&&carry.length&&selected.length<tail){if(trailing)partial=carry;else{const text=carry.toString('utf8');if(accept(text))selected.push(text);}}
-   const decoder=new StringDecoder('utf8');offsets.set(name,{position:stat.size,partial:decoder.write(partial),decoder});rows.push(...selected.reverse());
+   const decoder=new StringDecoder('utf8');offsets.set(name,{identity:`${stat.dev}:${stat.ino}:${stat.birthtimeMs}`,position:stat.size,partial:decoder.write(partial),decoder});rows.push(...selected.reverse());
   }catch{}finally{await fd?.close();}
  }
  rows.sort((a,b)=>{try{return String(JSON.parse(a).timestamp).localeCompare(String(JSON.parse(b).timestamp));}catch{return 0;}});
  return {offsets,lines:rows.slice(-tail)};
 }
-async function readNew(directory,offsets,fileFilter=()=>true){const lines=[];
+async function readNew(directory,offsets,fileFilter=()=>true){const lines=[],byIdentity=new Map([...offsets.values()].filter(s=>s.identity).map(s=>[s.identity,s]));
  for(const name of snapshot(directory,fileFilter)){
-  let fd;try{fd=await fs.promises.open(path.join(directory,name),'r');const stat=await fd.stat();let state=offsets.get(name)||{position:0,partial:'',decoder:new StringDecoder('utf8')};if(stat.size<state.position)state={position:0,partial:'',decoder:new StringDecoder('utf8')};
+  let fd;try{fd=await fs.promises.open(path.join(directory,name),'r');const stat=await fd.stat();const identity=`${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;let state=(offsets.get(name)?.identity===identity?offsets.get(name):byIdentity.get(identity))||{position:0,partial:'',decoder:new StringDecoder('utf8')};if(state.identity&&state.identity!==identity||stat.size<state.position)state={position:0,partial:'',decoder:new StringDecoder('utf8')};
+   state.identity=identity;
    // One chunk per file per tick bounds observer overhead; subsequent ticks drain the rest.
    const length=Math.min(stat.size-state.position,65536);if(length){const buffer=Buffer.alloc(length);const {bytesRead}=await fd.read(buffer,0,length,state.position);state.position+=bytesRead;const text=state.partial+state.decoder.write(buffer.subarray(0,bytesRead));const parts=text.split('\n');state.partial=parts.pop();lines.push(...parts.filter(Boolean));}offsets.set(name,state);
   }catch{}finally{await fd?.close();}

@@ -2,6 +2,37 @@
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$Config,[Parameter(Mandatory=$true)][string]$ConfigSha256,[string]$ControlConfig,[string]$ControlConfigSha256,[switch]$Recovery)
 $ErrorActionPreference='Stop'
+function WriteOwnerLog([string]$Event,$Failure=$null,[hashtable]$Details=@{}) {
+ if($env:HDWORK2_RAW_LOG_ENABLED -ne 'true'){return}
+ try {
+  $root=$env:HDWORK2_LOG_DIRECTORY
+  if(-not $root){$root=Join-Path $env:ProgramData 'HDWork2\Logs'}
+  [void][IO.Directory]::CreateDirectory($root)
+  if((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){return}
+  foreach($file in @(Get-ChildItem -LiteralPath $root -File -Filter 'hdwork2-*-owner-*')){
+   if($file.Name -match '^hdwork2-\d{4}-\d{2}-\d{2}-owner-\d+\.jsonl(?:\.previous)?$' -and $file.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddDays(-7)){Remove-Item -LiteralPath $file.FullName}
+  }
+  $date=[DateTime]::UtcNow.AddHours(7).ToString('yyyy-MM-dd')
+  $row=@{timestamp=[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ');source='owner';pid=$PID;event=$Event}
+  foreach($key in @('childPid','exitCode','reason','taskInstanceId','phase','incident')){if($Details.ContainsKey($key)){$row[$key]=$Details[$key]}}
+  if($Failure){
+   $frames=@()
+   foreach($frame in ($Failure.ScriptStackTrace -split "`n")){
+    if($frame -match '([A-Za-z0-9_.-]+\.ps1): line (\d+)$'){$frames+=@{file=$Matches[1];line=[int]$Matches[2]}}
+   }
+   $reason=if($Failure.FullyQualifiedErrorId -in @('CONFIG_HASH_REQUIRED','CONFIG_CHANGED','DPAPI_OWNER_MISMATCH','RUNNER_CHANGED','PATH_REJECTED')){$Failure.FullyQualifiedErrorId}else{'OWNER_EXCEPTION'}
+   $row.error=@{message='[redacted]';code=$reason;hresult=$Failure.Exception.HResult;traceback=$frames}
+  }
+  $target=Join-Path $root "hdwork2-$date-owner-$PID.jsonl"
+  if(Test-Path -LiteralPath $target){$item=Get-Item -LiteralPath $target -Force;if($item.LinkType -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){return}}
+  if((Test-Path -LiteralPath $target) -and (Get-Item -LiteralPath $target).Length -ge 5MB){
+   $previous=$target+'.previous'
+   if(Test-Path -LiteralPath $previous){Remove-Item -LiteralPath $previous}
+   Move-Item -LiteralPath $target -Destination $previous
+  }
+  [IO.File]::AppendAllText($target,(ConvertTo-Json $row -Depth 6 -Compress)+[Environment]::NewLine,(New-Object Text.UTF8Encoding($false)))
+ }catch{} # owner lifecycle must remain independent from log storage
+}
 if($ControlConfig -or $ControlConfigSha256){
  try {
  # Opt-in on a FUTURE approved launch only. Never attaches to a running legacy
@@ -17,8 +48,23 @@ if($ControlConfig -or $ControlConfigSha256){
  for($i=0;$i -lt $expected.Count;$i++){if($native.childArguments[$i] -cne $expected[$i]){throw 'NATIVE_RUNTIME_BINDING_MISMATCH'}}
  $supervisorPath=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\ops\windows\courier-native-supervisor.ps1'))
  if($native.supervisorScript -ine $supervisorPath -or (Get-FileHash -LiteralPath $supervisorPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $native.supervisorSha256){throw 'NATIVE_SUPERVISOR_PIN_MISMATCH'}
+ # Logging is initialized from the pinned, non-secret runtime configuration
+ # before native delegation; recovery must not bypass the legacy logger.
+ if((Get-FileHash -LiteralPath $Config -Algorithm SHA256).Hash.ToLowerInvariant() -cne $ConfigSha256){throw 'CONFIG_CHANGED'}
+ $runtime=Get-Content -LiteralPath $Config -Raw|ConvertFrom-Json
+ if($runtime.rawLog){
+  if($runtime.rawLog.enabled -ne $true -or $runtime.rawLog.directory -cne 'C:\ProgramData\HDWork2\Logs'){throw 'RAW_LOG_CONFIG_REJECTED'}
+  $env:HDWORK2_RAW_LOG_ENABLED='true';$env:HDWORK2_LOG_DIRECTORY=$runtime.rawLog.directory
+ }
+ WriteOwnerLog 'OWNER_START' -Details @{reason='TASK_OR_OPERATOR';taskInstanceId='UNKNOWN'}
+ $block=Join-Path (Split-Path -Parent $ControlConfig) 'permanent.failure.json'
+ if(Test-Path -LiteralPath $block){WriteOwnerLog 'PERMANENT_FAILURE_BLOCKED';exit 0}
  & $supervisorPath -ControlConfig $ControlConfig -ConfigSha256 $ControlConfigSha256
  $nativeExit=$LASTEXITCODE
+ WriteOwnerLog 'OWNER_STOP' -Details @{exitCode=$nativeExit;reason=$(if($nativeExit -eq 0){'COOPERATIVE_OR_FENCED'}elseif($nativeExit -eq 75){'TRANSIENT_CHILD_FAILURE'}else{'PERMANENT_FAILURE'})}
+ if($Recovery -and $nativeExit -notin @(0,75)){
+  [IO.File]::WriteAllText($block,(@{version=1;configSha256=$ControlConfigSha256;reason='PERMANENT_FAILURE';createdAtUtc=[DateTimeOffset]::UtcNow.ToString('o')}|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
+ }
  if($Recovery){
   if($nativeExit -eq 75){Write-Output '{"status":"TRANSIENT_FAILURE_RESTART_ELIGIBLE","exitCode":75}';exit 75}
   if($nativeExit -ne 0){Write-Output '{"status":"PERMANENT_FAILURE_NO_RESTART","exitCode":1}'}
@@ -28,31 +74,14 @@ if($ControlConfig -or $ControlConfigSha256){
  }
  exit $nativeExit
  }catch{
+  WriteOwnerLog 'OWNER_FAILED' $_ -Details @{reason='UNKNOWN'}
   if($Recovery){Write-Output '{"status":"PERMANENT_FAILURE_NO_RESTART","exitCode":1}';exit 0}
   throw
  }
 }
 if($Recovery){Write-Output '{"status":"PERMANENT_FAILURE_NO_RESTART","exitCode":1}';exit 0}
 $child=$null
-function WriteOwnerLog([string]$Event,$Failure=$null) {
- if($env:HDWORK2_RAW_LOG_ENABLED -ne 'true'){return}
- try {
-  $root=$env:HDWORK2_LOG_DIRECTORY
-  if(-not $root){$root=Join-Path $env:ProgramData 'HDWork2\Logs'}
-  [void][IO.Directory]::CreateDirectory($root)
-  $date=[DateTime]::UtcNow.AddHours(7).ToString('yyyy-MM-dd')
-  $row=@{timestamp=[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ');source='owner';pid=$PID;event=$Event}
-  if($Failure){
-   $frames=@()
-   foreach($frame in ($Failure.ScriptStackTrace -split "`n")){
-    if($frame -match '([A-Za-z0-9_.-]+\.ps1): line (\d+)$'){$frames+=@{file=$Matches[1];line=[int]$Matches[2]}}
-   }
-   $reason=if($Failure.FullyQualifiedErrorId -in @('CONFIG_HASH_REQUIRED','CONFIG_CHANGED','DPAPI_OWNER_MISMATCH','RUNNER_CHANGED','PATH_REJECTED')){$Failure.FullyQualifiedErrorId}else{'OWNER_EXCEPTION'}
-   $row.error=@{message='[redacted]';code=$reason;hresult=$Failure.Exception.HResult;traceback=$frames}
-  }
-  [IO.File]::AppendAllText((Join-Path $root "hdwork2-$date-owner-$PID.jsonl"),(ConvertTo-Json $row -Compress)+[Environment]::NewLine,(New-Object Text.UTF8Encoding($false)))
- }catch{} # owner lifecycle must remain independent from log storage
-}
+
 try {
  if($ConfigSha256 -notmatch '^[a-f0-9]{64}$'){throw 'CONFIG_HASH_REQUIRED'}
  $actual=(Get-FileHash -LiteralPath $Config -Algorithm SHA256).Hash.ToLowerInvariant()

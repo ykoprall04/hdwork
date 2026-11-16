@@ -45,6 +45,7 @@ test('scheduled wrapper: bounded transient restarts; permanent failures never re
   do{last=run(75);attempts++;}while(last.status!==0&&attempts<=policy.taskRestartCount);
   assert.equal(attempts,4);assert.equal(last.status,75);assert.match(last.stdout,/TRANSIENT_FAILURE_RESTART_ELIGIBLE/);
   const permanent=run(1);assert.equal(permanent.status,0,permanent.stderr);assert.match(permanent.stdout,/PERMANENT_FAILURE_NO_RESTART/);
+  fs.unlinkSync(path.join(root,'permanent.failure.json'));
   const cleanStop=run(0);assert.equal(cleanStop.status,0);assert.doesNotMatch(cleanStop.stdout,/RESTART_ELIGIBLE/);
  }finally{clean(root);}
 });

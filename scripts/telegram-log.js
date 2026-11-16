@@ -1,7 +1,7 @@
 // Read-only Python viewer. Reuse the existing rotation/partial-line tail reader.
 const fs=require('node:fs'),path=require('node:path');
 const {initial,readNew}=require('./courier-log');
-const pythonFile=name=>/^hdwork2-\d{4}-\d{2}-\d{2}-python-\d+\.jsonl$/.test(name);
+const pythonFile=name=>/^hdwork2-\d{4}-\d{2}-\d{2}-python-\d+(?:\.previous)?\.jsonl$/.test(name);
 function row(line){try{const r=JSON.parse(line);return r.source==='python'&&/^[A-Z_]{2,64}$/.test(r.event)?r:null;}catch{return null;}}
 function isError(r){
  if(!r)return false;

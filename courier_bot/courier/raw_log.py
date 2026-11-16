@@ -72,9 +72,10 @@ def safe_error(error):
     return result
 
 class RawLog:
-    def __init__(self, directory, enabled=True, now=time.time, limit=2048):
+    def __init__(self, directory, enabled=True, now=time.time, limit=2048, max_bytes=10*1024*1024):
         self.directory, self.now = Path(directory), now
         self.enabled = enabled
+        self.max_bytes = max_bytes
         self.queue = queue.Queue(limit)
         self.dropped = 0
         self.thread = None
@@ -119,7 +120,7 @@ class RawLog:
                 if self.last_day != date:
                     self.last_day = date
                     for file in self.directory.glob('hdwork2-*.jsonl'):
-                        match = re.fullmatch(r'hdwork2-(\d{4}-\d{2}-\d{2})-[a-z-]+-\d+\.jsonl', file.name)
+                        match = re.fullmatch(r'hdwork2-(\d{4}-\d{2}-\d{2})-[a-z-]+-\d+(?:\.previous)?\.jsonl', file.name)
                         if match and match[1] < str(date-datetime.timedelta(days=6)):
                             try:
                                 file.unlink()
@@ -128,6 +129,11 @@ class RawLog:
                 target = self.directory / f'hdwork2-{date}-python-{os.getpid()}.jsonl'
                 if target.is_symlink():
                     raise OSError('log_link_rejected')
+                if target.exists() and target.stat().st_size >= self.max_bytes:
+                    backup = target.with_suffix('.previous.jsonl')
+                    if target.stat().st_nlink != 1 or backup.is_symlink() or (backup.exists() and backup.stat().st_nlink != 1):
+                        raise OSError('log_link_rejected')
+                    os.replace(target, backup)
                 descriptor = os.open(str(target), os.O_APPEND | os.O_CREAT | os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0), 0o600)
                 if os.fstat(descriptor).st_nlink != 1:
                     os.close(descriptor)

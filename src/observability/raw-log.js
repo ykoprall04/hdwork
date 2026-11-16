@@ -22,15 +22,22 @@ function fields(input={}){const out={};for(const [k,v]of Object.entries(input)){
  if(['status','reason'].includes(k)&&typeof v==='string'&&/^[A-Z_]{2,64}$/.test(v))out[k]=v;
  }return out;}
 const day=now=>new Date(now+7*3600000).toISOString().slice(0,10);
-function createLogger({directory,source='node',now=Date.now,enabled=true,limit=2048}={}){
+function createLogger({directory,source='node',now=Date.now,enabled=true,limit=2048,maxBytes=Infinity}={}){
  let queue=[],running=false,dropped=0,lastDay,closed=false;const waiters=[];
  const valid=/^[a-z-]{1,32}$/.test(source);if(!valid)throw Error('LOG_SOURCE_INVALID');
  async function drain(){if(running)return;running=true;
   while(queue.length){const batch=queue.splice(0,128),date=day(now());let carried=0;try{
    await fs.promises.mkdir(directory,{recursive:true,mode:0o700});
-   if(lastDay!==date){lastDay=date;const files=await fs.promises.readdir(directory);for(const file of files){const m=/^hdwork2-(\d{4}-\d{2}-\d{2})-[a-z-]+-\d+\.jsonl$/.exec(file);if(m&&m[1]<day(now()-6*86400000))await fs.promises.unlink(path.join(directory,file)).catch(()=>{});}}
+   if(lastDay!==date){lastDay=date;const files=await fs.promises.readdir(directory);for(const file of files){const m=/^hdwork2-(\d{4}-\d{2}-\d{2})-[a-z-]+-\d+(?:\.previous)?\.jsonl$/.exec(file);if(m&&m[1]<day(now()-6*86400000))await fs.promises.unlink(path.join(directory,file)).catch(()=>{});}}
    const target=path.join(directory,`hdwork2-${date}-${source}-${process.pid}.jsonl`);
    const existing=await fs.promises.lstat(target).catch(e=>{if(e.code!=='ENOENT')throw e;});if(existing&&(!existing.isFile()||existing.isSymbolicLink()||existing.nlink!==1))throw Error('LOG_LINK_REJECTED');
+   if(existing?.size>=maxBytes){
+    const backup=target.replace(/\.jsonl$/,'.previous.jsonl');
+    const old=await fs.promises.lstat(backup).catch(e=>{if(e.code!=='ENOENT')throw e;});
+    if(old&&(!old.isFile()||old.isSymbolicLink()||old.nlink!==1))throw Error('LOG_LINK_REJECTED');
+    if(old)await fs.promises.unlink(backup);
+    await fs.promises.rename(target,backup);
+   }
    carried=dropped;const records=dropped?[{timestamp:new Date(now()).toISOString(),source,pid:process.pid,event:'LOG_DROPPED',dropped},...batch]:batch;dropped=0;
    await fs.promises.appendFile(target,records.map(x=>JSON.stringify(x)).join('\n')+'\n',{mode:0o600});
   }catch{dropped+=batch.length+carried;/* logging must never fail delivery */}
@@ -43,7 +50,7 @@ function createLogger({directory,source='node',now=Date.now,enabled=true,limit=2
  return {emit,async flush(){if(running||queue.length)await new Promise(resolve=>waiters.push(resolve));},async close(){closed=true;await this.flush();},get dropped(){return dropped;}};
 }
 let singleton;
-function logger(){return singleton??=createLogger({directory:process.env.HDWORK2_LOG_DIRECTORY||(process.platform==='win32'?path.join(process.env.ProgramData||'C:\\ProgramData','HDWork2','Logs'):undefined),source:'node',enabled:process.env.HDWORK2_RAW_LOG_ENABLED==='true'});}
+function logger(){return singleton??=createLogger({directory:process.env.HDWORK2_LOG_DIRECTORY||(process.platform==='win32'?path.join(process.env.ProgramData||'C:\\ProgramData','HDWork2','Logs'):undefined),source:'node',maxBytes:process.env.HDWORK2_NATIVE_GRACEFUL_ONLY==='true'?10*1024*1024:Infinity,enabled:process.env.HDWORK2_RAW_LOG_ENABLED==='true'});}
 async function observe(event,data,run){
  const parent=context.getStore(),scope={...(parent||{traceId:randomUUID()}),...fields(data)};
  return context.run(scope,async()=>{const start=performance.now();try{const result=await run();logger().emit(event,{...data,status:'OK',durationMs:performance.now()-start});return result;}catch(error){logger().emit(event,{...data,status:'ERROR',durationMs:performance.now()-start},error);throw error;}});

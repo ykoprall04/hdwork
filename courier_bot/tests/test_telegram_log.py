@@ -6,6 +6,19 @@ from courier.clients import TelegramClient
 from courier.http import TransportError
 
 class TelegramLogTests(unittest.TestCase):
+    def test_size_rotation_preserves_latest_original_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = RawLog(directory, max_bytes=200)
+            for index in range(12):
+                log.emit('ROTATION_TEST', count=index)
+                log.flush()
+            log.shutdown()
+            files = list(Path(directory).glob('*.jsonl'))
+            self.assertEqual(len(files), 2)
+            rows = [json.loads(line) for file in files for line in file.read_text().splitlines()]
+            self.assertIn(11, [row['count'] for row in rows])
+            self.assertTrue(all(row['event'] == 'ROTATION_TEST' for row in rows))
+
     def test_original_streams_fragmented_secrets_and_shutdown_tail(self):
         with tempfile.TemporaryDirectory() as directory:
             log=RawLog(directory)
