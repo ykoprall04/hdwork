@@ -6,7 +6,8 @@ function rejectionText(parsed){
   parsed.errors.some(x=>typeof x!=='string'||! /^[A-Za-z0-9 /().&_-]{1,100}$/.test(x)))return null;
  // Repeated required labels must not inflate the reply past Telegram's limit
  // and turn a normal validation rejection into a transactional enqueue error.
- return prefix+[...new Set(parsed.errors)].join(', ');
+ const template=require('../../contracts/b2c-commands.json')[parsed.command]?.template;
+ return prefix+[...new Set(parsed.errors)].join(', ')+(template?'\n\nTemplate:\n'+template.join('\n'):'');
 }
 function matchesRejection(payload,event,{profile,botUsername,commands}={}){
  if(event.kind!=='message'||event.reply_to_message_id!==null||event.chat_id!==payload.chat_id||

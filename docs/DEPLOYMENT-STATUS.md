@@ -246,3 +246,26 @@ Verification: 44 focused Node tests, 61 updater mock checks, PowerShell parsing,
 and physical payload validation against the current production runtime source
 PASS without database access. The existing frontend build/browser checks also
 passed; authenticated production lookup remains a postdeployment requirement.
+
+
+## Web handbook/export payload support - offline preparation
+
+The existing Web updater now selects only contracts/b2c-commands.json and
+contracts/workspace-commands.json as explicit Web dependencies, including stale
+but correctly pinned contracts absent from the Git release diff. Other contracts
+and Courier parser/worker directories remain excluded. Existing actual-byte
+SHA-256 sourceHashes, config/task pins, validator overlay and retained rollback
+mechanism are preserved; source-only newline normalization is unchanged.
+
+The combined physical payload check covers 14 source files and exercises actual
+export/workbook readback, order detail and FORMAT VLAN using mock pools and the
+supplied runtime dependency directory. Missing/stale/tampered dependencies fail
+before the Web stop fence. Export UI is available across list tabs and explains
+all-status scope while keeping the existing date/area/command/search/access
+filters. Dashboard tab status does not restrict export.
+
+Offline checks: 46 backend/payload/access tests, 22 frontend unit tests, local
+mocked login/export and FORMAT VLAN browser checks, operational Vite build, and
+63 updater mock checks PASS. No deployment, database access, Courier/task/PM2 or
+personal bot action was performed. Production activation remains unchanged.
+See docs/web-handbook-export-deployment.md for later activation and rollback.

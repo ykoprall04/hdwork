@@ -49,7 +49,7 @@ test('owned TCP-disabled MySQL: VLAN import, lookup, CRUD, real order detail and
   });
   const {MysqlStore}=require('../src/courier/mysql-store'),{createB2CProcessor}=require('../src/b2c-workflow/workflow');
   const store=new MysqlStore({pool:f.pool,botId:'vlan-fixture',env:{}});
-  const raw='/config_psb\nORDER ID:DGPS-AO123\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nSTO:BBA\nKETERANGAN:fixture\nNO INTERNET:000123\nODP:ODP-TEST/4\nIP OLT:192.0.2.1\nSlot:2\nPort:3\nValins ID:VALINS1';
+  const raw='/config_psb\nORDER ID:DGPS-AO123\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nSTO:BBA\nKETERANGAN:fixture\nNO INTERNET:000123\nODP:ODP-TEST/4\nIP OLT:192.0.2.1\nSlot:2\nPort:3\nValins ID:VALINS1';
   await store.accept({version:1,bot_id:'vlan-fixture',update_id:'1',event:{kind:'message',chat_id:'-1001',message_id:'101',telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:Math.floor(Date.now()/1000),text:raw,attachments:[]}});
   await createB2CProcessor({store,config:{enabled:true,botId:'vlan-fixture',botUsername:'SyntheticOpsBot',webOnly:true,identityKey:'synthetic-identity-key-000000000000',dedupeBy:'both',groups:[{module:'TIAL',chatId:'-1001',threadId:null,threadMode:'non_topic',commandProfile:'TIAL1',allowedCommands:['config_psb']}],actors:[]}}).processNext();
   const [[order]]=await f.pool.query('SELECT id,command_fields,raw_text FROM hd2_orders');assert.equal(order.raw_text,raw);const fields=typeof order.command_fields==='string'?JSON.parse(order.command_fields):order.command_fields;assert.equal(fields.ip_olt,'192.0.2.1');assert.equal(fields.valins_id,'VALINS1');

@@ -3,7 +3,7 @@ const {STO_AREA,regionForSto,input,lookup}=require('../src/vlan/reference');
 const {parseCommand}=require('../src/b2c-workflow/commands');
 const {formatOrder}=require('../src/vlan/format');
 const order='/order\nSC/IN:DGPS-AO123\nSN ONT:SYNTHETIC\nTIPE TRANSAKSI:AO\nSTO:BBA\nKETERANGAN:fixture\nNIK:TEST\nNO INET:000123\nNO VOICE:000456';
-const config='/config_psb\nORDER ID:DGPS-AO123\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:SYNTHETIC\nSTO:BBA\nKETERANGAN:fixture';
+const config='/config_psb\nORDER ID:DGPS-AO123\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:SYNTHETIC\nSTO:BBA\nKETERANGAN:fixture';
 const network='\nSummary ODP:ODP-TEST/4\nPORT ODP:99\nIP OLT:192.0.2.1\nSlot:2\nPort:3\nValins ID:VALINS-TEST';
 test('final STO mapping is exact; unknown STO never guesses a region',()=>{
  assert.deepEqual(Object.fromEntries(Object.entries(STO_AREA).map(([k,v])=>[k,v.length])),{SBU:23,MDR:18,SBS:7});
@@ -13,14 +13,14 @@ test('final STO mapping is exact; unknown STO never guesses a region',()=>{
 test('both commands parse optional network groups; no network keeps required validation unchanged',()=>{
  const required=require('../contracts/b2c-commands.json');
  assert.deepEqual(required.order.required,['SC/IN','SN ONT','TIPE TRANSAKSI','STO','KETERANGAN','NIK']);
- assert.deepEqual(required.config_psb.required,['ORDER ID','SERVICE (1P/2P/3P/1P-VOICE)','TIPE ONT','STO','KETERANGAN']);
+ assert.deepEqual(required.config_psb.required,['ORDER ID','SN ONT BARU','KETERANGAN','STO']);
  const cases=[];
  for(const base of [order,config]){
   assert.equal(parseCommand(base,'TIAL1').valid,true);
   for(const tail of [network,network.replace('Summary ODP','ODP'),network.replace('/4','/04'),network.replace('Port:3','PORT ODP:3'),network+'\nPort:88',network+'\nIP OLT:192.0.2.2\nSlot:4\nPort:5',''])cases.push(base+tail);
   const p=parseCommand(base+network,'TIAL1');assert.equal(p.valid,true);assert.equal(p.fields.odp,'ODP-TEST/04');assert.equal(p.fields.ip_olt,'192.0.2.1');assert.equal(p.fields.slot,'2');assert.equal(p.fields.port,'3');assert.equal(p.fields.valins_id,'VALINS-TEST');
   assert.equal(parseCommand(base+network.replace('Port:3','PORT ODP:3'),'TIAL1').fields.port,null);
-  assert.equal(parseCommand(base+network+'\nIP OLT:192.0.2.2\nSlot:4\nPort:5','TIAL1').fields.ip_olt,null);
+  assert.equal(parseCommand(base+network+'\nIP OLT:192.0.2.2\nSlot:4\nPort:5','TIAL1').valid,false);
  }
  const result=spawnSync('python',['-B','-c',"import json,sys;from courier.commands import parse_command;print(json.dumps([parse_command(t,'TIAL1') for t in json.load(sys.stdin)]))"],{input:JSON.stringify(cases),encoding:'utf8',env:{...process.env,PYTHONPATH:path.resolve('courier_bot'),HDWORK2_RAW_LOG_ENABLED:'false'},windowsHide:true});
  assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),cases.map(raw=>parseCommand(raw,'TIAL1')));

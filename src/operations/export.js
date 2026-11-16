@@ -3,10 +3,18 @@ const {pipeline}=require('node:stream/promises');const {randomUUID}=require('nod
 const {digest}=require('../access/service');const {filters,where,fail}=require('./policy');
 function createSlots(max=2){let count=0;return {take(){if(count>=max)throw fail(429,'Dua export sedang berjalan. Coba lagi setelah selesai.');count++;let released=false;return()=>{if(!released){released=true;count--;}};},get count(){return count;}};}
 const text=value=>{if(value==null)return '';let s=typeof value==='object'?JSON.stringify(value):String(value);s=s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'');return (/^[\s]*[=+\-@\t\r]/.test(s)?"'":'')+s.slice(0,32000);};
+const exportCommands={TIAL:'order',LOGIC_PSB:'config_psb',LOGIC_MO:'mo',ASSUREN:'assuren',B2B:'b2b',REPLACEMENT:'replacement'};
+const excludedFields=new Set(['VALINS ID','TIME','SUMMARY ODP','PANEL','IP OLT','SLOT','PORT','DOMAIN','HOSTNAME GPON & IP GPON','HOSTNAME GPON','IP GPON','RACK/SHELF/SLOT/PORT']);
+function exportFields(module){
+ const command=exportCommands[module];if(!command)return [];
+ const spec=require('../../contracts/b2c-commands.json')[command]||require('../../contracts/workspace-commands.json')[command];
+ return [...new Set([...spec.required,...spec.optional,'description'])].filter(name=>!excludedFields.has(name)&&name!=='SERVICE (1P/2P/3P/1P-VOICE)');
+}
+const requestText=row=>row.command==='req'&&typeof row.request_text==='string'?row.request_text.replace(/^\s*\/req(?:@[A-Za-z0-9_]{5,32})?(?=\s|$)/i,''):'';
 function createExporter({pool,authenticate,maxRows=1048576}){
  const slots=createSlots(),jobs=new Map();
  const owned=(id,user,token)=>{const job=jobs.get(id);if(!job||String(job.uid)!==String(user.id)||job.tokenHash!==digest(token))throw fail(404);return job;};
- function ticket(query,user,token){if(user.role==='SHOW_ONLY')throw fail(403);const f=filters({...query,tab:'finished',mine:'false'},user);if(!f.allowed.length)throw fail(403);const release=slots.take();const id=randomUUID(),controller=new AbortController();const job={id,uid:user.id,tokenHash:digest(token),query:{...query,tab:'finished',mine:'false'},f,user,release,controller,state:'waiting',rows:0,started:false};
+ function ticket(query,user,token){if(user.role==='SHOW_ONLY')throw fail(403);const exportQuery={...query,tab:'finished',mine:'false',status:''};const f=filters(exportQuery,user);if(!f.allowed.length)throw fail(403);const release=slots.take();const id=randomUUID(),controller=new AbortController();const job={id,uid:user.id,tokenHash:digest(token),query:exportQuery,f,user,release,controller,state:'waiting',rows:0,started:false};
  job.timer=setTimeout(()=>{controller.abort();release();jobs.delete(id);},60000);job.timer.unref?.();jobs.set(id,job);return {id};}
  async function download(id,user,token,res){const job=owned(id,user,token);if(job.started)throw fail(409);job.started=true;clearTimeout(job.timer);job.state='running';job.deadline=setTimeout(()=>job.controller.abort(),10*60*1000);job.deadline.unref?.();let dir,c,writer,readStream;
  const signal=job.controller.signal;const close=()=>{if(!res.writableFinished)job.controller.abort();};res.on('close',close);
@@ -17,17 +25,16 @@ function createExporter({pool,authenticate,maxRows=1048576}){
  c=await pool.getConnection();await c.query('SET TRANSACTION READ ONLY');await c.beginTransaction();
  const current=await authenticate(token);if(current.role==='SHOW_ONLY')throw fail(403);
  const f=filters(job.query,current);const sheets=new Map();
- const specs={...require('../../contracts/b2c-commands.json'),...require('../../contracts/workspace-commands.json')};const fieldNames=[...new Set([...Object.values(specs).flatMap(s=>[...s.required,...s.optional]),'description'])];
- const headings=['SC/IN hasil ekstraksi','ID','Command','Status asli','HD penyelesaian','Order masuk WIB','Selesai WIB','Catatan / alasan',...fieldNames];
- function add(row){const module=row.access_module;let item=sheets.get(module);if(!item||item.count>=maxRows){if(item)item.sheet.commit();const part=(item?.part||0)+1;const label=({TIAL:'TIAL',REQ:'REQ',LOGIC_PSB:'LOGIC PSB',LOGIC_MO:'LOGIC MO'})[module]||module;const sheet=writer.addWorksheet(label+(part>1?' '+part:''));sheet.addRow(headings).commit();item={sheet,count:1,part};sheets.set(module,item);}
+ function headings(module){return ['SC/IN hasil ekstraksi','ID','Command','Status asli','HD penyelesaian','Order masuk WIB','Selesai WIB','Catatan / alasan','Isi permintaan /req',...exportFields(module).map(name=>module==='LOGIC_PSB'?({'ORDER ID':'Order ID DSC','SN ONT BARU':'No SN ONT','KETERANGAN':'Keperluan'}[name]||name):name)];}
+ function add(row){const module=row.access_module;let item=sheets.get(module);if(!item||item.count>=maxRows){if(item)item.sheet.commit();const part=(item?.part||0)+1;const label=({TIAL:'TIAL',REQ:'REQ',LOGIC_PSB:'LOGIC PSB',LOGIC_MO:'LOGIC MO'})[module]||module;const sheet=writer.addWorksheet(label+(part>1?' '+part:''));sheet.addRow(headings(module)).commit();item={sheet,count:1,part};sheets.set(module,item);}
  const fields=typeof row.command_fields==='string'?JSON.parse(row.command_fields):row.command_fields;
  const date=value=>value?new Date(value).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'}):'';
- item.sheet.addRow([row.sc_in,row.id,row.command,row.status,row.final_name,date(Number(row.telegram_timestamp)*1000),date(row.finished),row.completion_note,...fieldNames.map(name=>fields?.[name]??null)].map(text)).commit();item.count++;job.rows++;}
- for(const module of f.allowed){const w=where({...f,allowed:[module]},current);let cursor='',cursorDay='1000-01-01';
+ item.sheet.addRow([row.sc_in,row.id,row.command,row.status,row.final_name,date(Number(row.telegram_timestamp)*1000),date(row.finished),row.completion_note,requestText(row),...exportFields(module).map(name=>fields?.[name]??(name==='SERVICE'?fields?.['SERVICE (1P/2P/3P/1P-VOICE)']:null))].map(text)).commit();item.count++;job.rows++;}
+ for(const module of f.allowed){const w=where({...f,allowed:[module]},current,{allStatuses:true});let cursor='',cursorDay='1000-01-01';
  while(true){if(signal.aborted)throw fail(499);const fresh=await authenticate(token);if(fresh.role==='SHOW_ONLY'||f.allowed.some(m=>!fresh.modules.includes(m)))throw fail(403);
- const [rows]=await c.execute(`SELECT o.id,o.sc_in,o.access_module,o.command,o.status,o.command_fields,o.telegram_timestamp,o.completion_note,DATE_FORMAT(o.business_day,'%Y-%m-%d') AS cursor_day,DATE_FORMAT(o.finished_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS finished,u.name AS final_name FROM hd2_orders o LEFT JOIN users u ON u.id=o.final_user_id WHERE ${w.sql} AND (o.business_day>? OR (o.business_day=? AND o.id>?)) ORDER BY o.business_day,o.id LIMIT 500`,[...w.values,cursorDay,cursorDay,cursor]);
+ const [rows]=await c.execute(`SELECT o.id,o.sc_in,o.access_module,o.command,o.status,o.command_fields,CASE WHEN o.command='req' THEN o.raw_text ELSE NULL END AS request_text,o.telegram_timestamp,o.completion_note,DATE_FORMAT(o.business_day,'%Y-%m-%d') AS cursor_day,DATE_FORMAT(o.finished_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS finished,u.name AS final_name FROM hd2_orders o LEFT JOIN users u ON u.id=o.final_user_id WHERE ${w.sql} AND (o.business_day>? OR (o.business_day=? AND o.id>?)) ORDER BY o.business_day,o.id LIMIT 500`,[...w.values,cursorDay,cursorDay,cursor]);
  for(const row of rows)add(row);if(rows.length<500)break;cursor=rows.at(-1).id;cursorDay=rows.at(-1).cursor_day;await new Promise(r=>setImmediate(r));}}
- for(const module of f.allowed.filter(m=>!sheets.has(m))){const label=({TIAL:'TIAL',REQ:'REQ',LOGIC_PSB:'LOGIC PSB',LOGIC_MO:'LOGIC MO'})[module]||module;const sheet=writer.addWorksheet(label);sheet.addRow(headings).commit();}
+ for(const module of f.allowed.filter(m=>!sheets.has(m))){const label=({TIAL:'TIAL',REQ:'REQ',LOGIC_PSB:'LOGIC PSB',LOGIC_MO:'LOGIC MO'})[module]||module;const sheet=writer.addWorksheet(label);sheet.addRow(headings(module)).commit();}
  for(const item of sheets.values())item.sheet.commit();await writer.commit();await c.commit();c.release();c=null;
  if(signal.aborted)throw fail(499);const fresh=await authenticate(token);if(fresh.role==='SHOW_ONLY'||f.allowed.some(m=>!fresh.modules.includes(m)))throw fail(403);
  res.set('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.set('Content-Disposition','attachment; filename="hdwork-orders.xlsx"');res.set('Content-Length',String((await fsp.stat(filename)).size));readStream=fs.createReadStream(filename);await pipeline(readStream,res,{signal});job.state='done';
@@ -36,4 +43,4 @@ function createExporter({pool,authenticate,maxRows=1048576}){
  }
  return {ticket,download,status(id,u,t){const j=owned(id,u,t);return {state:j.state,rows:j.rows};},cancel(id,u,t){const j=owned(id,u,t);j.controller.abort();if(!j.started){clearTimeout(j.timer);j.release();j.state='cancelled';j.timer=setTimeout(()=>jobs.delete(id),60000);j.timer.unref?.();}},slots};
 }
-module.exports={createExporter,createSlots,text};
+module.exports={createExporter,createSlots,text,exportFields};

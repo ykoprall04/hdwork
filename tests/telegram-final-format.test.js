@@ -4,7 +4,7 @@ const {parseCommand}=require('../src/b2c-workflow/commands');
 const spec=require('../contracts/b2c-commands.json');
 const full='DGPS261114132409411765742-AOi426111401240987426bc70_111745119-878740503~2026111413264845783074';
 const order=`/order\nSC/IN:${full}\nSN ONT:SN1\nTIPE TRANSAKSI:ignored\nSTO:ABC\nKETERANGAN:pasang\nNIK:TEST`;
-const config=`/config_psb\nService:INDIHOME\nOrder ID:${full}\nService (1P/2P/3P/1P-Voice):1P\nTipe ONT:TEST\nSTO:ABC\nKeterangan:pasang`;
+const config=`/config_psb\nService:INDIHOME\nOrder ID:${full}\nSN ONT BARU:SNFIXTURE\nService (1P/2P/3P/1P-Voice):1P\nTipe ONT:TEST\nSTO:ABC\nKeterangan:pasang`;
 const mo='/MO\nSC/IN:8WVGR038GTS1I8GV6VJC1AMCA-MOk42610270909056813c78f0_109244604-847961427\nTIPE TRANSAKSI:ignored\nSTO:ABC\nKETERANGAN:pindah\nNIK:TEST';
 const cases=[];
 function check(text){cases.push(text);return parseCommand(text,'TIAL1');}
@@ -17,7 +17,7 @@ test('four final formats, required empties/duplicates, optional dashes and free 
    for(const value of ['', '-', '   ']){const copy=[...lines];copy[index]=field+':'+value;assert.equal(check(copy.join('\n')).valid,false);}
    assert.equal(check(raw+'\n'+lines[index]).valid,false);
   }
-  for(const field of spec[parsed.command].optional)assert.equal(check(raw+'\n'+field+':-').valid,true);
+  for(const field of spec[parsed.command].optional){const present=raw.split('\n').some(l=>l.split(':')[0].toUpperCase()===field);assert.equal(check(raw+'\n'+field+':-').valid,!present);}
   const extra=raw+'\nfree text\nUnknown:extra';const p=check(extra);assert.equal(p.valid,true);assert.equal(p.original,extra);assert.equal(p.fields.KETERANGAN,parsed.fields.KETERANGAN);
   const reordered=[raw.split('\n')[0].toUpperCase(),...raw.split('\n').slice(1).reverse()].join('\n');assert.equal(check(reordered).valid,true);
  }
@@ -36,11 +36,11 @@ test('SC/IN extraction and transaction source; direct identity only for MO',()=>
 });
 test('network group pairing, ambiguous groups, unrelated ports, ODP normalization',()=>{
  for(const [suffix,expected] of [['4','04'],['9','09'],['45','45']]){
-  const p=check(order+`\nODP:ODP-ABC/`+suffix+'\nPort:99\nIP OLT:10.0.0.1\nSlot:2\nPort:3\nother text\nPort:88');
+  const p=check(order+`\nODP:ODP-ABC/`+suffix+'\nPORT ODP:99\nIP OLT:10.0.0.1\nSlot:2\nPort:3');
   assert.equal(p.valid,true);assert.equal(p.fields.odp,'ODP-ABC/'+expected);assert.equal(p.fields.ip_olt,'10.0.0.1');assert.equal(p.fields.slot,'2');assert.equal(p.fields.port,'3');
  }
- for(const tail of ['\nIP OLT:10.0.0.1\nSlot:2\nfree\nPort:88','\nPort:88','\nIP OLT:10.0.0.1\nSlot:2\nPort:3\nIP OLT:10.0.0.2\nSlot:4\nPort:5'])assert.equal(check(order+tail).fields.port,null);
- assert.equal(check(order+'\nODP:X/4\nSummary ODP:Y/9').fields.odp,null);
+ for(const tail of ['\nIP OLT:10.0.0.1\nSlot:2\nfree\nPort:88','\nPort:88','\nIP OLT:10.0.0.1\nSlot:2\nPort:3\nIP OLT:10.0.0.2\nSlot:4\nPort:5'])assert.equal(require('../src/b2c-workflow/order-network').parseNetwork(tail).port,null);
+ assert.equal(check(order+'\nODP:X/4\nSummary ODP:Y/9').valid,false);
 });
 test('Python and JavaScript return identical final-format contracts',()=>{
  const script="import json,sys; from courier.commands import parse_command; print(json.dumps([parse_command(t,'TIAL1') for t in json.load(sys.stdin)]))";

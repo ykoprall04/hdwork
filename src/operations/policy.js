@@ -41,10 +41,10 @@ function filters(query,user,{recap=false}={}){
  const page=query.page?Number(query.page):1;if(!Number.isInteger(page)||page<1||page>10000||query.page&&!/^[1-9]\d{0,4}$/.test(query.page))throw fail();
  return {allowed,command,area,tab,from,to,hd,status,q,page,mine:!recap&&tab==='process'?(query.mine||'true')==='true':false};
 }
-function where(f,user,{recap=false}={}){
+function where(f,user,{recap=false,allStatuses=false}={}){
  const clauses=[`o.access_module IN (${f.allowed.map(()=>'?').join(',')||"''"})`,`(o.command IN ('order','req','config_psb','mo','assuren','b2b','replacement') OR (o.command IS NULL AND o.bot_id='web-local' AND o.chat_id='web'))`,'o.telegram_timestamp IS NOT NULL'],values=[...f.allowed];
  if(f.from){clauses.push('o.business_day BETWEEN ? AND ?');values.push(f.from,f.to);}
- if(!recap){clauses.push(f.tab==='incoming'?"o.status='WAITING'":f.tab==='duplicates'?"(o.status='DUPLICATE' AND o.duplicate_decision IS NULL)":f.tab==='process'?"o.status='IN_PROGRESS'":"(o.status IN ('DONE','FAILED') OR (o.status='DUPLICATE' AND o.duplicate_decision='REJECT_DUPLICATE'))");if(f.mine){clauses.push('o.owner_user_id=?');values.push(user.id);}if(f.hd){clauses.push(f.tab==='process'?'o.owner_user_id=?':'o.final_user_id=?');values.push(f.hd);}if(f.status){clauses.push('o.status=?');values.push(f.status);}}
+ if(!recap){if(!allStatuses)clauses.push(f.tab==='incoming'?"o.status='WAITING'":f.tab==='duplicates'?"(o.status='DUPLICATE' AND o.duplicate_decision IS NULL)":f.tab==='process'?"o.status='IN_PROGRESS'":"(o.status IN ('DONE','FAILED') OR (o.status='DUPLICATE' AND o.duplicate_decision='REJECT_DUPLICATE'))");if(f.mine){clauses.push('o.owner_user_id=?');values.push(user.id);}if(f.hd){clauses.push(allStatuses?'COALESCE(o.final_user_id,o.owner_user_id)=?':f.tab==='process'?'o.owner_user_id=?':'o.final_user_id=?');values.push(f.hd);}if(f.status){clauses.push('o.status=?');values.push(f.status);}}
  if(f.command){clauses.push('o.command=?');values.push(f.command);}
  if(f.q){clauses.push(`(LOWER(o.sc_in) LIKE ? ESCAPE '=' OR LOWER(o.inet) LIKE ? ESCAPE '=' OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$.STO'))) LIKE ? ESCAPE '=' OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."NO INET/TELP"'))) LIKE ? ESCAPE '=' OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."NO VOICE"'))) LIKE ? ESCAPE '=')`);const q='%'+f.q.toLowerCase().replace(/[=%_]/g,'=$&')+'%';values.push(q,q,q,q,q);}
  return {sql:clauses.join(' AND '),values};

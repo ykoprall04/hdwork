@@ -57,20 +57,32 @@
       "IP OLT": "text",
       "SLOT": "text",
       "PORT": "text"
-    }
+    },
+    "template": [
+      "/order",
+      "SC/IN :",
+      "SN ONT :",
+      "TIPE TRANSAKSI :",
+      "STO :",
+      "KETERANGAN :",
+      "NIK :",
+      "NO INET/TELP :",
+      "STB ID :"
+    ]
   },
   "config_psb": {
     "identity": "ORDER ID",
     "required": [
       "ORDER ID",
-      "SERVICE (1P/2P/3P/1P-VOICE)",
-      "TIPE ONT",
-      "STO",
-      "KETERANGAN"
+      "SN ONT BARU",
+      "KETERANGAN",
+      "STO"
     ],
     "optional": [
+      "NIK ATASAN",
       "SERVICE",
-      "SN ONT BARU",
+      "SERVICE (1P/2P/3P/1P-VOICE)",
+      "TIPE ONT",
       "SN ONT LAMA",
       "NO INTERNET",
       "NO VOICE",
@@ -84,7 +96,11 @@
       "IP OLT",
       "SLOT",
       "PORT",
-      "VALINS ID"
+      "VALINS ID",
+      "HOSTNAME GPON",
+      "IP GPON",
+      "NAMA/NIK PELAPOR",
+      "WITEL"
     ],
     "codes": [
       "AO",
@@ -106,14 +122,46 @@
       "NAMA PELAPOR": "text",
       "NIK PELAPOR": "person",
       "KETERANGAN": "text",
-      "SERVICE (1P/2P/3P/1P-VOICE)": "service",
+      "SERVICE (1P/2P/3P/1P-VOICE)": "text",
       "TIPE ONT": "text",
       "SUMMARY ODP": "text",
       "IP OLT": "text",
       "SLOT": "text",
       "PORT": "text",
-      "VALINS ID": "serial"
-    }
+      "VALINS ID": "serial",
+      "NIK ATASAN": "person",
+      "HOSTNAME GPON": "text",
+      "IP GPON": "text",
+      "NAMA/NIK PELAPOR": "text",
+      "WITEL": "text"
+    },
+    "aliases": {
+      "NO SN ONT": "SN ONT BARU",
+      "KEPERLUAN": "KETERANGAN",
+      "NO INET": "NO INTERNET",
+      "NO INET/TELP": "NO INTERNET"
+    },
+    "template": [
+      "/config_psb",
+      "Mohon dibantu config psb",
+      "NIK Atasan :",
+      "Order ID DSC :",
+      "Service :",
+      "No SN ONT :",
+      "tipe ONT :",
+      "No Inet :",
+      "No Voice :",
+      "Usee TV :",
+      "Domain :",
+      "Hostname GPON :",
+      "IP GPON :",
+      "IP OLT :",
+      "Rack/Shelf/Slot/Port :",
+      "Keperluan :",
+      "Nama / NIK Pelapor :",
+      "WITEL :",
+      "STO :"
+    ]
   },
   "mo": {
     "identity": "SC/IN",
@@ -149,6 +197,19 @@
       "TIPE ONT": "text",
       "TIPE TRANSAKSI": "transaction",
       "STB ID": "serial"
-    }
+    },
+    "template": [
+      "/MO",
+      "SC/IN :",
+      "TIPE TRANSAKSI :",
+      "STO :",
+      "KETERANGAN :",
+      "NIK :",
+      "NO INET :",
+      "NO VOICE :",
+      "SN ONT BARU :",
+      "SN ONT LAMA :",
+      "TIPE ONT :"
+    ]
   }
 }

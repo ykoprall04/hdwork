@@ -18,7 +18,7 @@ function mappingPool(rows) {
   } };
 }
 function row(profile, threadId = null) { return { bot_id: botId, id: profile, category: profile === 'ALL' ? 'ALL' : profile === 'SOLVER1' ? 'LOGIC' : 'TIAL', profile, chat_id: '-1001', thread_id: threadId, enabled: true, verified: true }; }
-function text(command, ref = 'X-AO1') { return { order: `/order\nSC/IN:${ref}\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC`, req: '/req Synthetic request', config_psb: `/config_psb\nORDER ID:${ref}\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC`, mo: `/MO\nSC/IN:${ref}\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC` }[command]; }
+function text(command, ref = 'X-AO1') { return { order: `/order\nSC/IN:${ref}\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC`, req: '/req Synthetic request', config_psb: `/config_psb\nORDER ID:${ref}\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC`, mo: `/MO\nSC/IN:${ref}\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC` }[command]; }
 function envelope(command, index, target) { return { version: 1, bot_id: botId, update_id: String(index), event: { kind: 'message', chat_id: target.chat_id, telegram_thread_id: target.thread_id, message_id: String(index + 10), reply_to_message_id: null, sender_id: '9', timestamp: 1700000000, text: text(command), attachments: [] } }; }
 
 for (const profile of Object.keys(originalCommands)) for (const threadId of [null, '12']) {

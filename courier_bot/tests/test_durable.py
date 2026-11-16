@@ -53,7 +53,7 @@ class DurableTests(unittest.TestCase):
 
     def test_parser_variants_mentions_allowlist_and_shared_module_mapping(self):
         cases = [(TEXT, '-1001', 'order'), ('  /ReQ@hdworkopsbot   untouched\n body', '-1001', 'req'),
-                 ('/CONFIG_PSB@HDWorkOpsBot\nOrder ID:X-AOi2\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC', '-1002', 'config_psb'),
+                 ('/CONFIG_PSB@HDWorkOpsBot\nOrder ID:X-AOi2\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC', '-1002', 'config_psb'),
                  ('/MO\nSC/IN:X-MOk2\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC', '-1002', 'mo')]
         for text, chat, command in cases:
             envelope, state, _ = self.policy.prepare(update(text=text, chat=int(chat)))
@@ -62,7 +62,7 @@ class DurableTests(unittest.TestCase):
             self.assertEqual(envelope['event']['message_id'], '11')
             self.assertEqual(parse_command(text, 'TIAL1', 'HDWorkOpsBot')['command'], command)
             self.assertIsNone(envelope['event']['telegram_thread_id'])
-        for raw in [update(chat=-1003), update(text='/req@AnotherBot hello'), update(text='/config_psb\nOrder ID:X-AOi1\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC'), update(text='DONE')]:
+        for raw in [update(chat=-1003), update(text='/req@AnotherBot hello'), update(text='/config_psb\nOrder ID:X-AOi1\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC'), update(text='DONE')]:
             self.assertEqual(self.policy.prepare(raw)[1], 'IGNORED')
         invalid_order=update(text='/order\nSC/IN:bad')
         envelope,state,reason=self.policy.prepare(invalid_order)

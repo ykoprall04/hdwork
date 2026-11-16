@@ -21,8 +21,9 @@ function parseCommand(text,profile,botUsername) {
     if(label==='USEE TV')label='NO USEE';
     if(label==='ORDER ID DSC')label='ORDER ID';
     if(label==='NO INET/TELP')label=[...rule.required,...rule.optional].includes('NO INET')?'NO INET':'NO INTERNET';
+    label=rule.aliases?.[label]||label;
     if(![...rule.required,...rule.optional].includes(label))continue;
-    if(rule.required.includes(label)&&Object.hasOwn(fields,label))errors.push(label+' berulang');
+    if(Object.hasOwn(fields,label))errors.push(label+' berulang');
     const value=line.slice(colon+1).trim();fields[label]=value&&value!=='-'?value:null;
   }
   for(const name of rule.required)if(!fields[name])errors.push(name);

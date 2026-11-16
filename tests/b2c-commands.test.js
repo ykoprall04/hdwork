@@ -8,7 +8,7 @@ const base='/order\nSC/IN: free PREFIX-AOi123_suffix\nTIPE TRANSAKSI:AO\nNO INET
 test('transaction extraction, labels, suffix, required/optional and profile validation',()=>{
  for(const code of ['AOi123','PDAk123','MOk123','DOk123']){
   const raw=`free DGPS123-${code}_ignored-other-AO123`;
-  assert.equal(parseCommand(`/config_psb\nOrder ID DSC :${raw}\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC`,'TIAL1').sc_in,`DGPS123-${code}`);
+  assert.equal(parseCommand(`/config_psb\nOrder ID DSC :${raw}\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC`,'TIAL1').sc_in,`DGPS123-${code}`);
   assert.equal(parseCommand(`/MO\nsc / in:${raw}\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nsto:ABC`,'TIAL2').sc_in,code);
  }
  assert.equal(parseCommand(base,'TIAL1').fields['NO VOICE'],null);
@@ -24,8 +24,8 @@ test('transaction extraction, labels, suffix, required/optional and profile vali
 test('command formats report safe reasons while keeping unrecognized commands unclassified',()=>{
  const badPhone=parseCommand(base.replace('NO INET:000123','NO INET:12x'),'TIAL1');
  assert.equal(badPhone.valid,false);assert.equal(badPhone.command,'order');assert.deepEqual(badPhone.errors,['NO INET (format)']);
- const badService=parseCommand('/config_psb\nOrder ID:X-AO1\nSTO:ABC\nSERVICE (1P/2P/3P/1P-Voice):4P','TIAL1');
- assert.equal(badService.command,'config_psb');assert.ok(badService.errors.includes('SERVICE (1P/2P/3P/1P-VOICE) (format)'));
+ const badService=parseCommand('/config_psb\nOrder ID:X-AO1\nSTO:ABC\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):4P','TIAL1');
+ assert.equal(badService.command,'config_psb');assert.ok(!badService.errors.includes('SERVICE (1P/2P/3P/1P-VOICE) (format)'));
  const badWorkspace=parseCommand('/b2b\nSC/IN:X-1\nNO INET/TELP:abc\nSTO:ABC\nTRANSAKSI:INSTALL','B2B');
  assert.equal(badWorkspace.command,'b2b');assert.deepEqual(badWorkspace.errors,['NO INET/TELP (format)']);
  assert.equal(parseCommand('/login token','TIAL1').command,undefined);
@@ -46,7 +46,7 @@ test('invalid routed orders get one reasoned reply but never create an order; en
  const policy=createGroupPolicy({botId:'sandbox',botUsername:'HDWorkOpsBot',groups:[group]}),config={enabled:true,botId:'sandbox',botUsername:'HDWorkOpsBot',identityKey:'synthetic-command-test-key-00000000',dedupeBy:'both',groups:[{module:'TIAL',chatId:group.chatId,threadId:null,threadMode:'non_topic',commandProfile:'TIAL1'}],actors:[{id:'9',name:'Synthetic'}]},workflow=createB2CProcessor({store,config});
  const body={version:1,bot_id:'sandbox',update_id:'9',event:{kind:'message',chat_id:'-1001',message_id:'109',telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1700000000,text:base.replace('NO INET:000123','NO INET:12x'),attachments:[]}};
  await store.accept(policy.ingress(body));await workflow.processNext();assert.equal(pool.state.orders.length,0);assert.equal(pool.state.outbox.length,1);
- const queued=JSON.parse(pool.state.outbox[0].payload);assert.equal(queued.text,'❌ Gagal! Format order salah. Alasan: NO INET (format)');assert.equal(queued.reply_to_message_id,'109');
+ const queued=JSON.parse(pool.state.outbox[0].payload);assert.equal(queued.text,require('../src/b2c-workflow/rejection').rejectionText(parseCommand(body.event.text,'TIAL1')));assert.equal(queued.reply_to_message_id,'109');
  await store.accept(policy.ingress(body));assert.equal(await workflow.processNext(),false);assert.equal(pool.state.outbox.length,1);
  const c=await pool.getConnection();try{assert.equal(await policy.outgoing(queued,c),true);assert.equal(await policy.outgoing({...queued,text:queued.text+' changed'},c),false);assert.equal(await policy.outgoing({...queued,reply_to_message_id:'999'},c),false);}finally{c.release();}
  assert.ok(pool.calls.some(sql=>sql.startsWith('SELECT payload FROM hd2_courier_inbox')));
@@ -78,7 +78,7 @@ test('full-history cross-chat TIAL dedup, final canonical, repeat commands, repl
  assert.deepEqual(pool.state.orders.map(o=>o.status),['DONE','DUPLICATE','DUPLICATE']);
  assert.equal(pool.state.orders[2].duplicate_of,pool.state.orders[0].id);
  await store.accept(event(3));await workflow.processNext();assert.equal(pool.state.orders.length,3);
- for(const text of ['/config_psb\nOrder ID:PREFIX-AOi123\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:A','/MO\nSC/IN:PREFIX-AOi123\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:A','/req bebas']){
+ for(const text of ['/config_psb\nOrder ID:PREFIX-AOi123\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:A','/MO\nSC/IN:PREFIX-AOi123\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:A','/req bebas']){
   for(let j=0;j<2;j++){const n=pool.state.inbox.length+1;await store.accept(event(n,text));await workflow.processNext();}
  }
  assert.equal(pool.state.orders.length,9);assert.equal(pool.state.orders.filter(o=>o.status==='WAITING').length,6);
