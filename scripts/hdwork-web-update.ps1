@@ -76,6 +76,7 @@ function StartupStopped($state,[string]$expectedSha,[string]$attemptId=''){retur
 function WebPath([string]$path){
  $p=$path.Replace('\','/')
  if($p -ceq 'src/b2c-workflow/order-network.js'){return $true}
+ if($p -cin @('contracts/b2c-commands.json','contracts/workspace-commands.json')){return $true}
  if($DatabasePrerequisitesVerified -and $p -match '^database/.*\.sql$'){return $false}
  if($p -match '^(src/courier/|src/b2c-workflow/|src/config/production-courier\.js$|courier[-_]|courier_bot/|contracts/|docs/|tests/|scripts/hdwork-web-update\.ps1$|hdwork-update\.cmd$)'){return $false}
  if($p -match '(^|/)(migrations?|schema)(/|\.|$)|\.sql$|operational-grants\.js$|(^|/)\.env'){Fail 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW'}
@@ -86,7 +87,13 @@ function RequiredVlanHelper($web,[string]$target){
  $format=Join-Path $web.Runtime 'src/vlan/format.js'
  & git.exe -C $root cat-file -e ($target+':src/vlan/format.js') 2>$null
  if($LASTEXITCODE -ne 0){return}
- $relative='src/b2c-workflow/order-network.js';$file=Join-Path $web.Runtime $relative
+ RequiredWebSource $web $target 'src/b2c-workflow/order-network.js'
+}
+function RequiredWebContracts($web,[string]$target){
+ foreach($relative in @('contracts/b2c-commands.json','contracts/workspace-commands.json')){RequiredWebSource $web $target $relative}
+}
+function RequiredWebSource($web,[string]$target,[string]$relative){
+ $file=Join-Path $web.Runtime $relative
  $targetBlob=(InvokeGit @('rev-parse',($target+':'+$relative))).Trim()
  if(-not(Test-Path -LiteralPath $file)){return $relative}
  Need (-not((Get-Item -LiteralPath $file).Attributes -band [IO.FileAttributes]::ReparsePoint)) 'WEB_RUNTIME_LINK_REJECTED'
@@ -122,7 +129,8 @@ function UpdateAttemptRecord([string]$path,[string]$attemptId,[string]$role,[str
 function MockTests{
  $n=0
  foreach($p in @('frontend/src/App.tsx','server.js','src/operations/routes.js','package-lock.json')){Need ([bool](WebPath $p)) 'MOCK_WEB_CLASSIFICATION_FAILED';$n++}
- foreach($p in @('src/courier/groups.js','src/b2c-workflow/workflow.js','courier_bot/courier/groups.py','contracts/b2c-commands.json','docs/release.md','tests/web.test.js','scripts/hdwork-web-update.ps1')){Need (-not (WebPath $p)) 'MOCK_COMPONENT_ISOLATION_FAILED';$n++}
+ foreach($p in @('src/courier/groups.js','src/b2c-workflow/workflow.js','courier_bot/courier/groups.py','contracts/other.json','docs/release.md','tests/web.test.js','scripts/hdwork-web-update.ps1')){Need (-not (WebPath $p)) 'MOCK_COMPONENT_ISOLATION_FAILED';$n++}
+ foreach($p in @('contracts/b2c-commands.json','contracts/workspace-commands.json')){Need (WebPath $p) 'MOCK_WEB_CONTRACT_EXCLUDED';$n++}
  Need (WebPath 'src/b2c-workflow/order-network.js') 'MOCK_VLAN_HELPER_EXCLUDED';$n++
  Need (-not(WebPath 'src/b2c-workflow/commands.js')) 'MOCK_COMMAND_PARSER_EXPOSED';$n++
  $priorDatabaseReview=$script:DatabasePrerequisitesVerified
@@ -231,7 +239,7 @@ function Main{
  if(-not $DryRun -and $target -ne $localHead){InvokeGit @('pull','--ff-only','origin','main')|Out-Null;$target=(InvokeGit @('rev-parse','HEAD')).Trim()}
  $script:WebUpdatePhase='READ_ACTIVE_WEB_TASK';Write-Output 'READING_ACTIVE_WEB_TASK';$web=GetActiveWeb;$activeCommit=if($web.Config.webTargetCommit){[string]$web.Config.webTargetCommit}else{[string]$web.Config.targetCommit};$ancestor=& git -C $root merge-base --is-ancestor $activeCommit $target;if($LASTEXITCODE -ne 0){Fail 'ACTIVE_WEB_PIN_NOT_ANCESTOR_OF_MAIN'}
  $changed=@((InvokeGit @('diff','--name-only',($activeCommit+'..'+$target))).Split([Environment]::NewLine,[StringSplitOptions]::RemoveEmptyEntries));$webPaths=@();foreach($p in $changed){if($p -ceq 'src/config/operational-grants.js' -and $DatabasePrerequisitesVerified){Need (ReviewedGrantInstalled $web $target $p) 'WEB_REVIEWED_GRANT_NOT_INSTALLED_OR_PINNED';Write-Output 'WEB_REVIEWED_GRANT_ALREADY_INSTALLED';continue};if(WebPath $p){$webPaths+=,$p}}
- $webPaths=@(@($webPaths)+@(RequiredVlanHelper $web $target)|Sort-Object -Unique)
+ $webPaths=@(@($webPaths)+@(RequiredVlanHelper $web $target)+@(RequiredWebContracts $web $target)|Sort-Object -Unique)
  if($DryRun){Write-Output ('DRY_RUN target='+$target+' webChanges='+$webPaths.Count+' activeTask='+$web.Task.TaskName+' runtimeChanged=false courierTouched=false');return}
  if($webPaths.Count -eq 0){$receipt=Join-Path $env:TEMP ('hdwork-web-health-'+[Guid]::NewGuid().ToString('N')+'.json');RetryTransientHealth { $null=Health $web $receipt };$h=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json;Remove-Item -LiteralPath $receipt -Force;Write-Output ('SUCCESS commit='+$target+' activeWebPin='+$activeCommit+' web=UNCHANGED health=PASS courier=UNTOUCHED rounds='+$h.rounds.Count);return}
  DeployWeb $web $target $webPaths
