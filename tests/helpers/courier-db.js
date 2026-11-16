@@ -31,6 +31,12 @@ function mockPool(state = { inbox: [], outbox: [], orders: [], keys: [], audit: 
             if(inbox.bot_id!==botId||inbox.state!=='PROCESSED')return false;
             const event=JSON.parse(inbox.payload).event;return event.chat_id===chatId&&event.message_id===messageId;
           }).slice(0,1).map(inbox=>({payload:inbox.payload}));
+        } else if (sql.startsWith('SELECT b.id,b.payload,i.id AS origin_id')) {
+          rows=state.outbox.flatMap(row=>{
+            if(row.bot_id!==p[0]||row.payload_hash!==p[1]||!['QUEUED','SENDING'].includes(row.state))return [];
+            const inbox=state.inbox.find(i=>i.bot_id===row.bot_id&&i.state==='PROCESSED'&&row.idem_key===`b2c:${i.id}:format-rejected`);
+            return inbox?[{...row,origin_id:inbox.id,origin_payload:inbox.payload}]:[];
+          }).slice(0,1);
         } else if (sql.startsWith('SELECT command,thread_id FROM hd2_orders')) {
           rows=state.orders.filter(r=>r.bot_id===p[0]&&r.chat_id===p[1]&&r.message_id===p[2]);
         } else if (sql.startsWith('SELECT') && sql.includes('hd2_courier_')) {

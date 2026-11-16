@@ -1,0 +1,10 @@
+{
+  "identityAttempts": 4,
+  "requestTimeoutSeconds": 10,
+  "backoffSeconds": [2, 4, 8],
+  "jitterSeconds": 1,
+  "readyTimeoutMs": 120000,
+  "transientExitCode": 75,
+  "taskRestartCount": 3,
+  "taskRestartIntervalSeconds": 60
+}

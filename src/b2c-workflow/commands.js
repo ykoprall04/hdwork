@@ -1,7 +1,12 @@
-const spec=require('../../contracts/b2c-commands.json');
-function parseCommand(text,profile,botUsername) {
+const currentSpec=require('../../contracts/b2c-commands.json');
+function parseCommand(text,profile,botUsername) {return parse(text,profile,botUsername,false);}
+// Only historical outbox authorization uses this frozen validation behavior.
+// New inbox processing always calls parseCommand above.
+function parseLegacyCommand(text,profile,botUsername) {return parse(text,profile,botUsername,true);}
+function parse(text,profile,botUsername,legacy) {
+  const spec=legacy?require('../../contracts/b2c-commands.legacy.json'):currentSpec;
   if(profile==='ALL'&&typeof text!=='string')return {valid:false,errors:['format']};
-  if(profile==='ALL'){const head=/^\s*\/(assuren|b2b|replacement)(?:@|\s|$)/i.exec(text||'');if(head)return parseCommand(text,head[1].toUpperCase(),botUsername);profile='TIAL1';}
+  if(profile==='ALL'){const head=/^\s*\/(assuren|b2b|replacement)(?:@|\s|$)/i.exec(text||'');if(head)return parse(text,head[1].toUpperCase(),botUsername,legacy);profile='TIAL1';}
   if(['ASSUREN','B2B','REPLACEMENT'].includes(profile))return require('../courier/workspace-command').parseWorkspaceCommand(text,profile,botUsername);
   const reject=(fields,command=null)=>({valid:false,errors:fields,...(command?{command}:{})});
   if(typeof text!=='string'||text.length>16384)return reject(['format']);
@@ -23,7 +28,7 @@ function parseCommand(text,profile,botUsername) {
     if(label==='NO INET/TELP')label=[...rule.required,...rule.optional].includes('NO INET')?'NO INET':'NO INTERNET';
     label=rule.aliases?.[label]||label;
     if(![...rule.required,...rule.optional].includes(label))continue;
-    if(Object.hasOwn(fields,label))errors.push(label+' berulang');
+    if(Object.hasOwn(fields,label)&&(!legacy||rule.required.includes(label)))errors.push(label+' berulang');
     const value=line.slice(colon+1).trim();fields[label]=value&&value!=='-'?value:null;
   }
   for(const name of rule.required)if(!fields[name])errors.push(name);
@@ -43,4 +48,4 @@ function parseCommand(text,profile,botUsername) {
   for(const name of rule.optional)if(!Object.hasOwn(fields,name))fields[name]=null;
   return errors.length?reject(errors,command):{valid:true,command,sc_in:code,fields,original:text};
 }
-module.exports={parseCommand};
+module.exports={parseCommand,parseLegacyCommand};

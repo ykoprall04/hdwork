@@ -143,5 +143,27 @@ test('production FIFO writer: invalid rejection commits without an order or inbo
    const [[row]]=await f.pool.execute('SELECT state,fifo_release FROM hd2_courier_outbox WHERE id=?',[reply[0].delivery_id]);
    assert.equal(row.state,'DEAD');assert.ok(row.fifo_release);
   });
+  await t.test('legacy and new rejections coexist under real FIFO, exact dispatch proof and idempotent ACK',async()=>{
+   const {parseLegacyCommand}=require('../src/b2c-workflow/commands'),{prefix}=require('../src/b2c-workflow/rejection'),{outbound,digest}=require('../src/courier/contract');
+   const [[before]]=await f.pool.execute('SELECT COUNT(*) n FROM hd2_orders');
+   const config='/config_psb\nORDER ID:TEST-AO800\nSN ONT BARU:SN1\nKETERANGAN:fixture\nSTO:ABC';
+   for(const [n,text] of [[80,config],[81,invalid]]){
+    const body=envelope(n,text),receipt=await store.accept(policy.ingress(body));
+    const parsed=parseLegacyCommand(text,'TIAL1','SyntheticOpsBot');assert.equal(parsed.valid,false);
+    const payload=outbound({method:'sendMessage',chat_id:'-1001',telegram_thread_id:null,thread_mode:'non_topic',reply_to_message_id:String(100+n),text:prefix+[...new Set(parsed.errors)].join(', ')});
+    // Seed a previously committed old-version record only in this owned fixture.
+    await f.pool.execute("UPDATE hd2_courier_inbox SET state='PROCESSED' WHERE id=?",[receipt.receipt_id]);
+    await assert.rejects(store.enqueue(`b2c:${receipt.receipt_id}:format-rejected`,payload),{code:'WRITER_FIFO_ORDER_REQUIRED'});
+    await f.c.beginTransaction();const lane=await require('../src/courier/fifo').allocate(f.c,botId,payload);
+    await f.c.execute("INSERT INTO hd2_courier_outbox(id,bot_id,idem_key,payload_hash,payload,due_ms,conversation_key,conversation_seq,fifo_order_id) VALUES (?,?,?,?,?,?,?,?,?)",[require('crypto').randomUUID(),botId,`b2c:${receipt.receipt_id}:format-rejected`,digest(payload),JSON.stringify(payload),Date.now(),lane.key,lane.sequence,receipt.receipt_id]);await f.c.commit();
+    assert.equal((await store.accept(policy.ingress(body))).duplicate,true);
+   }
+   await store.accept(policy.ingress(envelope(82,invalid)));assert.equal(await processor.processNext(),true);
+   const replies=await store.claim(10,{authorize:(p,c)=>policy.outgoing(p,c)});assert.deepEqual(replies.map(d=>d.payload.reply_to_message_id).sort(),['180','181','182']);
+   for(const d of replies){assert.equal(await store.authorizeDelivery(d.delivery_id,{lease_token:d.lease_token},{authorize:(p,c)=>policy.outgoing(p,c)}),true);await sent(d);}
+   assert.deepEqual(await store.claim(10,{authorize:(p,c)=>policy.outgoing(p,c)}),[]);
+   const [[after]]=await f.pool.execute('SELECT COUNT(*) n FROM hd2_orders');assert.equal(after.n,before.n);
+   assert.equal(await processor.processNext(),false);
+  });
  }finally{await f.stop();}
 });

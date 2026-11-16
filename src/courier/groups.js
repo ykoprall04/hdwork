@@ -1,4 +1,4 @@
-const { id, messageId, eventEnvelope, outbound, fail } = require('./contract');
+const { id, messageId, eventEnvelope, outbound, digest, fail } = require('./contract');
 const { parseCommand } = require('../b2c-workflow/commands');
 
 function validateGroups(groups) {
@@ -42,7 +42,7 @@ function createGroupPolicy({ botId, botUsername, groups, allowReplies=false }) {
       try { value = outbound(body); } catch { return false; }
       const group = groupFor(value.chat_id,value.telegram_thread_id);
       if (!group || value.thread_mode !== group.threadMode || !value.reply_to_message_id) return false;
-      const {prefix,matchesRejection}=require('../b2c-workflow/rejection');
+      const {prefix,matchesRejection,matchesLegacyRejection}=require('../b2c-workflow/rejection');
       if(value.text.startsWith(prefix)){
         const [[original]]=await connection.execute(
           "SELECT payload FROM hd2_courier_inbox WHERE bot_id=? AND state='PROCESSED' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.event.chat_id'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.event.message_id'))=? LIMIT 1",
@@ -51,7 +51,18 @@ function createGroupPolicy({ botId, botUsername, groups, allowReplies=false }) {
         if(!original)return false;
         let payload;try{payload=typeof original.payload==='string'?JSON.parse(original.payload):original.payload;}catch{return false;}
         let event;try{event=eventEnvelope(payload,botId).event;}catch{return false;}
-        return matchesRejection(value,event,{profile:group.profile,botUsername,commands:group.commands});
+        const scope={profile:group.profile,botUsername,commands:group.commands};
+        if(matchesRejection(value,event,scope))return true;
+        // Legacy compatibility is only for an already committed, exact outbox
+        // payload in the original inbox's rejection namespace. Never enqueue it
+        // under the new contract or accept arbitrary prefix/anchor matches.
+        const [[stored]]=await connection.execute("SELECT b.id,b.payload,i.id AS origin_id,i.payload AS origin_payload FROM hd2_courier_outbox b JOIN hd2_courier_inbox i ON i.bot_id=b.bot_id AND b.idem_key=CONCAT('b2c:',i.id,':format-rejected') WHERE b.bot_id=? AND b.payload_hash=? AND b.state IN ('QUEUED','SENDING') AND i.state='PROCESSED' LIMIT 1",[botId,digest(value)]);
+        if(!stored)return false;
+        try{
+          if(! /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(stored.origin_id||''))return false;
+          const origin=eventEnvelope(typeof stored.origin_payload==='string'?JSON.parse(stored.origin_payload):stored.origin_payload,botId).event;
+          return digest(outbound(typeof stored.payload==='string'?JSON.parse(stored.payload):stored.payload))===digest(value)&&matchesLegacyRejection(value,origin,scope);
+        }catch{return false;}
       }
       const [[order]] = await connection.execute(
         'SELECT command,thread_id FROM hd2_orders WHERE bot_id=? AND chat_id=? AND message_id=?',

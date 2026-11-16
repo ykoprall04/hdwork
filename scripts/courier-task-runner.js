@@ -1,5 +1,6 @@
 // Private Scheduled Task child. Its owner's stdin is a lifetime lease, never a secret channel.
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
+const recovery=require('../contracts/courier-startup-recovery.json');
 const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
 const startupPhases=new Set(['SECRET_LOAD','BACKEND_START','PYTHON_STARTUP','PYTHON_CONFIG','LOCK_DIRECTORY','JOURNAL_DIRECTORY','BOT_LOCK','JOURNAL_OPEN','JOURNAL_SEED','TELEGRAM_IDENTITY','INGRESS_POLICY','WORKER_LEASE','READY_HANDSHAKE','INBOX_WORKER_START']);
 const startupTypes=new Set(['PermissionError','FileNotFoundError','OSError','ValueError','TypeError','RuntimeError','ImportError','ModuleNotFoundError','OperationalError','DatabaseError','IntegrityError','TransportError','TimeoutError','Error','RangeError','ReferenceError','OTHER_EXCEPTION']);
@@ -7,7 +8,7 @@ function safeStartupDiagnostic(value){
  if(value?.component==='PYTHON'&&!['PYTHON_STARTUP','PYTHON_CONFIG','LOCK_DIRECTORY','JOURNAL_DIRECTORY','BOT_LOCK','JOURNAL_OPEN','JOURNAL_SEED','TELEGRAM_IDENTITY','INGRESS_POLICY','WORKER_LEASE','READY_HANDSHAKE'].includes(value.phase))return null;
  if(value?.component==='NODE'&&!['SECRET_LOAD','BACKEND_START','PYTHON_STARTUP','READY_HANDSHAKE','INBOX_WORKER_START'].includes(value.phase))return null;
  if(!['NODE','PYTHON'].includes(value?.component)||!startupPhases.has(value.phase)||!startupTypes.has(value.exceptionType))return null;
- return {component:value.component,phase:value.phase,exceptionType:value.exceptionType,...([400,401,403,409,429,503].includes(value.httpStatus)?{httpStatus:value.httpStatus}:{}),...(Number.isInteger(value.osError)&&value.osError>0&&value.osError<256?{osError:value.osError}:{})};
+ return {component:value.component,phase:value.phase,exceptionType:value.exceptionType,...(value.component==='PYTHON'&&value.phase==='TELEGRAM_IDENTITY'&&value.exceptionType==='TransportError'&&value.retryable===true&&value.httpStatus===undefined?{retryable:true}:{}),...([400,401,403,409,429,503].includes(value.httpStatus)?{httpStatus:value.httpStatus}:{}),...(Number.isInteger(value.osError)&&value.osError>0&&value.osError<256?{osError:value.osError}:{})};
 }
 function regular(file){const p=path.resolve(file),s=fs.lstatSync(p),real=fs.realpathSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>16*1024*1024||(process.platform==='win32'?real.toLowerCase()!==p.toLowerCase():real!==p))throw Error('TASK_INPUT_REJECTED');return fs.readFileSync(p);}
 function verify(file,expected){if(hash(regular(file))!==expected)throw Error('TASK_VERSION_DRIFT');}
@@ -59,7 +60,7 @@ async function run(argv=process.argv.slice(2)){
    status='STOPPED';record('FLAGS_OFF_STOPPED');return;
   }
   await require(path.join(config.snapshot,'scripts/run-production-live-chat-courier.js')).run(['--run-production-approved','--plan',config.productionPlan]);status='STOPPED';record('COURIER_STOPPED');}
- catch(error){log.emit('TASK_FAILURE',{status:'ERROR'},error);status=ownerGone?'STOPPED':'FAILED';failureDiagnostic=safeStartupDiagnostic(error?.startupDiagnostic);const code=failureDiagnostic?'COURIER_STARTUP_FAILED':/^(ER_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT|ECONNREFUSED|ETIMEDOUT|PRIVATE_DB_CONFIG_REJECTED|DPAPI_[A-Z_]+)$/.test(error.code||'')?error.code:'COURIER_TASK_FAILED';record(code);if(!ownerGone)process.exitCode=1;}
+ catch(error){log.emit('TASK_FAILURE',{status:'ERROR'},error);status=ownerGone?'STOPPED':'FAILED';failureDiagnostic=safeStartupDiagnostic(error?.startupDiagnostic);const code=failureDiagnostic?'COURIER_STARTUP_FAILED':/^(ER_[A-Z_]+|EADDRINUSE|EACCES|EPERM|ENOENT|ECONNREFUSED|ETIMEDOUT|PRIVATE_DB_CONFIG_REJECTED|DPAPI_[A-Z_]+)$/.test(error.code||'')?error.code:'COURIER_TASK_FAILED';record(code);if(!ownerGone)process.exitCode=error.retryable===true?recovery.transientExitCode:1;}
  finally{clearInterval(heartbeat);clearTimeout(forceTimer);cp.spawn=originalSpawn;console.log=originalLog;process.stdin.destroy();restoreOutput();await log.flush();}
 }
 if(require.main===module)run().catch(()=>{console.error('COURIER_TASK_BOOTSTRAP_REJECTED');process.exitCode=1;});
