@@ -28,7 +28,7 @@ const env = () => ({ HDWORK2_LOCAL_READ_ONLY:'false', COURIER_ENABLED: 'true', C
 test('new ingress reuses four parsers, mentions, explicit allowlist and numeric non-topic groups', () => {
   const p = policy();
   for (const [body, chat, command] of [[text, '-1001', 'order'], [' /ReQ@hdworkopsbot original\n text', '-1001', 'req'],
-    ['/CONFIG_PSB@HDWorkOpsBot\nOrder ID:X-AOi1\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC', '-1002', 'config_psb'], ['/MO\nSC/IN:X-MOk1\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC', '-1002', 'mo']]) {
+    ['/CONFIG_PSB@HDWorkOpsBot\nOrder ID:X-AOi1\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC', '-1002', 'config_psb'], ['/MO\nSC/IN:X-MOk1\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC', '-1002', 'mo']]) {
     const e = p.ingress(event(body, chat));
     assert.equal(parseCommand(e.event.text, 'TIAL1', 'HDWorkOpsBot').command, command);
     assert.equal(e.event.chat_id, chat); assert.equal(e.event.message_id, '42'); assert.equal(e.event.telegram_thread_id, null);

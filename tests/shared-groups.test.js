@@ -4,7 +4,7 @@ const {createGroupPolicy}=require('../src/courier/groups');
 const {MysqlStore}=require('../src/courier/mysql-store');
 const {mockPool}=require('./helpers/courier-db');
 const group={chatId:'-1001',threadId:null,threadMode:'non_topic',profile:'ALL',commands};
-const bodies=['/order\nSC/IN:X-AO1\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC','/req help','/config_psb\nOrder ID:X-AO2\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC','/mo\nSC/IN:X-MO3\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC',...['assuren','b2b','replacement'].map(c=>`/${c}\nSC/IN:${c}-100\nNO INET/TELP:00012345\nSTO:ABC\nTRANSAKSI:PERBAIKAN\nKETERANGAN:fixture`)];
+const bodies=['/order\nSC/IN:X-AO1\nTIPE TRANSAKSI:AO\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC','/req help','/config_psb\nOrder ID:X-AO2\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC','/mo\nSC/IN:X-MO3\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC',...['assuren','b2b','replacement'].map(c=>`/${c}\nSC/IN:${c}-100\nNO INET/TELP:00012345\nSTO:ABC\nTRANSAKSI:PERBAIKAN\nKETERANGAN:fixture`)];
 const envelope=(text,i)=>({version:1,bot_id:'synthetic-all',update_id:String(i+1),event:{kind:'message',chat_id:group.chatId,message_id:String(i+10),telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1700000000,text,attachments:[]}});
 test('one shared group processes all seven existing commands into their real modules',async()=>{
  const pool=mockPool(),store=new MysqlStore({pool,botId:'synthetic-all',orderedInbox:true}),policy=createGroupPolicy({botId:store.botId,botUsername:'SyntheticAllBot',groups:[group]});
@@ -40,7 +40,7 @@ test('every shared ALL group accepts PSB and uppercase MO into the correct modul
  let index=0;
  for(const target of groups){
   assert.equal(require('../src/operations/b2c-readiness').routes([target]).configured,true);
-  for(const text of ['/config_psb\nORDER ID:X-AO2\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC','/MO\nSC/IN:X-MO3\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC']){
+  for(const text of ['/config_psb\nORDER ID:X-AO2\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test\nSTO:ABC','/MO\nSC/IN:X-MO3\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST\nSTO:ABC']){
    const body=envelope(text,index++);body.event.chat_id=target.chatId;body.event.telegram_thread_id=target.threadId;
    await store.accept(policy.ingress(body));assert.equal(await processor.processNext(),true);
   }

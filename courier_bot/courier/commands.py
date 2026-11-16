@@ -36,8 +36,9 @@ def parse_command(text, profile, bot_username=None):
         if label == 'USEE TV': label = 'NO USEE'
         if label == 'ORDER ID DSC': label = 'ORDER ID'
         if label == 'NO INET/TELP': label = 'NO INET' if 'NO INET' in rule['required'] + rule['optional'] else 'NO INTERNET'
+        label = rule.get('aliases', {}).get(label, label)
         if label not in rule['required'] + rule['optional']: continue
-        if label in rule['required'] and label in fields: errors.append(label + ' berulang')
+        if label in fields: errors.append(label + ' berulang')
         value = value.strip()
         fields[label] = value if value and value != '-' else None
     for name in rule['required']:

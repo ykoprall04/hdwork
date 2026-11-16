@@ -125,7 +125,7 @@ test('production FIFO writer: invalid rejection commits without an order or inbo
    const body=envelope(60,text);store.now=()=>Date.now();await store.accept(policy.ingress(body));
    assert.equal(await processor.processNext(),true);
    const reply=await store.claim(1,{authorize:(p,c)=>policy.outgoing(p,c)});assert.equal(reply.length,1);
-   assert.equal(reply[0].payload.text,'\u274c Gagal! Format order salah. Alasan: NIK berulang, SC/IN');
+   assert.ok(reply[0].payload.text.startsWith('\u274c Gagal! Format order salah. Alasan: NIK berulang, SC/IN\n\nTemplate:'));
    assert.equal(reply[0].payload.reply_to_message_id,'160');await sent(reply[0]);
   });
   await t.test('SQL proof and unknown-predecessor guards also hold for rejection-origin lanes',async()=>{

@@ -24,7 +24,7 @@ function check({runtime,payload,pins,target,repo=path.resolve(__dirname,'..')}){
 const assert=require('node:assert/strict'),path=require('node:path');
 const {formatOrder}=require(path.resolve(process.argv[1],'src/vlan/format.js'));
 (async()=>{for(const command of ['order','config_psb']){
- const head=command==='order'?'/order\nSC/IN:DGPS-AO123\nSN ONT:TEST\nTIPE TRANSAKSI:AO\nNIK:TEST':'/config_psb\nORDER ID:DGPS-AO123\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST';
+ const head=command==='order'?'/order\nSC/IN:DGPS-AO123\nSN ONT:TEST\nTIPE TRANSAKSI:AO\nNIK:TEST':'/config_psb\nORDER ID:DGPS-AO123\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST';
  const raw=head+'\nSTO:BKL\nKETERANGAN:synthetic\nNO INTERNET:000123\nIP OLT:172.27.106.125\nSlot:2\nPort:3\nPORT ODP:99\nValins ID:TEST';
  let queries=0;const r=await formatOrder({data:{command},fields:{STO:'BKL'},originalMessage:raw},{async execute(sql,args){queries++;assert.deepEqual(args,['172.27.106.125','MDR']);return [[{vlan_inet:'1035',vlan_voip:'500-502'}]];}});
  assert.equal(queries,1);assert.equal(r.lookup.status,'found');assert.match(r.text,/SLOT \/ PORT : 2 \/ 3/);assert.match(r.text,/DATA VLAN VOIP 500-502/);

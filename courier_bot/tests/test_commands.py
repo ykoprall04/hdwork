@@ -9,7 +9,7 @@ class CommandTests(unittest.TestCase):
     def test_extraction_and_required(self):
         for code in ('AOi1','PDAk1','MOk1','DOk1'):
             for cmd,label,expected in [('config_psb','Order ID DSC','PREFIX-'+code),('MO','SC / IN',code)]:
-                extra='\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test' if cmd=='config_psb' else '\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST'
+                extra='\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\nKETERANGAN:test' if cmd=='config_psb' else '\nTIPE TRANSAKSI:MO\nKETERANGAN:test\nNIK:TEST'
                 result=parse_command(f'/{cmd}\n{label}:free PREFIX-{code}_suffix\nSTO:X'+extra,'TIAL1')
                 self.assertTrue(result['valid']);self.assertEqual(result['sc_in'],expected)
         self.assertTrue(parse_command(BASE,'TIAL2')['valid'])
