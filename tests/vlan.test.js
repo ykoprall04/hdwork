@@ -36,10 +36,47 @@ test('format is editable-ready text with fixed tags/message, full original numbe
  const pool={execute:async()=>[[{vlan_inet:'1035',vlan_voip:'500-502 504-516 519 530 532'}]]};
  const detail={data:{command:'order',scIn:'DGPS-AO123'},fields:{'NO INET':'••••0123'},originalMessage:order+network};
  const result=await formatOrder(detail,pool);
- assert.match(result.text,/^#PELURUSAN #PSB\n/);assert.match(result.text,/INET \/ POTS : 000123 \/ 000456/);assert.match(result.text,/SLOT \/ PORT : 2 \/ 3/);assert.match(result.text,/ID VALINS : VALINS-TEST/);assert.match(result.text,/PESAN : 1P INET\nDGPS-AO123/);assert.ok(result.text.endsWith('DATA VLAN VOIP 500-502 504-516 519 530 532'));
+ assert.match(result.text,/^#PELURUSAN #PSB\n/);assert.match(result.text,/INET \/ POTS : 000123 \/ 000456/);assert.match(result.text,/SLOT \/ PORT : 2 \/ 3/);assert.match(result.text,/ID VALINS : VALINS-TEST/);assert.match(result.text,/PESAN : IP INET\nDGPS\n/);assert.ok(result.text.endsWith('DATA VLAN VOIP 500-502 504-516 519 530 532'));
  assert.equal(detail.fields['NO INET'],'••••0123');
  const manual=await formatOrder({...detail,originalMessage:order.replace('STO:BBA','STO:UNKNOWN')+network},{execute(){throw Error('Must not query');}});assert.equal(manual.lookup.reason,'UNKNOWN_STO');assert.match(manual.text,/DATA VLAN INET CEK VLAN MANUAL/);
  const missing=await formatOrder(detail,{async execute(){throw Object.assign(Error(),{code:'ER_NO_SUCH_TABLE'});}});assert.equal(missing.lookup.reason,'REFERENCE_UNAVAILABLE');
+});
+
+test('output numbers omit absent, blank and dash POTS; keep both available numbers without mutating the order',async()=>{
+ const pool={execute:async()=>[[{vlan_inet:'1035',vlan_voip:'0'}]]};
+ for(const command of ['order','config_psb'])for(const pots of [null,'','-','   ',' - ','000456']){
+  const base=command==='order'?order.replace('\nNO VOICE:000456',''):config+'\nNO INTERNET:000123';
+  const detail={data:{command,scIn:'DGPS-AO123'},fields:{note:'PESAN : 1P INET unchanged'},originalMessage:base+(pots===null?'':'\nNO VOICE:'+pots)+network};
+  const before=JSON.stringify(detail),r=await formatOrder(detail,pool);
+  assert.equal(r.text.split('\n')[1],pots==='000456'?'INET / POTS : 000123 / 000456':'INET / POTS : 000123');
+  assert.equal(JSON.stringify(detail),before);
+ }
+});
+
+test('output uses IP INET only on its fixed PESAN line; trims AO metadata from parsed, stored and fallback identity',async()=>{
+ const pool={execute:async()=>[[{vlan_inet:'1035',vlan_voip:'0'}]]};
+ for(const command of ['order','config_psb']){
+  const raw=(command==='order'?order:config).replace('DGPS-AO123','DGPS000000000000000000001-AO123_METADATA_WSA').replace('KETERANGAN:fixture','KETERANGAN:1P INET unchanged')+network;
+  const detail={data:{command,scIn:'DGPS000000000000000000001-AO123_METADATA_WSA'},fields:{note:'1P INET unchanged'},originalMessage:raw};
+  const before=JSON.stringify(detail),r=await formatOrder(detail,pool);
+  assert.equal(r.text.split('\n')[7],'PESAN : IP INET');
+  assert.equal(r.text.split('\n')[8],'DGPS000000000000000000001');
+  assert.doesNotMatch(r.text,/WSA|METADATA/);assert.equal(JSON.stringify(detail),before);
+  const key=command==='order'?'SC/IN':'ORDER ID';
+  for(const identity of ['DGPSFIXTURE-AO123_WSA_METADATA','DGPSFIXTURE-ao123_WSA_METADATA','DGPSFIXTURE-MO123','DGPSFIXTURE']){
+   for(const fields of [{[key]:identity},{}]){
+    const fallback={data:{command,scIn:identity},fields,originalMessage:'/unrecognized\nSTO:BBA\nNO INTERNET:000123'+network};
+    const beforeFallback=JSON.stringify(fallback),formatted=await formatOrder(fallback,pool);
+    assert.equal(formatted.text.split('\n')[8],identity.split(/-AO/i,1)[0]);assert.equal(JSON.stringify(fallback),beforeFallback);
+   }
+  }
+ }
+});
+
+test('refined output keeps the full template layout and existing STO-region lookup',async()=>{
+ const raw='/order\nSC/IN:DGPS000000000000000000001-AO123_WSA_METADATA\nSN ONT:TEST\nTIPE TRANSAKSI:AO\nSTO:TNS\nKETERANGAN:fixture\nNIK:TEST\nNO INET:000000000123\nNO VOICE:-\nODP:ODP-TEST/78\nIP OLT:192.0.2.144\nSlot:14\nPort:16\nValins ID:12345678';
+ const r=await formatOrder({data:{command:'order'},originalMessage:raw,fields:{}},{async execute(sql,args){assert.deepEqual(args,['192.0.2.144','SBU']);return [[{vlan_inet:'3846',vlan_voip:'1064-1079'}]];}});
+ assert.equal(r.text,['#PELURUSAN #PSB','INET / POTS : 000000000123','STO : TNS','ODP : ODP-TEST/78','IP OLT : 192.0.2.144','SLOT / PORT : 14 / 16','ID VALINS : 12345678','PESAN : IP INET','DGPS000000000000000000001','DATA VLAN INET 3846','DATA VLAN VOIP 1064-1079'].join('\n'));
 });
 test('VLAN validates as text, retains zero/ranges and rejects invalid input',()=>{
  const r={ip_olt:'192.0.2.1',wilayah:'SBU',vlan_inet:'1035',vlan_voip:'0'};assert.deepEqual(input(r),r);assert.equal(input({...r,vlan_voip:'500-504 507 509'}).vlan_voip,'500-504 507 509');
