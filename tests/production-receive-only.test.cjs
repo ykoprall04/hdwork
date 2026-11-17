@@ -34,7 +34,7 @@ test('receive-only store cannot enqueue, claim, authorize or settle even with an
  for(const call of [()=>store.enqueue('test',{}),()=>store.claim(),()=>store.authorizeDelivery('x',{}),()=>store.settle('x',{})])await assert.rejects(call(),{code:'COURIER_RECEIVE_ONLY'});
  assert.deepEqual(pool.calls,[]);
 });
-test('receive-only inbox commits a new order without writing outbox or touching writer fence',async()=>{
+for(const valid of [true,false]) test(`receive-only ${valid?'valid':'invalid'} inbox commits without outbox or writer fence`,async()=>{
  const env=await production.load(plan(),{kind:'backend',readSecret}),config=configuration(env);
  const pool=require('./helpers/courier-db').mockPool(),get=pool.getConnection.bind(pool);let originalChatRecords=0;
  pool.getConnection=async()=>{const c=await get(),execute=c.execute.bind(c);c.execute=async(sql,p)=>{
@@ -43,16 +43,17 @@ test('receive-only inbox commits a new order without writing outbox or touching 
   return execute(sql,p);
  };return c;};
  const store=new (require('../src/courier/mysql-store').MysqlStore)({pool,botId:plan().botId,env});
- const event={version:1,bot_id:plan().botId,update_id:'1',event:{kind:'message',chat_id:'-1001',message_id:'42',telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1767225601,text:'/order\nSC/IN:X-AOi123\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC',attachments:[]}};
+ const event={version:1,bot_id:plan().botId,update_id:'1',event:{kind:'message',chat_id:'-1001',message_id:'42',telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1767225601,text:'/order\nSC/IN:X-AOi123\nNO INET:000123\nSN ONT:SN1\nSTO:ABC\nKETERANGAN:test\nNIK:SYNTHETIC'+(valid?'\nTIPE TRANSAKSI:PSB':''),attachments:[]}};
  await store.accept(event);
  const worker=require('../src/b2c-workflow/workflow').createB2CProcessor({store,config:config.workflow});
- assert.equal(await worker.processNext(),true);assert.equal(pool.state.orders.length,1);assert.equal(pool.state.orders[0].message_id,'42');assert.equal(pool.state.inbox[0].state,'PROCESSED');assert.equal(originalChatRecords,1);assert.deepEqual(pool.state.outbox,[]);
+ assert.equal(await worker.processNext(),true);assert.equal(pool.state.orders.length,valid?1:0);if(valid)assert.equal(pool.state.orders[0].message_id,'42');assert.equal(pool.state.inbox[0].state,'PROCESSED');assert.equal(originalChatRecords,valid?1:0);assert.deepEqual(pool.state.outbox,[]);
 });
 async function launcher(p,event,diagnostic){
  const module={exports:{}},events=[],handlers={},child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.stdin=new EventEmitter();child.exitCode=null;
  child.stdin.end=value=>{assert.equal(value,'STOP\n');events.push('stop-owned-child');queueMicrotask(()=>{child.exitCode=0;child.emit('exit',0);child.emit('close',0);});};child.kill=()=>{throw Error('UNEXPECTED_KILL');};
  const file=path.resolve('synthetic-plan.json'),bytes=Buffer.from(JSON.stringify(p));
  const deps={
+  '../contracts/courier-startup-recovery.json':{readyTimeoutMs:230000,transientExitCode:75},
   'node:fs':{lstatSync:()=>({isFile:()=>true,isSymbolicLink:()=>false,nlink:1,size:bytes.length}),realpathSync:p=>p,readFileSync:()=>bytes},'node:path':path,'node:crypto':require('node:crypto'),
   '../src/config/operator-json':require('../src/config/operator-json'),
   '../src/config/production-courier':{validate:production.validate,load:(plan,options)=>production.load(plan,{...options,readSecret})},
@@ -86,3 +87,10 @@ test('startup failure handshake accepts only finite Python diagnostics and prese
  assert.equal(safeStartupDiagnostic({...diagnostic,phase:'SECRET_VALUE'}),null);
  assert.equal(safeStartupDiagnostic({...diagnostic,exceptionType:'SecretValue'}),null);
 });
+
+ test('FIFO sender defaults to separate polling and bounded scheduler without affecting backend',async()=>{
+ const p=plan();delete p.receiveOnly;p.deliveryMode='fifo-ack-v2';p.fifoRelease=true;
+ const env=await production.load(p,{kind:'python',readSecret});
+ assert.equal(env.COURIER_SEPARATE_IO_ENABLED,'true');assert.equal(env.COURIER_ADAPTIVE_SCHEDULER_ENABLED,'true');assert.equal(env.COURIER_FIFO_ACK_ENABLED,'true');
+ const backend=await production.load(p,{kind:'backend',readSecret});assert.equal(backend.HDWORK2_COURIER_FIFO_ENABLED,'true');assert.equal(backend.COURIER_SEPARATE_IO_ENABLED,undefined);
+ });

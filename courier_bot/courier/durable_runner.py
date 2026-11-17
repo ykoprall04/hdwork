@@ -68,6 +68,7 @@ class DurableCourier:
         from .ack_pump import AckPump
         self.ack_pump = AckPump(self.wakeup.set) if fifo_ack else None
         self.cooldown_until = 0
+        self.poll_cooldown_until = 0
         def technical_report(code):
             reasons = {'inbox_quarantined_review_required', 'inbox_backend_unavailable', 'outbox_ack_stale_cached_result_retained', 'outbox_ack_pending'}
             logger().emit('COURIER_NOTICE', reason=code.upper() if code in reasons else 'REDACTED')
@@ -192,11 +193,11 @@ class DurableCourier:
                 else:
                     observe('JOURNAL_INCOMING',lambda:self.journal.append(updates,self.policy.prepare))
                     logger().emit('TELEGRAM_POLL_RESULT',count=len(updates))
-        elif self.poll and self.clock() >= self.cooldown_until:
+        elif self.poll and self.clock() >= self.poll_cooldown_until:
             try:
                 updates = observe('TELEGRAM_POLL', lambda: self.telegram.updates(self.journal.offset))
             except TransportError as error:
-                self.cooldown_until = self.clock() + max(2, error.retry_after if error.status == 429 else 5)
+                self.poll_cooldown_until = self.clock() + max(2, error.retry_after if error.status == 429 else 5)
                 updates = None
             if updates is not None:
                 observe('JOURNAL_INCOMING', lambda: self.journal.append(updates, self.policy.prepare))

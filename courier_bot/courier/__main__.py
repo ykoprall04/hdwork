@@ -8,7 +8,7 @@ from urllib.request import build_opener, HTTPRedirectHandler, ProxyHandler
 from .raw_log import logger, observe, capture_streams
 capture_streams()
 from .runtime_config import RuntimeConfig, private_directory
-from .http import JsonTransport, TransportError
+from .http import JsonTransport, TransportError, telegram_transport
 from .clients import InternalClient, TelegramClient
 from .groups import IngressPolicy
 from .journal import Journal
@@ -70,9 +70,9 @@ def main():
         scheduler=Scheduler(journal,config.group_rate,config.global_rate) if config.scheduler else None
         internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open), fifo_ack=config.fifo_ack,budget=budget)
         ack_internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open),budget=budget) if config.fifo_ack else None
-        inbound_telegram=TelegramClient(config.base.token,JsonTransport(build_opener(NoRedirect()).open,timeout=35)) if config.separate_io else None
+        inbound_telegram=TelegramClient(config.base.token,telegram_transport(timeout=35)) if config.separate_io else None
         forward_internal=InternalClient(config.base,JsonTransport(build_opener(ProxyHandler({}),NoRedirect()).open),budget=budget) if config.separate_io else None
-        telegram = TelegramClient(config.base.token, JsonTransport(build_opener(NoRedirect()).open))
+        telegram = TelegramClient(config.base.token, telegram_transport())
         if config.production_bot_id:
             telegram.verify_identity(config.production_bot_id, config.username)
         lease = WorkerLease(internal)
@@ -118,7 +118,7 @@ def main():
     except Exception as error:
         logger().emit('COURIER_START_FAILED', error=error)
         print('Courier configuration or journal rejected', file=sys.stderr)
-        return 1
+        return 75 if getattr(error, 'startup_retryable', False) is True else 1
     finally:
         if courier:
             courier.close()

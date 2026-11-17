@@ -48,9 +48,9 @@ async function load(plan,{kind,repo,readSecret}={}){
   if(p.receiveOnly)Object.assign(env,{COURIER_RECEIVE_ONLY:'true',COURIER_SEND_ENABLED:'false',COURIER_OUTBOX_ENABLED:'false',COURIER_FIFO_ACK_ENABLED:'false',COURIER_ADAPTIVE_SCHEDULER_ENABLED:'false',COURIER_SEPARATE_IO_ENABLED:'false',HDWORK2_COURIER_FIFO_ENABLED:'false',HDWORK2_COURIER_FIFO_RELEASE_ENABLED:'false',HDWORK2_COURIER_WRITER_V2_BOTS_JSON:'[]',HDWORK2_SYSTEM_ALERTS_APPROVED:'false'});
   if(p.deliveryMode==='fifo-ack-v2'){if(p.routingMode!=='database')throw Error('FIFO_REQUIRES_DATABASE_ROUTING');if(kind==='backend')env.HDWORK2_COURIER_FIFO_ENABLED='true';else env.COURIER_FIFO_ACK_ENABLED='true';}
   if(p.fifoRelease&&kind==='backend'){env.HDWORK2_COURIER_FIFO_RELEASE_ENABLED='true';env.HDWORK2_COURIER_WRITER_V2_BOTS_JSON=JSON.stringify([p.botId]);}
-  if(p.adaptiveScheduler&&kind==='python')env.COURIER_ADAPTIVE_SCHEDULER_ENABLED='true';
+  if((p.adaptiveScheduler||p.deliveryMode==='fifo-ack-v2')&&kind==='python')env.COURIER_ADAPTIVE_SCHEDULER_ENABLED='true';
   if(p.telegramLimits&&kind==='python'){env.COURIER_GROUP_MESSAGES_PER_MINUTE=String(p.telegramLimits.groupPerMinute);env.COURIER_GLOBAL_MESSAGES_PER_SECOND=String(p.telegramLimits.globalPerSecond);}
-  if(p.separateIo&&kind==='python')env.COURIER_SEPARATE_IO_ENABLED='true';
+  if((p.separateIo||p.deliveryMode==='fifo-ack-v2')&&kind==='python')env.COURIER_SEPARATE_IO_ENABLED='true';
   env.COURIER_SERVICE_KEY=await readSecret(path.resolve(repo,p.serviceKeyDpapiFile));
   if(typeof env.COURIER_SERVICE_KEY!=='string'||Buffer.byteLength(env.COURIER_SERVICE_KEY)<32)throw Error('PROTECTED_SERVICE_KEY_REJECTED');
   if(kind==='backend'){

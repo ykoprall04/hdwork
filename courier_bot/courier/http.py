@@ -1,4 +1,9 @@
 import json
+import socket
+import errno
+import ssl
+from urllib.error import URLError
+from urllib.request import build_opener, HTTPSHandler, HTTPRedirectHandler
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from .raw_log import logger
@@ -21,10 +26,52 @@ def api_failure(data, http_status=None):
     return {'code': code, 'description': description if isinstance(description, str) and description in SAFE_TELEGRAM_DESCRIPTIONS else '[TELEGRAM_DESCRIPTION_REDACTED]', 'rejected': True}
 
 class TransportError(Exception):
-    def __init__(self, status=0, retry_after=0):
+    def __init__(self, status=0, retry_after=0, transient_network=False):
         super().__init__('courier_transport_error')
         self.status = status
         self.retry_after = retry_after
+        self.transient_network = transient_network
+
+def temporary_network(error):
+    if isinstance(error, URLError):
+        error = error.reason
+    if isinstance(error, (ssl.SSLCertVerificationError, ssl.CertificateError)):
+        return False
+    if isinstance(error, (TimeoutError, socket.timeout, ssl.SSLEOFError,
+                          ConnectionResetError, ConnectionRefusedError,
+                          ConnectionAbortedError, BrokenPipeError)):
+        return True
+    if isinstance(error, socket.gaierror):
+        return error.errno == socket.EAI_AGAIN
+    return isinstance(error, OSError) and error.errno in (
+        errno.ETIMEDOUT, errno.ECONNRESET, errno.ECONNREFUSED,
+        errno.ECONNABORTED, errno.ENETUNREACH, errno.EHOSTUNREACH, errno.EPIPE)
+
+class NoTelegramRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *_args, **_kwargs):
+        raise TransportError()
+
+
+def telegram_transport(timeout=10):
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.maximum_version = ssl.TLSVersion.TLSv1_2
+    return JsonTransport(build_opener(HTTPSHandler(context=context), NoTelegramRedirect()).open, timeout)
+
+
+def transport_phase(error):
+    cause = error.reason if isinstance(error, URLError) else error
+    if isinstance(cause, socket.gaierror):
+        return 'DNS'
+    if isinstance(cause, ssl.SSLError):
+        return 'TLS'
+    if isinstance(cause, (ConnectionError,)):
+        return 'TCP'
+    # A socket timeout alone cannot distinguish connect, handshake, or read.
+    if isinstance(cause, TimeoutError):
+        return 'NETWORK_TIMEOUT'
+    return 'REQUEST'
+
 
 class JsonTransport:
     def __init__(self, opener=None, timeout=10):
@@ -48,7 +95,7 @@ class JsonTransport:
                     raise error
                 return result
         except HTTPError as error:
-            logger().emit('HTTP_FAILURE', error=error, status='ERROR')
+            logger().emit('HTTP_FAILURE', error=error, status='ERROR', phase='HTTP')
             retry = 0
             data = None
             try:
@@ -70,5 +117,5 @@ class JsonTransport:
         except TransportError:
             raise
         except Exception as error:
-            logger().emit('HTTP_FAILURE', error=error, status='ERROR')
-            raise TransportError() from None
+            logger().emit('HTTP_FAILURE', error=error, status='ERROR', phase=transport_phase(error))
+            raise TransportError(transient_network=temporary_network(error)) from None

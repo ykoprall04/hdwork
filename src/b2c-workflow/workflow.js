@@ -6,6 +6,9 @@ function createB2CProcessor({ store, config }) {
   const settings = validateConfig(config);
   if (!store || store.botId !== settings.botId || typeof store.processNext !== 'function') throw fail();
   const reply = (e, group, text) => ({method:'sendMessage',chat_id:e.chat_id,telegram_thread_id:group.threadId,thread_mode:group.threadMode,reply_to_message_id:e.message_id,text});
+  // Receive-only still commits incoming orders/audits, but never creates replies.
+  // The store independently rejects every outbound write as a second boundary.
+  const enqueueReply = (tx, key, payload) => store.receiveOnly === true ? undefined : tx.enqueue(key, payload);
   async function handle(body, tx) {
     const { event: e } = eventEnvelope(body, settings.botId);
     const c = tx.connection;
@@ -28,12 +31,12 @@ function createB2CProcessor({ store, config }) {
         const text=require('./rejection').rejectionText({...parsed,errors});
         if(!text)return ignore('COMMAND_VALIDATION_REJECTED');
         await audit('ORDER_FORMAT_REJECTED',null,null,{command:parsed.command,errors});
-        await tx.enqueue(`b2c:${tx.inboxId}:format-rejected`,reply(e,group,text));
+        await enqueueReply(tx,`b2c:${tx.inboxId}:format-rejected`,reply(e,group,text));
         return {disposition:'PROCESSED'};
       }
       const targetGroup=group.commandProfile==='ALL'?{...group,module:require('../courier/shared-group').moduleFor(parsed.command)}:group;
       const saved=await require('./command-storage').saveCommand({e,parsed,settings,group:targetGroup,tx,audit});
-      if(saved?.disposition!=='IGNORED')await tx.enqueue(`b2c:${tx.inboxId}:order-accepted`,reply(e,group,'✅ Berhasil! Order diterima.'));
+      if(saved?.disposition!=='IGNORED')await enqueueReply(tx,`b2c:${tx.inboxId}:order-accepted`,reply(e,group,'✅ Berhasil! Order diterima.'));
       return saved;
     }
     if(settings.webOnly)return ignore('TELEGRAM_STATUS_NOT_AUTHORIZED');
@@ -51,7 +54,7 @@ function createB2CProcessor({ store, config }) {
       await c.execute("UPDATE hd2_orders SET status=?,last_actor_id=?,started_at=CASE WHEN ?='IN_PROGRESS' THEN UTC_TIMESTAMP(3) ELSE started_at END,finished_at=CASE WHEN ? IN ('DONE','FAILED') THEN UTC_TIMESTAMP(3) ELSE finished_at END WHERE id=? AND bot_id=?", [action.status,e.sender_id,action.status,action.status,order.id,settings.botId]);
       await audit('STATUS_CHANGED',order,action.status,action.reason ? {reason:action.reason} : null);
       const text = action.status === 'IN_PROGRESS' ? `🟡 Data di cek ${actor.name}` : action.status === 'DONE' ? '🟢 DONE' : '🔴 GAGAL';
-      await tx.enqueue(`b2c:${tx.inboxId}:status`, {method:'sendMessage',chat_id:e.chat_id,telegram_thread_id:group.threadId,thread_mode:group.threadMode,reply_to_message_id:order.message_id,text});
+      await enqueueReply(tx,`b2c:${tx.inboxId}:status`, {method:'sendMessage',chat_id:e.chat_id,telegram_thread_id:group.threadId,thread_mode:group.threadMode,reply_to_message_id:order.message_id,text});
       return { disposition:'PROCESSED' };
     }
     const data = parseOrder(e.text);
