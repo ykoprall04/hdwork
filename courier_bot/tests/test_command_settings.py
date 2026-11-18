@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 from unittest.mock import patch
 from courier.command_settings import COMMANDS, CommandSettingsCache
+from courier.durable_runner import DurableCourier
 from courier.groups import IngressPolicy
 from courier.journal import Journal
 from courier.http import TransportError
@@ -67,6 +68,59 @@ class Tests(unittest.TestCase):
         self.assertFalse(self.cache.refresh())
         self.assertFalse(self.cache.enabled('order'))
         self.assertEqual(len(self.errors), 2)
+
+    def test_config_psb_resumes_after_reenable_and_poll_timeout(self):
+        worker = {'id': 'fixture', 'lease_token': 'synthetic'}
+        self.cache.worker = lambda: worker
+        self.client.command_settings_applied.return_value = {'ok': True}
+        telegram, internal = Mock(), Mock()
+        internal.event.return_value = {'ok': True, 'receipt_id': 'fixture-receipt'}
+        ignored = update('config_psb', 1)
+        accepted = update('config_psb', 3)
+        for item in (ignored, accepted):
+            item['message']['text'] = (
+                '/config_psb\nOrder ID:X-AO2\nSN ONT BARU:SNFIXTURE\n'
+                'SERVICE (1P/2P/3P/1P-Voice):1P\nTIPE ONT:TEST\n'
+                'KETERANGAN:test\nSTO:ABC'
+            )
+        telegram.updates.side_effect = [
+            [ignored, update('req', 2)], TransportError(transient_network=True),
+            [accepted, update('req', 4)],
+        ]
+        journal = Journal(':memory:', 'sandbox', 'synthetic-fingerprint')
+        now = [0]
+        courier = DurableCourier(telegram, internal, journal, self.policy, Mock(),
+                                 poll=True, send=False, clock=lambda: now[0])
+        try:
+            off = config(config_psb=False)
+            self.client.command_settings.return_value = off
+            self.assertTrue(self.cache.refresh())
+            courier.run_once()
+            self.assertEqual(journal.offset, 3)
+            self.assertEqual(internal.event.call_count, 1)
+
+            on = config()
+            on['commands']['config_psb']['version'] = 2
+            self.client.command_settings.return_value = on
+            self.assertTrue(self.cache.refresh())
+            self.client.command_settings_applied.assert_called_with(on['commands'], worker)
+            courier.run_once()
+            self.assertEqual(journal.offset, 3)
+            now[0] = 5
+            courier.run_once()
+
+            self.assertEqual([call.args[0] for call in telegram.updates.call_args_list],
+                             [None, 3, 3])
+            self.assertEqual(journal.offset, 5)
+            states = journal.db.execute('SELECT state,reason FROM updates ORDER BY seq')
+            self.assertEqual([tuple(row) for row in states], [
+                ('IGNORED', 'global_command_disabled'), ('ACKED', None),
+                ('ACKED', None), ('ACKED', None),
+            ])
+            self.assertEqual(internal.event.call_count, 3)
+        finally:
+            courier.close()
+            journal.close()
 
     def test_error_log_throttled_60_seconds(self):
         clock = [0]
