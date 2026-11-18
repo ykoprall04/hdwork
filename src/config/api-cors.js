@@ -8,7 +8,7 @@ function corsOptions(env = process.env) {
       if (!origin || origins.includes(origin)) return callback(null, true);
       return callback(Object.assign(new Error('Origin tidak diizinkan'), { statusCode: 403 }));
     },
-    methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: env.HDWORK2_AUTH_V2 === 'true' ? ['Content-Type','X-CSRF-Token'] : ['Authorization', 'Content-Type'], credentials: env.HDWORK2_AUTH_V2 === 'true', maxAge: 600,
+    methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: env.HDWORK2_AUTH_V2 === 'true' ? ['Content-Type','X-CSRF-Token'] : ['Authorization', 'Content-Type'], exposedHeaders: ['Retry-After'], credentials: env.HDWORK2_AUTH_V2 === 'true', maxAge: 600,
   };
 }
 module.exports = { corsOptions };
