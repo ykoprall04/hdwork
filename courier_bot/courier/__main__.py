@@ -49,7 +49,7 @@ def main():
     if sys.argv[1:] != ['--run']:
         print('Courier disabled; explicit --run required', file=sys.stderr)
         return 1
-    journal = lock = lease = courier = None
+    journal = lock = lease = courier = command_settings = None
     try:
         config = RuntimeConfig.from_env(os.environ)
         private_directory(config.lock_dir)
@@ -69,6 +69,10 @@ def main():
         budget=ApiBudget() if config.scheduler else None
         scheduler=Scheduler(journal,config.group_rate,config.global_rate) if config.scheduler else None
         internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open), fifo_ack=config.fifo_ack,budget=budget)
+        from .command_settings import CommandSettingsCache
+        command_settings = CommandSettingsCache(
+            InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open, timeout=1, report_failure=lambda *_: None)),
+            file=config.journal_dir / 'command-settings.json', worker=lambda: internal.worker, wake=lambda: courier.wakeup.set() if courier else None)
         ack_internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open),budget=budget) if config.fifo_ack else None
         inbound_telegram=TelegramClient(config.base.token,telegram_transport(timeout=35)) if config.separate_io else None
         forward_internal=InternalClient(config.base,JsonTransport(build_opener(ProxyHandler({}),NoRedirect()).open),budget=budget) if config.separate_io else None
@@ -96,7 +100,7 @@ def main():
             else:
                 print(code, file=sys.stderr)
         courier = DurableCourier(telegram, internal, journal,
-                                 IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window, chat_enabled=config.chat_enabled), lease,
+                                 IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window, chat_enabled=config.chat_enabled, command_settings=command_settings), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,
                                  report=report, database_routing=config.database_routing, fifo_ack=config.fifo_ack, ack_internal=ack_internal,scheduler=scheduler,inbound_telegram=inbound_telegram,forward_internal=forward_internal)
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
@@ -111,6 +115,8 @@ def main():
         elif config.production_bot_id:
             lease.ensure()
             print(json.dumps({'event': 'READY', 'send': config.send, 'productionIdentityVerified': True}), flush=True)
+        if config.poll:
+            command_settings.start()
         serve(courier, stop, report=report)
         return 0
     except KeyboardInterrupt:
@@ -120,6 +126,8 @@ def main():
         print('Courier configuration or journal rejected', file=sys.stderr)
         return 75 if getattr(error, 'startup_retryable', False) is True else 1
     finally:
+        if command_settings:
+            command_settings.close()
         if courier:
             courier.close()
         if lease:

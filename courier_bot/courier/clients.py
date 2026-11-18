@@ -30,6 +30,12 @@ class InternalClient:
     def routing(self):
         return self.post('/internal/courier/v1/routing', {'worker': self.worker})
 
+    def command_settings(self):
+        return self.post('/internal/courier/v1/commands', {})
+
+    def command_settings_applied(self, rows, worker):
+        return self.post('/internal/courier/v1/commands/applied', {'protocol': 'global-commands-v1', 'commands': rows, 'worker': worker})
+
     def ensure_protocol(self):
         if self.fifo_ack and not self.protocol_verified:
             value = self.post('/internal/courier/v1/capabilities', {'worker': self.worker})

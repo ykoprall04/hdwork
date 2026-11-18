@@ -6,6 +6,8 @@ function createRoutes({system,enabled=()=>process.env.HDWORK2_SYSTEM_MONITORING_
  router.get('/status',wrap(async(req,res)=>res.json({success:true,...await service().status(req.user)})));
  router.use((req,res,next)=>{try{p.admin(req.user);next();}catch(e){http.error(res,e);}});
  router.get('/mappings',wrap(async(req,res)=>res.json({success:true,...await service().mappings(req.user)})));
+ router.get('/commands',wrap(async(req,res)=>{p.admin(req.user,true);res.json({success:true,...await service().commandSettings(req.user)});}));
+ router.post('/commands',wrap(async(req,res)=>{p.admin(req.user,true);http.csrf(req,req.sessionToken);res.json(await service().saveCommandSettings({...req.user,sessionToken:req.sessionToken},req.body));}));
  router.get('/history',wrap(async(req,res)=>res.json({success:true,...await service().history(req.user)})));
  router.get('/backups',wrap(async(req,res)=>res.json({success:true,...await service().jobs(req.user)})));
  router.post('/mappings',wrap(async(req,res)=>{http.csrf(req,req.sessionToken);res.json(await service().saveMapping({...req.user,sessionToken:req.sessionToken},req.body));}));

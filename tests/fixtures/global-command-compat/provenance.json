@@ -1,0 +1,31 @@
+{
+  "web-grants.js": {
+    "revision": "b0f2d87b6ff4a30dd8f35416a8f9c280821662a5",
+    "path": "src/config/operational-grants.js",
+    "sha256": "1b155a43fa8833528708d2489179080900d46c361b275f6a5cb18be203de42eb"
+  },
+  "courier-grants.js": {
+    "revision": "cc90aadee18d0e5ac5446fefdeef7d5e53b65cee",
+    "path": "src/config/operational-grants.js",
+    "sha256": "1b155a43fa8833528708d2489179080900d46c361b275f6a5cb18be203de42eb"
+  },
+  "legacy-routes.js": {
+    "revision": "05ef8b17db43d5e00d2af210762e6cda0574162e",
+    "path": "src/system/routes.js",
+    "sha256": "b12b3ffc88c07ae866c592704ee46145ae5ededa82cd60eb0870e267520e8dd3"
+  },
+  "main-grants.js": {
+    "revision": "05ef8b17db43d5e00d2af210762e6cda0574162e",
+    "path": "src/config/operational-grants.js",
+    "sha256": "1b155a43fa8833528708d2489179080900d46c361b275f6a5cb18be203de42eb"
+  },
+  "active-courier-grants.js": {
+    "kind": "read-only audited active source",
+    "baseCommit": "d6c95293875bfb0d30f7b44ec6137195dc338760",
+    "patchCommit": "05ef8b17db43d5e00d2af210762e6cda0574162e",
+    "lifecycleCommit": "cc90aadee18d0e5ac5446fefdeef7d5e53b65cee",
+    "path": "src/config/operational-grants.js",
+    "sha256": "07b65671d82a2dcbef3b26f99adf1070e5fb8eaa03add411fdca2ae9c6094fc3",
+    "differenceFromLifecycleRevision": "No optional VLAN-reference branch; preserved as deployed"
+  }
+}

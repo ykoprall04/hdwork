@@ -74,9 +74,16 @@ def transport_phase(error):
 
 
 class JsonTransport:
-    def __init__(self, opener=None, timeout=10):
+    def __init__(self, opener=None, timeout=10, report_failure=None):
         self.opener = opener
         self.timeout = timeout
+        self.report_failure = report_failure
+
+    def _failure(self, error, phase):
+        if self.report_failure is not None:
+            self.report_failure(error, phase)
+        else:
+            logger().emit('HTTP_FAILURE', error=error, status='ERROR', phase=phase)
 
     def post(self, url, payload, headers=None):
         body = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode()
@@ -95,7 +102,7 @@ class JsonTransport:
                     raise error
                 return result
         except HTTPError as error:
-            logger().emit('HTTP_FAILURE', error=error, status='ERROR', phase='HTTP')
+            self._failure(error, 'HTTP')
             retry = 0
             data = None
             try:
@@ -117,5 +124,8 @@ class JsonTransport:
         except TransportError:
             raise
         except Exception as error:
-            logger().emit('HTTP_FAILURE', error=error, status='ERROR', phase=transport_phase(error))
-            raise TransportError(transient_network=temporary_network(error)) from None
+            phase = transport_phase(error)
+            self._failure(error, phase)
+            failure = TransportError(transient_network=temporary_network(error))
+            failure.phase = phase
+            raise failure from None

@@ -29,6 +29,7 @@ async function startIntegration({ env = process.env,testWindow,testingRead,repor
     const policy=testWindow?require('./src/courier/single-order-window').singleOrderWindow(basePolicy,testWindow):(databasePolicy||basePolicy);
     const app = require('./src/courier/integration-app').createIntegrationApp({ store,
       runtime: new RuntimeStore(store), policy, botId: config.botId, key: config.key,
+      commandSettings:()=>require('./src/system/command-settings').read(pool),
       receive: env.COURIER_RECEIVE_ENABLED === 'true', send: env.COURIER_OUTBOX_ENABLED === 'true',testingRead:testWindow?testingRead:undefined,onFailure:testWindow?report:undefined,ready:()=>trafficReady });
     server = require('node:http').createServer(app);
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(config.port, '127.0.0.1', resolve); });

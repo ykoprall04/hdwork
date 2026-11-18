@@ -3,12 +3,20 @@ const { createServiceAuth } = require('./auth');
 const { createRateLimit } = require('../middlewares/api-rate-limit');
 const { fail } = require('./contract');
 
-function createIntegrationApp({ store, runtime, policy, botId, key, receive = false, send = false, now,testingRead,onFailure,ready=()=>true }) {
+function createIntegrationApp({ store, runtime, policy, botId, key, receive = false, send = false, now,testingRead,onFailure,ready=()=>true,commandSettings }) {
   const app = express(), verify = createServiceAuth({ botId, key, now });
+  let settingsErrorAt=-Infinity;
+  const commandReporter=commandSettings?require('../system/command-readiness').createReporter({runtime,botId,now}):null;
   app.disable('x-powered-by');
   app.use((req,_res,next)=>require('../observability/raw-log').withTrace(req.get('X-Courier-Trace'),next));
   app.use(createRateLimit({ limit: 300, windowMs: 60000 }));
   app.use(express.raw({ type: 'application/json', limit: '64kb' }));
+  // Read-only loopback health metadata for Web; no settings mutation or secrets.
+  if(commandReporter)app.get('/internal/courier/v1/commands/status',async(req,res)=>{
+    res.set('Cache-Control','no-store');
+    if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)||req.headers.origin)return res.status(403).json({ok:false});
+    res.json({ok:true,...await commandReporter.status()});
+  });
   app.use(async (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     try {
@@ -22,6 +30,8 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
   for (const action of ['acquire', 'renew', 'release']) app.post('/internal/courier/v1/worker/' + action, async (req, res) => {
     res.json({ ok: true, ...await runtime.lease(action, req.body) });
   });
+  if(commandSettings)app.post('/internal/courier/v1/commands',async(_req,res)=>res.json({ok:true,...await commandSettings()}));
+  if(commandReporter)app.post('/internal/courier/v1/commands/applied',async(req,res)=>{await commandReporter.applied(req.body);res.json({ok:true});});
   if(policy.configuration)app.post('/internal/courier/v1/routing',async(req,res)=>{await runtime.assertWorker(req.body.worker);res.json({ok:true,...await policy.configuration()});});
   if(testingRead)app.post('/internal/courier/v1/testing/order',async(req,res)=>res.json({ok:true,...await testingRead(req.body)}));
   app.post('/internal/courier/v1/events', async (req, res) => {
@@ -50,8 +60,11 @@ function createIntegrationApp({ store, runtime, policy, botId, key, receive = fa
     res.json({ ok: true, ...await store.settle(req.params.id, req.body) });
   });
   app.use((_req, res) => res.status(404).json({ ok: false, code: 'NOT_FOUND' }));
-  app.use((error, _req, res, _next) => {
-    require('../observability/raw-log').logger().emit('COURIER_API_FAILURE',{status:'ERROR'},error);
+  app.use((error, req, res, _next) => {
+    if(['/internal/courier/v1/commands','/internal/courier/v1/commands/applied'].includes(req.originalUrl)){
+      const at=(now||Date.now)();
+      if(at-settingsErrorAt>=60000){settingsErrorAt=at;require('../observability/raw-log').logger().emit('COMMAND_SETTINGS_API_FAILED',{status:'ERROR'});}
+    }else require('../observability/raw-log').logger().emit('COURIER_API_FAILURE',{status:'ERROR'},error);
     onFailure?.('LIVE_TEST_API_REJECTED');
     const status = error.type === 'entity.too.large' ? 413 : [400, 401, 403, 409, 429].includes(error.statusCode) ? error.statusCode : 503;
     res.status(status).json({ ok: false, code: 'COURIER_REQUEST_REJECTED' });

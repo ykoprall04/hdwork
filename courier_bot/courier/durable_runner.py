@@ -185,7 +185,9 @@ class DurableCourier:
                 raise TransportError()
             self.policy.refresh(configuration)
             self.routing_at=self.clock()+15
-        if self.poll and self.poll_pump:
+        command_settings=getattr(self.policy,'command_settings',None)
+        ingress_ready=command_settings is None or command_settings.ready
+        if self.poll and ingress_ready and self.poll_pump:
             done=self.poll_pump.take(self.journal.offset)
             if done:
                 updates,error=done
@@ -193,7 +195,7 @@ class DurableCourier:
                 else:
                     observe('JOURNAL_INCOMING',lambda:self.journal.append(updates,self.policy.prepare))
                     logger().emit('TELEGRAM_POLL_RESULT',count=len(updates))
-        elif self.poll and self.clock() >= self.poll_cooldown_until:
+        elif self.poll and ingress_ready and self.clock() >= self.poll_cooldown_until:
             try:
                 updates = observe('TELEGRAM_POLL', lambda: self.telegram.updates(self.journal.offset))
             except TransportError as error:

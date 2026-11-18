@@ -27,6 +27,11 @@ function reviewOperationalGrants(rows,role){
   const m=/^GRANT (.+) ON (.+) TO /i.exec(value);
   if(!m||/WITH GRANT OPTION/i.test(value)){unsafe=true;continue;}
   const scope=m[2].replace(/`/g,'').replace(/\\_/g,'_').split('.');
+  if(scope[0]==='hdwork2'&&scope[1]==='hd2_global_commands'){
+   const allowed=role.toLowerCase().includes('write')?['SELECT','UPDATE']:['SELECT'];
+   try{const ps=privileges(m[1]);if(!ps.length||ps.some(p=>!allowed.includes(p)))unsafe=true;}catch{unsafe=true;}
+   continue;
+  }
   if(scope[0]==='hdwork2'&&scope[1]==='hd2_order_notes'&&notePermissions){
    try{const ps=privileges(m[1]);if(!ps.length||ps.some(p=>!notePermissions.includes(p)))unsafe=true;}catch{unsafe=true;}
    continue;

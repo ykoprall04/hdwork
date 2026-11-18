@@ -1,0 +1,47 @@
+// Exact table/column allowlists. SHOW GRANTS only, never changes permissions.
+const read={hd2_orders:['SELECT'],hd2_audit:['SELECT'],hd2_live_events:['SELECT'],hd2_user_modules:['SELECT'],hd2_web_requests:['SELECT (order_id, request_id, user_id)'],hd2_courier_outbox:['SELECT (bot_id, created_at, id, idem_key, last_error_code, lease_until_ms, state, telegram_message_id)'],users:['SELECT (id, is_active, name, role)']};
+const write={users:read.users,hd2_user_modules:['SELECT'],hd2_sessions:['SELECT'],hd2_orders:['SELECT','UPDATE (completion_note, duplicate_decision, final_user_id, finished_at, owner_user_id, started_at, status, version)'],hd2_audit:['INSERT'],hd2_web_requests:['SELECT','INSERT','UPDATE'],hd2_live_events:['INSERT'],hd2_courier_outbox:['SELECT','INSERT','UPDATE (id)']};
+const courier={hd2_orders:['SELECT','INSERT'],hd2_courier_inbox:['SELECT','INSERT','UPDATE'],hd2_daily_keys:['SELECT','INSERT','UPDATE'],hd2_tial_keys:['SELECT','INSERT','UPDATE'],hd2_audit:['INSERT'],hd2_live_events:['INSERT'],hd2_courier_workers:['SELECT','INSERT','UPDATE'],hd2_courier_nonces:['SELECT','INSERT','DELETE']};
+const courierSend={...courier,hd2_courier_outbox:['SELECT','INSERT','UPDATE']};
+const trialWrite={...write,users:['SELECT (id, is_active, name, role, username)'],hd2_orders:['SELECT','UPDATE (completion_note, duplicate_decision, final_user_id, finished_at, owner_user_id, started_at, status, version)'],hd2_audit:['SELECT','INSERT'],hd2_courier_outbox:['SELECT','INSERT','UPDATE']};
+const systemRead={...read,hd2_courier_inbox:['SELECT (attempts, created_at, state)'],hd2_system_mappings:['SELECT'],hd2_system_state:['SELECT'],hd2_system_incidents:['SELECT'],hd2_system_jobs:['SELECT'],hd2_courier_workers:['SELECT (bot_id, expires_ms)'],hd2_courier_outbox:['SELECT (attempts, bot_id, created_at, delivered_at, due_ms, id, idem_key, last_error_code, lease_until_ms, state, telegram_message_id)']};
+const systemWrite={...write,hd2_system_mappings:['SELECT','INSERT','UPDATE'],hd2_system_state:['SELECT','INSERT','UPDATE'],hd2_system_incidents:['INSERT'],hd2_system_jobs:['SELECT','INSERT','UPDATE'],hd2_system_requests:['SELECT','INSERT','UPDATE'],hd2_system_targets:['SELECT','INSERT','UPDATE'],hd2_system_alerts:['SELECT','INSERT','UPDATE'],hd2_courier_workers:['SELECT (bot_id, expires_ms)']};
+const systemCourier={hd2_system_mappings:['SELECT'],hd2_system_targets:['SELECT']};
+const chatRead={...systemRead,hd2_chat_messages:['SELECT']};
+const chatWrite={...systemWrite,users:['SELECT (id, is_active, name, role, username)'],hd2_chat_messages:['SELECT','INSERT']};
+const chatCourier={...systemCourier,hd2_chat_messages:['SELECT','INSERT']};
+const policies={chatRead,chatWrite,courierChat:{...courier,...chatCourier,hd2_courier_outbox:['SELECT (id, telegram_message_id)']},courierSendChat:{...courierSend,...chatCourier},read,write,courier,courierSend,trialWrite,systemRead,systemWrite,courierSystem:{...courier,...systemCourier},courierSendSystem:{...courierSend,...systemCourier}};
+for(const name of ['chatWrite','courierSendChat'])policies[name+'Fifo']={...policies[name],hd2_courier_lanes:['SELECT','INSERT','UPDATE']};
+function privileges(text){
+ const parts=text.match(/[A-Z_ ]+(?:\s*\([^)]*\))?(?=,|$)/gi)||[];
+ return parts.map(p=>{const m=/^\s*([A-Z_ ]+?)(?:\s*\(([^)]*)\))?\s*$/i.exec(p);if(!m)throw Error('Grant rejected');return m[1].trim().toUpperCase()+(m[2]?' ('+m[2].replace(/`/g,'').split(',').map(v=>v.trim()).sort().join(', ')+')':'');});
+}
+function reviewOperationalGrants(rows,role){
+ const policy=policies[role];if(!policy)throw Error('Pool role rejected');
+ // Notes are additive: accept their exact backend grants without making an
+ // unapplied notes migration prevent existing Web/Courier pools from starting.
+ const notePermissions=role.toLowerCase().includes('courier')?null:role.toLowerCase().includes('write')?['SELECT','INSERT','UPDATE']:['SELECT'];
+ const found=Object.fromEntries(Object.keys(policy).map(t=>[t,new Set()]));let unsafe=false;
+ for(const row of rows){
+  const value=String(Object.values(row)[0]);if(/WITH GRANT OPTION/i.test(value)){unsafe=true;continue;}if(/^GRANT USAGE ON \*\.\* TO /i.test(value))continue;
+  const m=/^GRANT (.+) ON (.+) TO /i.exec(value);
+  if(!m||/WITH GRANT OPTION/i.test(value)){unsafe=true;continue;}
+  const scope=m[2].replace(/`/g,'').replace(/\\_/g,'_').split('.');
+  if(scope[0]==='hdwork2'&&scope[1]==='hd2_order_notes'&&notePermissions){
+   try{const ps=privileges(m[1]);if(!ps.length||ps.some(p=>!notePermissions.includes(p)))unsafe=true;}catch{unsafe=true;}
+   continue;
+  }
+  if(scope[0]==='hdwork2'&&scope[1]==='hd2_vlan_reference'&&notePermissions){
+   const allowed=role.toLowerCase().includes('write')?['SELECT','INSERT','UPDATE','DELETE']:['SELECT'];
+   try{const ps=privileges(m[1]);if(!ps.length||ps.some(p=>!allowed.includes(p)))unsafe=true;}catch{unsafe=true;}
+   continue;
+  }
+  if(scope[0]!=='hdwork2'||!Object.hasOwn(policy,scope[1])){unsafe=true;continue;}
+  let permissions;try{permissions=privileges(m[1]);}catch{unsafe=true;continue;}
+  if(!permissions.length){unsafe=true;continue;}
+  for(const p of permissions){if(!policy[scope[1]].includes(p))unsafe=true;found[scope[1]].add(p);}
+ }
+ const missing=Object.entries(policy).flatMap(([t,ps])=>ps.filter(p=>!found[t].has(p)).map(p=>t+':'+p));
+ return {ok:!unsafe&&!missing.length,role,unsafe,missing};
+}
+module.exports={policies,privileges,reviewOperationalGrants};

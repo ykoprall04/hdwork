@@ -34,12 +34,13 @@ def validate_groups(groups):
 
 
 class IngressPolicy:
-    def __init__(self, bot_id, bot_username, groups, test_window=None, chat_enabled=False):
+    def __init__(self, bot_id, bot_username, groups, test_window=None, chat_enabled=False, command_settings=None):
         self.bot_id, self.bot_username = bot_id, bot_username
         self.groups = validate_groups(groups)
         if test_window and chat_enabled:
             raise ValueError('chat_not_allowed_in_single_order_window')
         self.chat_enabled = chat_enabled
+        self.command_settings = command_settings
         self.test_window, self.selected_message = test_window, None
 
     def refresh(self, configuration):
@@ -87,6 +88,10 @@ class IngressPolicy:
         return not (group['threadMode'] == 'non_topic' and (message.get('is_topic_message') is True or message['chat'].get('is_forum') is True))
 
     def prepare(self, update):
+        if self.command_settings is not None and not self.command_settings.ready:
+            # RuntimeError rolls journal.append back rather than acknowledging or
+            # quarantining a message before global settings are known.
+            raise RuntimeError('command_settings_not_ready')
         if not self.allows_source(update):
             return None, 'IGNORED', 'unmapped_group_or_thread'
         envelope = parse_update(update, self.bot_id)
@@ -108,6 +113,10 @@ class IngressPolicy:
         parsed = parse_command(event['text'], group['profile'], self.bot_username)
         if parsed.get('command') not in group['commands']:
             return None, 'IGNORED', 'command_not_allowed_or_invalid'
+        # Gate only new commands. Existing journal events, ACKs, outbox and chat
+        # replies never pass through this gate again when a setting changes.
+        if self.command_settings is not None and not self.command_settings.enabled(parsed['command']):
+            return None, 'IGNORED', 'global_command_disabled'
         from .raw_log import logger
         logger().emit('TELEGRAM_COMMAND', command=parsed['command'], status='VALID' if parsed['valid'] else 'INVALID')
         if not parsed['valid']:
