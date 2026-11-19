@@ -19,7 +19,7 @@ test('batch notes filter module scope, validate IDs, and reject non-HD/trial bef
  for(const actor of [{...user,role:'SHOW_ONLY'},{...user,role:'ADMIN'},{...user,username:'trial_yanto'}])await assert.rejects(notes.list(id,actor),{statusCode:403});
  await assert.rejects(notes.list('invalid',user),{statusCode:400});assert.equal(calls.length,1);
 });
-function writer({module='TIAL',active=1,session=true,failInsert=false,failRestore=false}={}){
+function writer({module='TIAL',status='IN_PROGRESS',owner=2,active=1,session=true,failInsert=false,failRestore=false}={}){
  const calls=[];let text='';
  const sessionCalls=[];
  const c={async query(sql,p){sessionCalls.push([sql,p]);if(p&&failRestore)throw Error('synthetic restore failure');if(sql.startsWith('SELECT @@SESSION'))return [[{metadataTimeout:31536000,rowTimeout:50}]];return [{}];},destroy(){calls.push('destroy');},async beginTransaction(){calls.push('begin');},async commit(){calls.push('commit');},async rollback(){calls.push('rollback');},release(){calls.push('release');},async execute(sql,p){
@@ -27,23 +27,24 @@ function writer({module='TIAL',active=1,session=true,failInsert=false,failRestor
   if(sql.startsWith('SELECT id,role'))return [[{id:2,role:'HD',is_active:active}]];
   if(sql.includes('FROM hd2_sessions'))return [session?[{token_hash:'synthetic'}]:[]];
   if(sql.includes('FROM hd2_user_modules'))return [[{module:'TIAL'}]];
-  if(sql.includes('SELECT access_module'))return [[{access_module:module}]];
+  if(sql.includes('SELECT access_module'))return [[{access_module:module,status,owner_user_id:owner}]];
   if(sql.startsWith('INSERT INTO hd2_order_notes')){if(failInsert)throw Error('synthetic database failure');text=p[1];return [{affectedRows:1}];}
   if(sql.startsWith('INSERT INTO hd2_live_events'))return [{affectedRows:1}];
   throw Error('Unexpected query '+sql);
  }};
  return {calls,sessionCalls,get text(){return text;},pool:{async getConnection(){return c;}}};
 }
-test('notes save in a transaction independently of order version, status, chat and Telegram outbox',async()=>{
+test('notes save in a transaction for the active owner without changing order version, chat or Telegram outbox',async()=>{
  const w=writer(),notes=createNotes({writePool:w.pool});const id=randomUUID();
  assert.equal((await notes.save(id,'synthetic',user,{text:' note '})).text,'note');assert.equal(w.text,'note');
+ assert.ok(w.calls.some(sql=>sql.includes('owner_user_id FROM hd2_orders WHERE id=? FOR SHARE')));
  assert.ok(w.calls.some(sql=>sql.includes('ON DUPLICATE KEY UPDATE body=?')));assert.deepEqual(w.calls.slice(-2),['commit','release']);
  assert.equal(w.sessionCalls[1][0],'SET SESSION lock_wait_timeout=5, innodb_lock_wait_timeout=5');assert.deepEqual(w.sessionCalls.at(-1)[1],[31536000,50]);
  assert.equal(w.calls.some(sql=>/UPDATE hd2_orders|hd2_courier_outbox|hd2_chat_messages|hd2_audit/.test(sql)),false);
  await notes.save(id,'synthetic',user,{text:''});assert.equal(w.text,'');
 });
-test('notes recheck active actor/session/module in transaction; failures roll back without committing',async()=>{
- for(const [options,status] of [[{active:0},403],[{session:false},401],[{module:'REQ'},404],[{failInsert:true},undefined]]){
+test('notes recheck active actor, session, module, status and owner in transaction; failures roll back without committing',async()=>{
+ for(const [options,status] of [[{active:0},403],[{session:false},401],[{module:'REQ'},404],[{owner:3},403],[{status:'DONE'},403],[{failInsert:true},undefined]]){
   const w=writer(options),notes=createNotes({writePool:w.pool});
   await assert.rejects(notes.save(randomUUID(),'synthetic',user,{text:'private'}),status?{statusCode:status}:/synthetic database failure/);
   assert.deepEqual(w.calls.slice(-2),['rollback','release']);assert.equal(w.calls.includes('commit'),false);
@@ -65,4 +66,21 @@ test('optional note grants accept only backend SELECT/INSERT/UPDATE and never gr
   if(!role.startsWith('courier'))assert.equal(reviewOperationalGrants(extra('SELECT, INSERT, UPDATE'),role).ok,role.toLowerCase().includes('write'));
   assert.equal(reviewOperationalGrants(extra('DELETE'),role).ok,false);
  }
+});
+test('process list projects purpose only for config_psb and preserves the masked INET',async()=>{
+ const {reader}=require('../src/operations/read');
+ const sample={id:randomUUID(),command:'config_psb',inet:'12345678',telegram_timestamp:1700000000,psb_purpose:'Pasang baru'};
+ const mock={async execute(sql){
+  if(sql.includes('hd2_web_requests'))return [[]];
+  assert.equal(sql.includes('AS psb_purpose'),sql.includes("o.status='IN_PROGRESS'"));
+  return [[sample,{...sample,id:randomUUID(),command:'mo'}]];
+ }};
+ const read=reader(mock),actor={...user,modules:['LOGIC_PSB','LOGIC_MO']};
+ const process=await read.list({area:'LOGIC',tab:'process'},actor);
+ assert.equal(process.data[0].purpose,'Pasang baru');
+ assert.equal(process.data[0].inetMasked,'••••5678');
+ assert.ok(!JSON.stringify(process).includes('12345678'));
+ assert.equal(process.data[1].purpose,undefined);
+ const finished=await read.list({area:'LOGIC',tab:'finished'},actor);
+ assert.ok(finished.data.every(order=>!Object.hasOwn(order,'purpose')));
 });

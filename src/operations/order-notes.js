@@ -27,8 +27,9 @@ function createNotes({readPool,writePool}){return {
    if(!actor||actor.role!=='HD'||![1,true].includes(actor.is_active))throw fail(403);
    const [[session]]=await c.execute('SELECT token_hash FROM hd2_sessions WHERE token_hash=? AND user_id=? AND revoked=FALSE AND expires_at>UTC_TIMESTAMP(3) FOR SHARE',[digest(token),user.id]);if(!session)throw fail(401);
    const [grants]=await c.execute('SELECT module FROM hd2_user_modules WHERE user_id=? FOR SHARE',[user.id]);
-   const [[order]]=await c.execute('SELECT access_module FROM hd2_orders WHERE id=? FOR SHARE',[id]);
+   const [[order]]=await c.execute('SELECT access_module,status,owner_user_id FROM hd2_orders WHERE id=? FOR SHARE',[id]);
    if(!order||!grants.some(g=>g.module===order.access_module))throw fail(404);
+   if(order.status!=='IN_PROGRESS'||String(order.owner_user_id)!==String(user.id))throw fail(403,'Catatan hanya bisa diedit oleh HD yang sedang menangani order.');
    // One shared note per order. Concurrent saves are atomic; last committed save wins.
    await c.execute('INSERT INTO hd2_order_notes(order_id,body,updated_by) VALUES (?,?,?) ON DUPLICATE KEY UPDATE body=?,updated_by=?,updated_at=UTC_TIMESTAMP(3)',[id,text,user.id,text,user.id]);
    await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,'change')",[order.access_module]);
