@@ -4,7 +4,7 @@ import {Link,useLocation} from 'react-router-dom';
 import {useAuth} from '@/contexts/AuthContext';
 import {Button} from '@/components/ui/button';
 import WorkStatusBadge from './WorkStatusBadge';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Check, Copy, Search, SlidersHorizontal } from 'lucide-react';
 import {Section,Empty} from '../operations/components';
 import {jakartaToday} from '../tial/query';
 import {useWorkData,useServerClock} from './hooks';
@@ -22,6 +22,7 @@ import {sortUnread} from './incoming-cursor';
 import {HdNoteField,type HdNoteData} from './HdNote';
 const field='mt-1 block w-full rounded-lg border bg-background p-2 text-sm';
 export default function WorkList(){
+ const [copyFeedback,setCopyFeedback]=useState<{id:string;copied:boolean}|null>(null);
  const [selectedOrder,setSelectedOrder]=useState<string|null>(null),[inlineWorkspace,setInlineWorkspace]=useState(false),[workspaceOpen,setWorkspaceOpen]=useState(false),[mySearch,setMySearch]=useState('');
  const {user}=useAuth();const location=useLocation();const workspace=location.pathname.split('/')[2]||'B2C';const area=workspace==='B2C'?(location.pathname.includes('LOGIC')?'LOGIC':'TIAL'):workspace;
  const [tab,setTab]=useState('incoming'),[command,setCommand]=useState(''),[mine,setMine]=useState(true),[from,setFrom]=useState(''),[to,setTo]=useState(''),[hd,setHd]=useState(''),[status,setStatus]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(1);
@@ -38,6 +39,14 @@ export default function WorkList(){
  const notesById=new Map(tableNotes.data?.data.map(note=>[note.id,note]));
  const privateOrders=sortUnread(mineWork.data||[],incoming.isUnread).filter(order=>`${order.scIn||''} ${order.inetMasked||''} ${order.module} ${order.command}`.toLowerCase().includes(mySearch.trim().toLowerCase()));
  useEffect(()=>{if(inlineWorkspace&&selectedOrder&&mineWork.loaded&&!mineWork.data.some(order=>order.id===selectedOrder)){setSelectedOrder(null);}},[inlineWorkspace,selectedOrder,mineWork.loaded,mineWork.data]);
+ async function copyIdentifier(id:string,value:string){
+  try{
+   await navigator.clipboard.writeText(value);
+   setCopyFeedback({id,copied:true});
+  }catch{
+   setCopyFeedback({id,copied:false});
+  }
+ }
  function openOrder(event:MouseEvent<HTMLAnchorElement>,id:string){
   if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
   event.preventDefault();const row=data?.data.find(order=>order.id===id);setSelectedOrder(id);setInlineWorkspace(tab==='process'&&String(row?.ownerId)===String(user?.id));setWorkspaceOpen(true);
@@ -83,23 +92,30 @@ export default function WorkList(){
   const inProcess=tab==='process';
   const editable=inProcess&&!error&&ownsActiveOrder(order,user?.id);
   const purpose=inProcess&&order.command==='config_psb'?order.purpose?.trim():undefined;
+  const inet=order.inet??order.inetMasked;
+  const identifier=order.scIn||(inProcess?inet:order.inetMasked);
+  const feedback=copyFeedback?.id===order.id?copyFeedback:null;
   const note=notesById.get(order.id);
   return <tr key={order.id} data-selected={selectedOrder===order.id} className="border-b last:border-0 hover:bg-muted/40">
  <td className="p-2 align-top">
   <div className={inProcess?'grid min-w-0 gap-2 lg:grid-cols-2 lg:gap-4':undefined}>
-   <div className="min-w-0">
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-     <Link data-order-id={order.id} aria-haspopup={inProcess&&String(order.ownerId)===String(user?.id)?undefined:'dialog'} className="max-w-full break-all font-medium text-primary underline" to={`/orders/${order.id}`} onClick={event=>openOrder(event,order.id)}>{order.scIn||order.inetMasked||'Order /'+order.command}</Link>
-     {incoming.isUnread(order.id)&&<span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">PESAN BARU</span>}
-     {validDate&&!inProcess&&<Actions key={`${user?.id}:${order.id}`} compact order={order} refresh={refresh}/>}
+   <div className={inProcess?'flex min-w-0 items-start gap-1.5':'min-w-0'}>
+    {inProcess&&identifier&&<Button variant="ghost" size="icon-xs" className="-mt-0.5 max-sm:min-w-10" aria-label="Salin identifier order" title="Salin identifier order" onClick={()=>void copyIdentifier(order.id,identifier)}>{feedback?.copied?<Check aria-hidden="true"/>:<Copy aria-hidden="true"/>}</Button>}
+    <div className="min-w-0">
+     <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+      <Link data-order-id={order.id} aria-haspopup={inProcess&&String(order.ownerId)===String(user?.id)?undefined:'dialog'} className="max-w-full break-all font-medium text-primary underline" to={`/orders/${order.id}`} onClick={event=>openOrder(event,order.id)}>{identifier||'Order /'+order.command}</Link>
+      {incoming.isUnread(order.id)&&<span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">PESAN BARU</span>}
+      {validDate&&!inProcess&&<Actions key={`${user?.id}:${order.id}`} compact order={order} refresh={refresh}/>}
+     </div>
+     {inProcess?inet&&inet!==identifier&&<p className="mt-1 text-xs tabular-nums text-muted-foreground">{inet}</p>:<p className="mt-1 text-[10px] text-muted-foreground">SC/IN: {order.scIn||'—'} &middot; INET: {order.inetMasked||'—'}</p>}
+     {inProcess&&<span role="status" className={feedback&&!feedback.copied?'text-xs text-destructive':'sr-only'}>{feedback&&(feedback.copied?'Identifier tersalin.':'Gagal menyalin. Pilih teks untuk menyalinnya.')}</span>}
     </div>
-    {inProcess?order.inetMasked&&<p className="mt-1 text-xs text-muted-foreground">INET/TELP: <span className="tabular-nums">{order.inetMasked}</span></p>:<p className="mt-1 text-[10px] text-muted-foreground">SC/IN: {order.scIn||'—'} &middot; INET: {order.inetMasked||'—'}</p>}
    </div>
-   {purpose&&<dl className="min-w-0 text-xs"><dt className="font-medium text-muted-foreground">Keperluan</dt><dd className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{purpose}</dd></dl>}
+   {purpose&&<p className="min-w-0 whitespace-pre-wrap text-xs [overflow-wrap:anywhere]">{purpose}</p>}
   </div>
  </td>
  {tab==='process'?<><td data-label="Kategori" className="p-2 text-xs">{order.module}<span className="block text-muted-foreground">/{order.command}</span></td>{!mine&&<td data-label="Petugas" className="p-2 text-xs">{order.ownerName||'Belum PICK'}</td>}<td data-label="Durasi" className="p-2 text-xs tabular-nums"><WorkTimer order={order} now={now}/></td>{!mine&&<td data-label="Aksi" className="p-2"><Actions key={`${user?.id}:${order.id}`} compact takeoverOnly order={order} refresh={refresh}/></td>}</>:<><td data-label="Kategori" className="p-3 text-xs">{order.module}<span className="block text-muted-foreground">/{order.command}</span></td><td data-label="Status" className="p-3"><WorkStatusBadge status={order.status} decision={order.decision}/></td><td data-label="Petugas" className="p-3 text-xs">{order.ownerName||'Belum PICK'}</td><td data-label="Waktu masuk" className="p-3 text-xs">{new Date(order.receivedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</td><td data-label="Pengerjaan" className="p-3 text-xs tabular-nums"><WorkTimer order={order} now={now}/><FeedbackStatus feedback={order.feedback}/></td></>}{canReadNotes&&<td data-label="CATATAN HD" className="max-w-64 p-2 align-top text-xs max-sm:col-span-full max-sm:max-w-none">
- {inProcess?<HdNoteField key={`${user?.id}:${editable}`} id={order.id} note={note} editable={editable} readError={tableNotes.error} refresh={()=>{void tableNotes.refresh();void refresh();}}/>:<p className="line-clamp-2 whitespace-pre-wrap break-words" title={note?.text}>{tableNotes.error?'Catatan belum tersedia':note?.text||'—'}</p>}
+ {inProcess?<HdNoteField key={`${user?.id}:${editable}`} id={order.id} note={note} compact editable={editable} readError={tableNotes.error} refresh={()=>{void tableNotes.refresh();void refresh();}}/>:<p className="line-clamp-2 whitespace-pre-wrap break-words" title={note?.text}>{tableNotes.error?'Catatan belum tersedia':note?.text||'—'}</p>}
  </td>}</tr>;})}</tbody></table></div>}
  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><span className="text-xs text-muted-foreground">Halaman {page}</span><div className="flex gap-2"><Button variant="outline" disabled={loading||page<=1} onClick={()=>setPage(p=>p-1)}>Sebelumnya</Button><Button variant="outline" disabled={loading||!data?.hasMore||page>=10000} onClick={()=>setPage(p=>p+1)}>Berikutnya</Button></div></div>
  </>}

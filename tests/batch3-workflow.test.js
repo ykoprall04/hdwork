@@ -67,7 +67,7 @@ test('optional note grants accept only backend SELECT/INSERT/UPDATE and never gr
   assert.equal(reviewOperationalGrants(extra('DELETE'),role).ok,false);
  }
 });
-test('process list projects purpose only for config_psb and preserves the masked INET',async()=>{
+test('process list projects full INET and only config_psb purpose, with other lists still masked',async()=>{
  const {reader}=require('../src/operations/read');
  const sample={id:randomUUID(),command:'config_psb',inet:'12345678',telegram_timestamp:1700000000,psb_purpose:'Pasang baru'};
  const mock={async execute(sql){
@@ -79,8 +79,9 @@ test('process list projects purpose only for config_psb and preserves the masked
  const process=await read.list({area:'LOGIC',tab:'process'},actor);
  assert.equal(process.data[0].purpose,'Pasang baru');
  assert.equal(process.data[0].inetMasked,'••••5678');
- assert.ok(!JSON.stringify(process).includes('12345678'));
+ assert.equal(process.data[0].inet,'12345678');
  assert.equal(process.data[1].purpose,undefined);
  const finished=await read.list({area:'LOGIC',tab:'finished'},actor);
- assert.ok(finished.data.every(order=>!Object.hasOwn(order,'purpose')));
+ assert.ok(finished.data.every(order=>!Object.hasOwn(order,'purpose')&&!Object.hasOwn(order,'inet')));
+ assert.ok(!JSON.stringify(finished).includes('12345678'));
 });

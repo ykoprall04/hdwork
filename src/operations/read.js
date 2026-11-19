@@ -14,7 +14,7 @@ function reader(pool){return {
   const purposeField="JSON_EXTRACT(o.command_fields,'$.KETERANGAN')";
   const purpose=process?`,CASE WHEN o.command='config_psb' AND JSON_TYPE(${purposeField})='STRING' THEN JSON_UNQUOTE(${purposeField}) END AS psb_purpose`:'';
   const [rows]=await pool.execute(`SELECT ${projection}${purpose}${joins} WHERE ${w.sql} ORDER BY ${sort} LIMIT 26 OFFSET ?`,[...w.values,(f.page-1)*25]);
-  const data=rows.slice(0,25).map(row=>({...dto(row),...(process&&row.command==='config_psb'&&row.psb_purpose?{purpose:row.psb_purpose}:{})}));
+  const data=rows.slice(0,25).map(row=>({...dto(row),...(process?{inet:row.inet||null}:{}),...(process&&row.command==='config_psb'&&row.psb_purpose?{purpose:row.psb_purpose}:{})}));
   await attachFeedback(pool,data);
   return {data,page:f.page,hasMore:rows.length>25,serverNow:new Date().toISOString()};
  },
