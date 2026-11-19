@@ -1,19 +1,37 @@
 import {useEffect,useRef,useState} from 'react';
+import {FileSpreadsheet} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cookieFetch} from '../operational/cookie-http';
 import {request,operationsBase} from './api';
 export default function ExportButton({
  query,
  disabled = false,
+ prominent = false,
  description = 'Semua status; mengikuti filter tanggal, area, jenis perintah, pencarian, dan akses modul. Filter status tab tidak membatasi export.',
 }: {
  query: Record<string, string>;
  disabled?: boolean;
+ prominent?: boolean;
  description?: string;
 }) {
  const [job,setJob]=useState<string|null>(null),[status,setStatus]=useState(''),[busy,setBusy]=useState(false);const active=useRef<string|null>(null);
  useEffect(()=>{if(!job)return;let stopped=false,pauseUntil=0;const poll=async()=>{if(Date.now()<pauseUntil)return;try{const value=await request<{state:string;rows:number}>(`/exports/${job}/status`);if(stopped)return;setStatus(`${({waiting:'Menunggu unduhan',running:'Export berjalan',done:'Selesai',failed:'Gagal',cancelled:'Dibatalkan'} as Record<string,string>)[value.state]||'Memproses'} · ${value.rows} baris`);if(['done','failed','cancelled'].includes(value.state)){setBusy(false);active.current=null;clearInterval(timer);}}catch(e){if(!stopped){const issue=e as {status?:number;retryAfter?:number};if([401,403,404].includes(issue.status||0)){setBusy(false);active.current=null;clearInterval(timer);setStatus('Status export berakhir. Periksa unduhan atau akses Anda.');}else{if(issue.status===429)pauseUntil=Date.now()+(issue.retryAfter||60)*1000;setStatus('Status export belum dapat dibaca; mencoba kembali.');}}}};const timer=setInterval(()=>void poll(),2000);void poll();return()=>{stopped=true;clearInterval(timer);};},[job]);
  useEffect(()=>{const cancel=()=>{if(active.current)void cookieFetch(`${operationsBase}/exports/${active.current}/cancel`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});};window.addEventListener('pagehide',cancel);return()=>{window.removeEventListener('pagehide',cancel);cancel();};},[]);
  async function start(){if(busy||disabled)return;setBusy(true);setStatus('Menyiapkan Excel…');try{const value=await request<{id:string}>('/exports',query);setJob(value.id);active.current=value.id;const a=document.createElement('a');a.href=operationsBase+'/exports/'+value.id;a.download='hdwork-orders.xlsx';document.body.appendChild(a);a.click();a.remove();}catch(e){setStatus(e instanceof Error?e.message:'Export gagal');setBusy(false);}}
- return <div className="flex flex-wrap items-center gap-2"><Button variant="outline" disabled={busy||disabled} onClick={()=>void start()}>Export Excel</Button><span className="text-xs text-muted-foreground">{description}</span>{busy&&<Button variant="ghost" onClick={()=>{if(job)void request(`/exports/${job}/cancel`,{}).catch(()=>setStatus('Pembatalan belum terkonfirmasi'));}}>Batalkan export</Button>}<span role="status" className="text-xs text-muted-foreground">{status}</span></div>;
+ return (
+  <div className={prominent ? 'grid items-center gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto]' : 'flex flex-wrap items-center gap-2'}>
+   <Button
+    variant={prominent ? 'default' : 'outline'}
+    className={prominent ? 'h-12 w-full px-4 sm:col-start-2 sm:row-start-1 sm:w-auto motion-reduce:transition-none' : undefined}
+    disabled={busy || disabled}
+    onClick={() => void start()}
+   >
+    {prominent && <FileSpreadsheet aria-hidden />}
+    Export Excel
+   </Button>
+   <p className={prominent ? 'text-sm leading-relaxed text-muted-foreground sm:col-start-1 sm:row-start-1' : 'text-xs leading-relaxed text-muted-foreground'}>{description}</p>
+   {busy && <Button variant="ghost" className={prominent ? 'min-h-11 sm:col-start-2 sm:row-start-2' : undefined} onClick={() => { if (job) void request(`/exports/${job}/cancel`, {}).catch(() => setStatus('Pembatalan belum terkonfirmasi')); }}>Batalkan export</Button>}
+   <span role="status" className={prominent ? 'text-sm text-muted-foreground empty:absolute sm:col-start-1 sm:row-start-2' : 'text-xs text-muted-foreground'}>{status}</span>
+  </div>
+ );
 }

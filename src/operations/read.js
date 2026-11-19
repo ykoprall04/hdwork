@@ -7,7 +7,17 @@ const dto=r=>({id:r.id,command:r.command||'manual',module:r.module,status:r.stat
 async function readTx(pool,fn){const c=await pool.getConnection();try{await c.query('SET TRANSACTION READ ONLY');await c.beginTransaction();const result=await fn(c);await c.commit();return result;}catch(e){await c.rollback();throw e;}finally{c.release();}}
 const aggregateInFlight=new WeakMap();
 function reader(pool){return {
- async list(query,user){const f=filters(query,user),w=where(f,user);const sort=f.tab==='process'?'o.started_at DESC,o.id DESC':'o.telegram_timestamp DESC,o.id DESC';const [rows]=await pool.execute(`SELECT ${projection}${joins} WHERE ${w.sql} ORDER BY ${sort} LIMIT 26 OFFSET ?`,[...w.values,(f.page-1)*25]);const data=rows.slice(0,25).map(dto);await attachFeedback(pool,data);return {data,page:f.page,hasMore:rows.length>25,serverNow:new Date().toISOString()};},
+ async list(query,user){
+  const f=filters(query,user),w=where(f,user);
+  const process=f.tab==='process';
+  const sort=process?'o.started_at DESC,o.id DESC':'o.telegram_timestamp DESC,o.id DESC';
+  const purposeField="JSON_EXTRACT(o.command_fields,'$.KETERANGAN')";
+  const purpose=process?`,CASE WHEN o.command='config_psb' AND JSON_TYPE(${purposeField})='STRING' THEN JSON_UNQUOTE(${purposeField}) END AS psb_purpose`:'';
+  const [rows]=await pool.execute(`SELECT ${projection}${purpose}${joins} WHERE ${w.sql} ORDER BY ${sort} LIMIT 26 OFFSET ?`,[...w.values,(f.page-1)*25]);
+  const data=rows.slice(0,25).map(row=>({...dto(row),...(process&&row.command==='config_psb'&&row.psb_purpose?{purpose:row.psb_purpose}:{})}));
+  await attachFeedback(pool,data);
+  return {data,page:f.page,hasMore:rows.length>25,serverNow:new Date().toISOString()};
+ },
  async detail(id,user,page=1){uuid(id);if(!Number.isInteger(page)||page<1||page>10000)throw fail();return readTx(pool,async c=>{
  const f=filters({},user),w=where(f,user,{recap:true});const [[row]]=await c.execute(`SELECT ${projection},o.command_fields,o.raw_text${joins} WHERE o.id=? AND ${w.sql}`,[id,...w.values]);if(!row)throw fail(404);
  const [events]=await c.execute("SELECT a.id,a.action,a.from_status,a.to_status,a.detail,a.user_id,u.name,DATE_FORMAT(a.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS at FROM hd2_audit a LEFT JOIN users u ON u.id=a.user_id WHERE a.order_id=? ORDER BY a.created_at DESC,a.id DESC LIMIT 26 OFFSET ?",[id,(page-1)*25]);

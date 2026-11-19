@@ -1,25 +1,74 @@
-import {useState} from 'react';
-import {Button} from '@/components/ui/button';
-import {useWorkData} from './hooks';
-import {request} from './api';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
+import { useWorkData } from './hooks';
+import { request } from './api';
+import { ownsActiveOrder, type Work } from './model';
 
-export type HdNoteData={id:string;text:string;updatedBy:number|null;updatedAt:string|null};
-export default function HdNote({id}:{id:string}){
- const notes=useWorkData<{data:HdNoteData[]}>('/order-notes?ids='+encodeURIComponent(id));
- const [draft,setDraft]=useState<string|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
- const note=notes.data?.data.find(row=>row.id===id);
- async function save(){
-  if(!note||busy)return;setBusy(true);setError('');setSaved(false);
-  try{await request(`/orders/${id}/hd-note`,{text:draft??note.text});setDraft(null);setSaved(true);await notes.refresh();}
-  catch(cause){setError(cause instanceof Error?cause.message:'Catatan belum tersimpan');}
-  finally{setBusy(false);}
- }
- return <details aria-label="Catatan HD" className="space-y-2 rounded-lg border p-3">
-  <summary className="cursor-pointer text-sm font-semibold">CATATAN HD <span className="font-normal">· Edit catatan</span></summary>
-  <label className="block text-sm font-semibold">CATATAN HD<textarea aria-label="Isi Catatan HD" rows={3} maxLength={2000} disabled={!note||busy} className="mt-1 w-full rounded-lg border bg-background p-2 font-normal" value={draft??note?.text??''} onChange={e=>{setDraft(e.target.value);setSaved(false);}}/></label>
-  <p className="text-xs text-muted-foreground">Catatan internal bersama · maksimal 2.000 karakter · penyimpanan terakhir berlaku.</p>
-  <Button size="sm" disabled={!note||busy||draft===null} onClick={()=>void save()}>{busy?'Menyimpan…':'Simpan Catatan'}</Button>
-  {saved&&<p role="status" className="text-xs">Catatan tersimpan.</p>}
-  {(error||notes.error)&&<p role="alert">{error||notes.error}<Button variant="ghost" onClick={()=>void notes.refresh()}>Muat ulang catatan</Button></p>}
- </details>;
+export type HdNoteData = { id: string; text: string; updatedBy: number | null; updatedAt: string | null };
+
+export function HdNoteField({ id, note, editable, readError, refresh }: {
+  id: string;
+  note?: HdNoteData;
+  editable: boolean;
+  readError: string;
+  refresh: () => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState<{ source?: HdNoteData; text: string } | null>(null);
+  const text = saved && saved.source === note ? saved.text : note?.text;
+  const canEdit = editable && Boolean(note) && !readError;
+
+  async function save() {
+    if (!canEdit || busy || draft === null) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await request<{ text: string }>(`/orders/${id}/hd-note`, { text: draft });
+      setSaved({ source: note, text: result.text });
+      setDraft(null);
+      refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Catatan belum tersimpan');
+      refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="min-w-0 space-y-1">
+      {canEdit && draft !== null ? (
+        <div className="space-y-2">
+          <textarea aria-label="Isi Catatan HD" rows={3} maxLength={2000} disabled={busy} className="block w-full rounded-lg border bg-background p-2 text-base sm:text-sm" value={draft} onChange={event => setDraft(event.target.value)} />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" className="min-h-11" disabled={busy} onClick={() => void save()}>{busy ? 'Menyimpan…' : 'Simpan Catatan'}</Button>
+            <Button size="sm" className="min-h-11" variant="ghost" disabled={busy} onClick={() => { setDraft(null); setError(''); }}>Batal</Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{readError ? 'Catatan belum tersedia' : text || '—'}</p>
+          {canEdit && <Button size="sm" variant="outline" className="min-h-11" onClick={() => { setDraft(text ?? ''); setSaved(null); setError(''); }}>{text ? 'Edit catatan' : 'Tambah catatan'}</Button>}
+        </>
+      )}
+      {saved && <p role="status">Catatan tersimpan.</p>}
+      {error && <p role="alert">{error}</p>}
+      {readError && <Button variant="ghost" size="sm" onClick={refresh}>Muat ulang catatan</Button>}
+    </div>
+  );
+}
+
+export default function HdNote({ order, verified }: { order: Work; verified: boolean }) {
+  const { user } = useAuth();
+  const notes = useWorkData<{ data: HdNoteData[] }>('/order-notes?ids=' + encodeURIComponent(order.id));
+  const editable = verified && ownsActiveOrder(order, user?.id);
+  return (
+    <details aria-label="Catatan HD" className="space-y-2 rounded-lg border p-3">
+      <summary className="cursor-pointer text-sm font-semibold">CATATAN HD</summary>
+      <HdNoteField key={String(editable)} id={order.id} note={notes.data?.data.find(row => row.id === order.id)} editable={editable} readError={notes.error} refresh={() => void notes.refresh()} />
+    </details>
+  );
 }

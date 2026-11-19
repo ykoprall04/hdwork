@@ -26,12 +26,12 @@ test('MySQL 8.4 isolated notes migration and backend, including real locks and g
   // Non-Unicode database default deliberately exercises explicit notes charset.
   await c.query('CREATE DATABASE hdwork2 CHARACTER SET latin1');await c.query('USE hdwork2');
   await c.query('CREATE TABLE users(id BIGINT UNSIGNED PRIMARY KEY,role VARCHAR(20),is_active BOOLEAN) ENGINE=InnoDB');
-  await c.query("CREATE TABLE hd2_orders(id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,access_module VARCHAR(20),status VARCHAR(20),version BIGINT UNSIGNED) ENGINE=InnoDB");
+  await c.query("CREATE TABLE hd2_orders(id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,access_module VARCHAR(20),status VARCHAR(20),version BIGINT UNSIGNED,owner_user_id BIGINT UNSIGNED) ENGINE=InnoDB");
   await c.query('CREATE TABLE hd2_sessions(token_hash CHAR(64) PRIMARY KEY,user_id BIGINT UNSIGNED,revoked BOOLEAN DEFAULT FALSE,expires_at DATETIME(3)) ENGINE=InnoDB');
   await c.query('CREATE TABLE hd2_user_modules(user_id BIGINT UNSIGNED,module VARCHAR(20),PRIMARY KEY(user_id,module)) ENGINE=InnoDB');
   await c.query('CREATE TABLE hd2_live_events(id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,module VARCHAR(20),kind VARCHAR(20)) ENGINE=InnoDB');
   await c.query("INSERT INTO users VALUES(1,'HD',TRUE),(2,'HD',TRUE)");
-  await c.execute("INSERT INTO hd2_orders VALUES(?,'TIAL','IN_PROGRESS',7)",[id]);
+  await c.execute("INSERT INTO hd2_orders VALUES(?,'TIAL','IN_PROGRESS',7,1)",[id]);
   await c.query("INSERT INTO hd2_user_modules VALUES(1,'TIAL'),(2,'TIAL')");
   for(const number of [1,2])await c.execute('INSERT INTO hd2_sessions(token_hash,user_id,expires_at) VALUES (?,?,TIMESTAMPADD(HOUR,1,UTC_TIMESTAMP(3)))',[digest(token+number),number]);
   await c.query("CREATE USER 'hdwork_ops_read'@'localhost'");
@@ -63,8 +63,20 @@ test('MySQL 8.4 isolated notes migration and backend, including real locks and g
    await assert.rejects(c.execute('INSERT INTO hd2_order_notes(order_id,body,updated_by) VALUES (?,?,1)',[randomUUID(),'orphan']),{errno:1452});
    await assert.rejects(c.execute('UPDATE hd2_order_notes SET updated_by=999 WHERE order_id=?',[id]),{errno:1452});
   });
+  await t.test('only the current owner can save while the order is active',async()=>{
+   const other={...user,id:2};
+   await assert.rejects(notes.save(id,token+2,other,{text:'denied'}),{statusCode:403});
+   await c.execute('UPDATE hd2_orders SET owner_user_id=2 WHERE id=?',[id]);
+   try{
+    await assert.rejects(notes.save(id,token+1,user,{text:'old owner'}),{statusCode:403});
+    await notes.save(id,token+2,other,{text:'new owner'});
+    await c.execute("UPDATE hd2_orders SET status='DONE' WHERE id=?",[id]);
+    await assert.rejects(notes.save(id,token+2,other,{text:'finished'}),{statusCode:403});
+    assert.equal((await notes.list(id,other)).data[0].text,'new owner');
+   }finally{await c.execute("UPDATE hd2_orders SET owner_user_id=1,status='IN_PROGRESS' WHERE id=?",[id]);}
+  });
   await t.test('simultaneous backend saves serialize: one row, coherent text/author; last successful save persists',async()=>{
-   const bodies=Array.from({length:8},(_,i)=>({actor:i%2+1,text:'Concurrent '+i+' \ud83d\ude80'}));
+   const bodies=Array.from({length:8},(_,i)=>({actor:1,text:'Concurrent '+i+' \ud83d\ude80'}));
    await Promise.all(bodies.map(({actor,text})=>notes.save(id,token+actor,{...user,id:actor},{text})));
    const [rows]=await c.query('SELECT body,updated_by FROM hd2_order_notes');assert.equal(rows.length,1);
    assert.ok(bodies.some(body=>body.text===rows[0].body&&body.actor===Number(rows[0].updated_by)));
