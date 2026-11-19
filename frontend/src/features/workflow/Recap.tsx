@@ -6,10 +6,22 @@ import {Metric,Section} from '../operations/components';
 import {Button} from '@/components/ui/button';
 import {useWorkData} from './hooks';
 import People from './People';
+import ExportButton from './ExportButton';
 import {formatAverage} from './statistics';
 export default function Recap(){const {user}=useAuth();const [area,setArea]=useState('ALL'),[from,setFrom]=useState(''),[to,setTo]=useState(''),[hd,setHd]=useState('');const valid=(!from&&!to)||Boolean(from&&to&&from<=to);const query=new URLSearchParams({area,from:valid?from:'',to:valid?to:'',hd});const {data,loading,error,refresh}=useWorkData<{data:{averageDurationSeconds:number;total:number;waiting:number;process:number;done:number;failed:number}}>(`/recap?${query}`,{area});const field='mt-1 block w-full rounded-lg border bg-background p-2 text-sm';return <>
  <PageHeader eyebrow="Operasional · Rekap" title="Dashboard Rekap" description="Status terbaru menurut tanggal order diterima (WIB)."/>
- <Section title="Filter rekap" description="Default SEMUA modul yang diizinkan · tanpa filter tersimpan."><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><label className="text-xs">Modul<select aria-label="Modul rekap" className={field} value={area} onChange={e=>setArea(e.target.value)}><option value="ALL">SEMUA</option>{user?.modules?.some(m=>['TIAL','REQ'].includes(m))&&<option>TIAL</option>}{user?.modules?.some(m=>m.startsWith('LOGIC'))&&<option>LOGIC</option>}{['ASSUREN','B2B','REPLACEMENT'].filter(m=>user?.modules?.includes(m)).map(m=><option key={m}>{m}</option>)}</select></label><label className="text-xs">Tanggal awal WIB<input aria-label="Rekap mulai" type="date" className={field} value={from} onChange={e=>setFrom(e.target.value)}/></label><label className="text-xs">Tanggal akhir WIB<input aria-label="Rekap akhir" type="date" className={field} value={to} onChange={e=>setTo(e.target.value)}/></label><People value={hd} onChange={setHd}/><Button variant="ghost" onClick={()=>{setFrom('');setTo('');}}>ALL tanggal</Button></div></Section>
+ <Section title="Filter rekap" description="Default SEMUA modul yang diizinkan · tanpa filter tersimpan."><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><label className="text-xs">Modul<select aria-label="Modul rekap" className={field} value={area} onChange={e=>setArea(e.target.value)}><option value="ALL">SEMUA</option>{user?.modules?.some(m=>['TIAL','REQ'].includes(m))&&<option>TIAL</option>}{user?.modules?.some(m=>m.startsWith('LOGIC'))&&<option>LOGIC</option>}{['ASSUREN','B2B','REPLACEMENT'].filter(m=>user?.modules?.includes(m)).map(m=><option key={m}>{m}</option>)}</select></label><label className="text-xs">Tanggal awal WIB<input aria-label="Rekap mulai" type="date" className={field} value={from} onChange={e=>setFrom(e.target.value)}/></label><label className="text-xs">Tanggal akhir WIB<input aria-label="Rekap akhir" type="date" className={field} value={to} onChange={e=>setTo(e.target.value)}/></label><People value={hd} onChange={setHd}/><Button variant="ghost" onClick={()=>{setFrom('');setTo('');}}>ALL tanggal</Button></div>
+ {user && user.role!=='SHOW_ONLY' && (
+  <div className="mt-4 border-t pt-4">
+   <ExportButton
+    key={user.id}
+    query={{area,from,to,hd}}
+    disabled={!valid}
+    description="Unduh order dari semua status sesuai modul, rentang tanggal, dan Nama HD yang dipilih."
+   />
+  </div>
+ )}
+ </Section>
  {!valid&&<p role="alert">Lengkapi rentang tanggal. Filter belum diterapkan.</p>}{error&&<div role="alert"><p>{error}</p><Button onClick={()=>void refresh()}>Coba lagi</Button></div>}{loading&&<p role="status" className="text-xs text-muted-foreground">Memperbarui rekap…</p>}
  <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-6">{[['total','TOTAL ORDER MASUK'],['waiting','BELUM PICK'],['process','PROSES CEK'],['done','DONE'],['failed','GAGAL'],['averageDurationSeconds','RATA-RATA PENGERJAAN']].map(([k,label])=><Metric key={k} label={label} value={data?k==='averageDurationSeconds'?formatAverage(data.data.averageDurationSeconds):data.data[k as keyof typeof data.data]:'—'} detail={k==='failed'?'GAGAL + duplikat ditolak':hd&&['total','waiting'].includes(k)?'Global dalam scope modul/tanggal':'Status terbaru · live'}/>)}</div>
  <p className="text-xs text-muted-foreground">Filter HD tidak mengubah TOTAL/BELUM PICK; duplikat ditolak tetap global dalam GAGAL. Reopen mengubah statistik ke status terbaru.</p><Link className="text-primary underline" to="/work/B2C">Dashboard Pekerjaan</Link>
