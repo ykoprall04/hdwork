@@ -5,7 +5,7 @@ Prepared on `feat/telegram-handbook-export`; no production activation performed.
 
 ## Commands and storage
 
-- `/order`: existing six required fields and identity/deduplication retained.
+- `/order`: five required fields. Identity and deduplication are retained.
   `NO INET/TELP` remains an alias for `NO INET`; additional supported fields remain.
 - `/MO`: existing five required fields and identity extraction retained. Legacy
   `STB ID` remains accepted/stored but is omitted from the failure-reply template.
@@ -23,7 +23,7 @@ New NIK ATASAN, HOSTNAME GPON, IP GPON, NAMA/NIK PELAPOR and WITEL are structure
 All recognized duplicate labels are invalid, including alias/canonical pairs and
 optional labels. Required fields still need an explicit value. A single dash is
 accepted in order details across TIAL, LOGIC, ASSUREN, B2B and REPLACEMENT.
-`SC/IN` and `Order ID DSC` still require a valid order reference. Non-placeholder
+`SC/IN` and `Order ID DSC` still require a valid order reference. For `/order` and `/MO`, `TIPE TRANSAKSI` is optional and is derived from `SC/IN`. Optional detail fields accept a leading dash before a valid value. Non-placeholder
 values follow the usual format checks. In `/MO`, a combined `NO INET/TELP` line
 with two values separated by `/` populates `NO INET` and `NO VOICE`.
 
