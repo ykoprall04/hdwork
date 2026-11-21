@@ -315,7 +315,8 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
  $script:WebUpdatePhase='WEB_RELEASE_DIRECTORY';$releaseRoot=Join-Path (Split-Path -Parent $cfgPath) 'updates';[void][IO.Directory]::CreateDirectory($releaseRoot);$release=Join-Path $releaseRoot ($target.Substring(0,12)+'-'+[Guid]::NewGuid().ToString('N'));[void][IO.Directory]::CreateDirectory($release);$script:WebUpdateRelease=$release
  $payload=Join-Path $release 'payload';$backup=Join-Path $release 'backup';[void][IO.Directory]::CreateDirectory($payload);[void][IO.Directory]::CreateDirectory($backup)
  $script:WebUpdatePhase='WEB_SOURCE_ARCHIVE'
- StageWebSource $target $paths $payload (Join-Path $release 'source.tar')
+ $sourcePaths=@($paths|Where-Object {$_ -cne 'service/environment.json'})
+ StageWebSource $target $sourcePaths $payload (Join-Path $release 'source.tar')
  if($ChatMediaDirectory){StageChatMediaEnvironment $web $payload}
  $frontendChanged=@($paths|Where-Object{$_ -like 'frontend/*'}).Count -gt 0
  if($frontendChanged){$script:WebUpdatePhase='WEB_FRONTEND_BUILD';$envPath=Join-Path $runtime 'service/environment.json';$envMap=Get-Content -LiteralPath $envPath -Raw|ConvertFrom-Json;$env:VITE_API_BASE_URL=[string]$envMap.HDWORK2_PUBLIC_ORIGIN;& node (Join-Path $root 'scripts/build-operational-frontend.js') --build;if($LASTEXITCODE -ne 0){Fail 'WEB_FRONTEND_BUILD_FAILED'};$script:WebUpdatePhase='WEB_FRONTEND_PACKAGE_COPY';$dist=Join-Path $root 'frontend/dist';Get-ChildItem -LiteralPath $dist -File -Recurse|Where-Object{$_.Name -ne 'release-manifest.json'}|ForEach-Object{$rel='frontend/dist/'+(RelativePath $dist $_.FullName);$to=Join-Path $payload $rel;[void][IO.Directory]::CreateDirectory((Split-Path -Parent $to));Copy-Item -LiteralPath $_.FullName -Destination $to}}
