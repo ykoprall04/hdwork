@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode, type ChangeEvent } from 'react';
+import { Send } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ReactNode, type ChangeEvent, type ClipboardEvent } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useWorkData } from './hooks';
@@ -150,6 +151,11 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
   const messages = useWorkData<{ data: ChatMessage[]; hasMore: boolean; routeActive?: boolean; photosEnabled?: boolean }>(`/chat/${id}/messages?page=${page}`, { page });
   const allowed = messages.data?.routeActive !== false && !messages.error && Boolean(messages.data) && ['HD', 'ADMIN', 'SUPER_ADMIN'].includes(user?.role || '') && user?.username !== 'trial_yanto' && order?.status === 'IN_PROGRESS' && String(order.ownerId) === String(user?.id) && user?.modules?.includes(order.module);
   const photosEnabled = messages.data?.photosEnabled === true;
+  const replyId = useId();
+  const retrying = Boolean(pending || photoPending);
+  const canAttach = photosEnabled && allowed && !busy && !retrying;
+  const canSend = (allowed || retrying) && !busy && Boolean(text.trim() || files.length) &&
+    (!files.length || (photosEnabled && text.trim().length <= 1024));
   useUnsentChatWarning(text || (files.length ? 'Foto terlampir' : ''), busy);
   const originalIndex = messages.data?.data.findIndex(message => originalMessage && message.direction === 'IN' && !message.replyTo && !message.hasPhoto && message.text === originalMessage) ?? -1;
   const chatMessages = messages.data?.data.filter((_message, index) => index !== originalIndex);
@@ -165,9 +171,8 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
     document.addEventListener('visibilitychange',mark);
     return()=>{observer.disconnect();document.removeEventListener('visibilitychange',mark);};
   },[account,id,page,messages.data,messages.loading,messages.error,order?.status,order?.ownerId]);
-  function selectPhotos(event: ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(event.target.files || []);
-    event.target.value = '';
+  function addPhotos(selected: File[]) {
+    if (!canAttach || !selected.length) return;
     if (selected.length + files.length > 10) {
       setError('Pilih maksimal 10 foto per kiriman.');
       return;
@@ -177,11 +182,33 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
       return;
     }
     setError('');
-    setFiles([...files, ...selected]);
+    setFiles(current => [...current, ...selected]);
   }
+
+  function selectPhotos(event: ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.target.files || []);
+    event.target.value = '';
+    addPhotos(selected);
+  }
+
+  function pastePhotos(event: ClipboardEvent<HTMLTextAreaElement>) {
+    if (!canAttach) return;
+    const { files: clipboardFiles, items } = event.clipboardData;
+    const images = Array.from(clipboardFiles).filter(file => file.type.startsWith('image/'));
+    if (!images.length) {
+      for (const item of items) {
+        if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+        const file = item.getAsFile();
+        if (file) images.push(file);
+      }
+    }
+    if (!images.length) return;
+    if (!event.clipboardData.getData('text/plain')) event.preventDefault();
+    addPhotos(images);
+  }
+
   async function send() {
-    if ((!text.trim() && !files.length) || (files.length && (!photosEnabled || text.trim().length > 1024)) ||
-      sending.current || !order || (!allowed && !pending && !photoPending)) return;
+    if (!canSend || sending.current || !order) return;
     sending.current = true; setBusy(true); setError(''); setNotice('');
     try {
       if (files.length) {
@@ -234,21 +261,32 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
     </div>
     <div className="op-chat-composer">
     <form className="space-y-2" onSubmit={event => { event.preventDefault(); void send(); }}>
-      <label className="block text-sm">Balasan<textarea aria-label="Balasan" rows={2} maxLength={files.length ? 1024 : 4096} disabled={!allowed || busy} className="mt-1 w-full rounded-lg border bg-background p-3" value={text} onKeyDown={event => {
-        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
-          event.preventDefault(); void send();
-        }
-      }} onChange={event => {
-        // Unknown submissions keep their request identity until a confirmed result;
-        // editing is possible once a definitive error clears pending.
-        if (pending || photoPending) return;
-        setText(event.target.value); saveChatDraft(account, id, { text: event.target.value, pending: null });
-      }} readOnly={Boolean(pending || photoPending)} /></label>
+      <div className="op-chat-reply">
+        <label htmlFor={replyId} className="block text-xs font-medium">Balasan</label>
+        <div className="op-chat-reply-input">
+          <textarea id={replyId} rows={2} maxLength={files.length ? 1024 : 4096} disabled={(!allowed && !retrying) || busy} enterKeyHint="send"
+            className="block w-full rounded-lg border bg-background px-3 py-2 text-sm" value={text}
+            placeholder={canAttach ? 'Tulis balasan atau tempel screenshot…' : undefined}
+            onPaste={pastePhotos}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                event.preventDefault();
+                void send();
+              }
+            }} onChange={event => {
+              if (retrying) return;
+              setText(event.target.value);
+              saveChatDraft(account, id, { text: event.target.value, pending: null });
+            }} readOnly={retrying} />
+          <Button type="submit" size="icon" className="op-chat-send" disabled={!canSend}
+            aria-label={retrying ? 'Ulangi kirim balasan' : 'Kirim balasan'}><Send aria-hidden /></Button>
+        </div>
+      </div>
       {photosEnabled && <div className="space-y-2 text-xs">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex min-h-10 cursor-pointer items-center rounded-lg border px-3 font-medium has-[:focus-visible]:outline-2 has-[:disabled]:opacity-50">
+          <label className="inline-flex min-h-8 cursor-pointer items-center rounded-lg border px-3 font-medium has-[:focus-visible]:outline-2 has-[:disabled]:opacity-50">
             Pilih foto
-            <input type="file" aria-label="Pilih foto" accept="image/jpeg,image/png" multiple className="sr-only" disabled={!allowed || busy || Boolean(pending || photoPending)} onChange={selectPhotos} />
+            <input type="file" aria-label="Pilih foto" accept="image/jpeg,image/png" multiple className="sr-only" disabled={!canAttach} onChange={selectPhotos} />
           </label>
           <span>JPG/PNG · 5 MB per foto</span>
           {files.length > 0 && <label className="flex items-center gap-1.5"><input type="checkbox" checked={asDocument} disabled={busy || Boolean(photoPending)} onChange={event => setAsDocument(event.target.checked)} /> Kirim sebagai file asli</label>}
@@ -258,8 +296,6 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
         )}</ul>}
       </div>}
       {files.length > 0 && text.trim().length > 1024 && <p role="alert" className="text-xs text-destructive">Caption foto maksimal 1.024 karakter.</p>}
-      <p className="text-xs text-muted-foreground">Enter untuk kirim · Shift + Enter untuk baris baru</p>
-      {text.trim() && <p className="text-xs text-muted-foreground">Draft belum dikirim · tersimpan khusus order ini pada tab ini.</p>}
       {(pending || photoPending) && !busy && <p role="status" className="text-xs">Hasil pengiriman belum pasti. Kirim ulang memakai identitas permintaan yang sama; pesan tidak dikirim otomatis.</p>}
       {photoPending && !busy && <Button type="button" size="sm" variant="outline" onClick={() => {
         setPhotoPending(null); setFiles([]); setText(''); setError('');
@@ -268,7 +304,7 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
         void messages.refresh();
       }}>Lanjut tanpa lampiran</Button>}
       {!allowed && <p className="text-xs text-muted-foreground">Hanya petugas berizin pemilik order PROSES CEK yang dapat membalas.</p>}
-      <Button type="submit" disabled={(!allowed && !pending && !photoPending) || busy || (!text.trim() && !files.length) || (files.length > 0 && (!photosEnabled || text.trim().length > 1024))}>{busy ? 'Menyimpan ke antrean…' : pending || photoPending ? 'Periksa / ulangi balasan' : files.length ? `Kirim ${files.length} foto` : 'Kirim Balasan'}</Button>
+      {busy && <p role="status" className="text-xs text-muted-foreground">Menyimpan ke antrean…</p>}
       {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
       {error && <p role="alert">{error} · Isi pesan dipertahankan untuk pengecekan.</p>}
     </form>

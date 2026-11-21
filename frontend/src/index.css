@@ -869,6 +869,13 @@ body {
 .op-work-panel .op-chat-composer { flex-shrink: 1; max-height: 100%; overflow: hidden; margin-top: 0; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--card); }
 .op-work-panel .op-chat-composer form { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .op-chat-composer textarea { max-height: 120px; }
+.op-chat-reply { display: grid; gap: 4px; }
+.op-chat-reply-input { display: flex; align-items: flex-end; gap: 8px; }
+.op-chat-reply-input textarea { min-width: 0; }
+.op-chat-send { width: 40px; min-height: 40px; }
+@media (min-width: 768px) {
+  .op-chat-send { display: none; }
+}
 .op-chat-action-bar { flex-shrink: 0; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .op-chat-action-bar button { min-height: 40px; }
 .op-body:has(.op-process-workspace-card) { display:flex; flex-direction:column; height:100dvh; overflow:hidden; }
@@ -885,18 +892,18 @@ body {
 .op-process-work-items button { display: block; width: 100%; min-width: 0; padding: 10px 8px; text-align: left; border-radius: 8px; }
 .op-process-work-items button:hover, .op-process-work-items button[data-selected="true"] { background: color-mix(in srgb,var(--primary) 8%,var(--card)); }
 .op-process-detail { position: relative; inset: auto; width: auto; height: 100%; min-width: 0; z-index: auto; border: 0; box-shadow: none; }
-.op-process-detail .op-work-panel-header { flex-wrap: nowrap; }
+.op-process-detail .op-work-panel-header { flex-wrap: nowrap; gap: 8px; padding: 4px 12px; }
 .op-process-work-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: var(--muted-foreground); }
-.op-process-detail .op-original-message { max-height: 20vh; overflow-y: auto; }
 .op-process-detail .op-order-chat h3 { display: none; }
 .op-process-detail .op-work-panel-content { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
 .op-process-detail .op-panel-summary { flex:0 0 auto; min-height:0; max-height:none; overflow:hidden; }
-.op-process-detail .op-original-message { max-height:min(18dvh,150px); overflow-y:auto; overscroll-behavior:contain; }
+.op-process-detail .op-panel-summary > * + * { margin-top: 6px; }
+.op-process-detail .op-original-message { max-height:min(12dvh,96px); overflow-y:auto; overscroll-behavior:contain; }
 .op-process-detail .op-order-chat { flex:1 1 0; min-height:0; }
 .op-process-detail .op-chat-history { flex:1 1 0; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
-.op-process-detail .op-chat-composer { flex:0 0 auto; max-height:none; overflow:visible; }
-.op-process-detail .op-chat-composer form { flex:0 0 auto; overflow:visible; }
-.op-process-detail .op-chat-composer textarea { height:52px; min-height:48px; max-height:64px; resize:vertical; }
+.op-process-detail .op-chat-composer { flex:0 0 auto; max-height:55%; padding:8px 12px; }
+.op-process-detail .op-chat-composer form { flex:0 1 auto; }
+.op-process-detail .op-chat-composer textarea { height:44px; min-height:40px; max-height:64px; resize:vertical; }
 .op-process-detail .op-chat-action-bar { flex:0 0 auto; margin-top:8px; padding-top:8px; }
 @media (max-width: 767px) {
  .op-body:has(.op-process-workspace-card) { height:100dvh; }
