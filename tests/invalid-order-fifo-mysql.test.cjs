@@ -38,7 +38,7 @@ test('production FIFO writer: invalid rejection commits without an order or inbo
   await sent(replies[0]);
   await t.test('VALID/INVALID every 3 seconds: no retries or head-of-line delay; one anchored reply each',async()=>{
    let clock=Date.now();store.now=()=>clock;
-   const sequence=[valid,invalid,valid.replace('AO100','AO101'),valid.replace('SN ONT:SYNTHETIC','SN ONT:-'),valid,invalid];
+   const sequence=[valid,invalid,valid.replace('AO100','AO101'),valid.replace('SN ONT:SYNTHETIC','SN ONT:'),valid,invalid];
    const observed=[];
    for(let i=0;i<sequence.length;i++){
     const before=clock,body=envelope(10+i,sequence[i]);body.event.timestamp=Math.floor(clock/1000);

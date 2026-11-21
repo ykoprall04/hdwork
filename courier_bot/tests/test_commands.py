@@ -17,7 +17,7 @@ class CommandTests(unittest.TestCase):
         for field in ('SC/IN','TIPE TRANSAKSI','SN ONT','STO','KETERANGAN','NIK'):
             rest='\n'.join(s for s in BASE.splitlines() if not s.startswith(field+':'))
             for value in (None,'',' ','-'):
-                self.assertFalse(parse_command(rest+(f'\n{field}:{value}' if value is not None else ''),'TIAL1')['valid'])
+                self.assertEqual(parse_command(rest+(f'\n{field}:{value}' if value is not None else ''),'TIAL1')['valid'], value == '-' and field != 'SC/IN')
         self.assertIsNone(parse_command(BASE,'TIAL1')['fields']['NO VOICE'])
         self.assertEqual(parse_command('/req  asli\n teks','SOLVER1')['original'],'/req  asli\n teks')
 

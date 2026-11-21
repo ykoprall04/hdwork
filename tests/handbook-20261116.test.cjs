@@ -20,7 +20,7 @@ test('handbook matrix: required/optional, blank, dash, unknown, shuffled, aliase
   for(const field of spec[command].required){
    const rest=canonical.split('\n').filter(l=>l.split(':')[0].toUpperCase()!==field).join('\n');
    assert.equal(check(rest).valid,false,field);
-   for(const value of ['', '-', '   '])assert.equal(check(rest+'\n'+field+':'+value).valid,value==='-'&&Boolean(spec[command].allowDash?.includes(field)),field);
+   for(const value of ['', '-', '   '])assert.equal(check(rest+'\n'+field+':'+value).valid,value==='-'&&field!==spec[command].identity,field);
    assert.equal(check(canonical+'\n'+field+':duplicate').valid,false,field);
   }
   for(const field of spec[command].optional){
@@ -81,6 +81,6 @@ test('config_psb accepts a dash as the ONT serial through either supported label
   assert.equal(result.valid,true);
   assert.equal(result.fields['SN ONT BARU'],'-');
   assert.deepEqual(parseCommand(input.replace(': -',': '),'SOLVER1').errors,['SN ONT BARU']);
-  assert.deepEqual(parseCommand(input.replace('STO:BKL','STO:-'),'SOLVER1').errors,['STO']);
+  assert.equal(parseCommand(input.replace('STO:BKL','STO:-'),'SOLVER1').fields.STO,'-');
  }
 });

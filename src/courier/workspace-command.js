@@ -16,7 +16,7 @@ function parseWorkspaceCommand(text,profile,botUsername){
   if(Object.hasOwn(fields,label)){errors.push(label+' berulang');continue;}
   fields[label]=line.slice(colon+1).trim();
  }
- for(const name of spec.required)if(!fields[name]||fields[name]==='-')errors.push(name);
+ for(const name of spec.required)if(!fields[name]||(name==='SC/IN'&&fields[name]==='-'))errors.push(name);
  for(const [name,kind] of Object.entries(spec.formats||{})){
   const value=fields[name];if(value===undefined||value===null||value==='-')continue;
   if(!new RegExp(specs._formats[kind]).test(value))errors.push(name+' (format)');

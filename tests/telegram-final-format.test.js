@@ -7,14 +7,14 @@ const order=`/order\nSC/IN:${full}\nSN ONT:SN1\nTIPE TRANSAKSI:ignored\nSTO:ABC\
 const config=`/config_psb\nService:INDIHOME\nOrder ID:${full}\nSN ONT BARU:SNFIXTURE\nService (1P/2P/3P/1P-Voice):1P\nTipe ONT:TEST\nSTO:ABC\nKeterangan:pasang`;
 const mo='/MO\nSC/IN:8WVGR038GTS1I8GV6VJC1AMCA-MOk42610270909056813c78f0_109244604-847961427\nTIPE TRANSAKSI:ignored\nSTO:ABC\nKETERANGAN:pindah\nNIK:TEST';
 const cases=[];
-function check(text){cases.push(text);return parseCommand(text,'TIAL1');}
+function check(text){cases.push(text);return parseCommand(text,'ALL');}
 test('four final formats, required empties/duplicates, optional dashes and free text',()=>{
  for(const raw of [order,config,mo]){
   const parsed=check(raw);assert.equal(parsed.valid,true,JSON.stringify(parsed));
   for(const field of spec[parsed.command].required){
    const lines=raw.split('\n'),index=lines.findIndex(l=>l.split(':')[0].toUpperCase()===field);
    assert.ok(index>=0);
-   for(const value of ['', '-', '   ']){const copy=[...lines];copy[index]=field+':'+value;assert.equal(check(copy.join('\n')).valid,value==='-'&&Boolean(spec[parsed.command].allowDash?.includes(field)));}
+   for(const value of ['', '-', '   ']){const copy=[...lines];copy[index]=field+':'+value;assert.equal(check(copy.join('\n')).valid,value==='-'&&field!==spec[parsed.command].identity);}
    assert.equal(check(raw+'\n'+lines[index]).valid,false);
   }
   for(const field of spec[parsed.command].optional){const present=raw.split('\n').some(l=>l.split(':')[0].toUpperCase()===field);assert.equal(check(raw+'\n'+field+':-').valid,!present);}
@@ -42,10 +42,31 @@ test('network group pairing, ambiguous groups, unrelated ports, ODP normalizatio
  for(const tail of ['\nIP OLT:10.0.0.1\nSlot:2\nfree\nPort:88','\nPort:88','\nIP OLT:10.0.0.1\nSlot:2\nPort:3\nIP OLT:10.0.0.2\nSlot:4\nPort:5'])assert.equal(require('../src/b2c-workflow/order-network').parseNetwork(tail).port,null);
  assert.equal(check(order+'\nODP:X/4\nSummary ODP:Y/9').valid,false);
 });
+test('MO accepts combined INET and telephone while validating each number',()=>{
+ const text=mo+'\nNO INET / TELP: 000123 / 000456';
+ const parsed=check(text);
+ assert.equal(parsed.valid,true);
+ assert.equal(parsed.fields['NO INET'],'000123');
+ assert.equal(parsed.fields['NO VOICE'],'000456');
+ assert.deepEqual(check(text.replace('000456','invalid')).errors,['NO VOICE (format)']);
+ assert.deepEqual(check(text+'\nNO VOICE:000777').errors,['NO VOICE berulang']);
+ assert.deepEqual(check(text+'/000999').errors,['NO INET (format)']);
+ assert.equal(check(mo+'\nNO INET/TELP:000123').fields['NO VOICE'],null);
+});
+test('dash is a literal placeholder in all workspace details, while SC/IN stays required',()=>{
+ for(const command of ['assuren','b2b','replacement']){
+  const text=`/${command}\nSC/IN:SAFE-1\nNO INET/TELP:-\nSTO:-\nTRANSAKSI:-\nKETERANGAN:-`;
+  const parsed=check(text);
+  assert.equal(parsed.valid,true);
+  for(const name of ['NO INET/TELP','STO','TRANSAKSI','KETERANGAN'])assert.equal(parsed.fields[name],'-');
+  assert.deepEqual(check(text.replace('SAFE-1','-')).errors,['SC/IN']);
+  assert.ok(check(text.replace('STO:-','STO: ')).errors.includes('STO'));
+ }
+});
 test('Python and JavaScript return identical final-format contracts',()=>{
- const script="import json,sys; from courier.commands import parse_command; print(json.dumps([parse_command(t,'TIAL1') for t in json.load(sys.stdin)]))";
+ const script="import json,sys; from courier.commands import parse_command; print(json.dumps([parse_command(t,'ALL') for t in json.load(sys.stdin)]))";
  const p=spawnSync('python',['-c',script],{input:JSON.stringify(cases),encoding:'utf8',env:{...process.env,PYTHONPATH:'courier_bot'}});
- assert.equal(p.status,0,p.stderr);assert.deepEqual(JSON.parse(p.stdout),cases.map(t=>parseCommand(t,'TIAL1')));
+ assert.equal(p.status,0,p.stderr);assert.deepEqual(JSON.parse(p.stdout),cases.map(t=>parseCommand(t,'ALL')));
 });
 module.exports={order,config,mo};
 test('mock Courier persists JSON/raw text, rejects invalid, keeps replay and dashboard compatibility',async()=>{
@@ -54,7 +75,7 @@ test('mock Courier persists JSON/raw text, rejects invalid, keeps replay and das
  const workflow=createB2CProcessor({store,config:{enabled:true,botId:'sandbox',identityKey:'synthetic-command-test-key-00000000',dedupeBy:'both',groups:[{module:'TIAL',chatId:'-1001',threadId:null,threadMode:'non_topic',commandProfile:'TIAL1'}],actors:[{id:'9',name:'Synthetic'}]}});
  const envelope=(n,text)=>({version:1,bot_id:'sandbox',update_id:String(n),event:{kind:'message',chat_id:'-1001',message_id:String(n),telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1700000000,text,attachments:[]}});
  const raw=order+'\nODP:ODP-ABC/4\nIP OLT:10.0.0.1\nSlot:2\nPort:3\nextra text';
- const messages=[raw,config,mo,'/req',raw,order.replace('SN ONT:SN1','SN ONT:-')];
+ const messages=[raw,config,mo,'/req',raw,order.replace('SN ONT:SN1','SN ONT:')];
  for(let i=0;i<messages.length;i++){await store.accept(envelope(i+1,messages[i]));await workflow.processNext();}
  assert.equal(pool.state.orders.length,5);assert.equal(pool.state.orders[4].status,'DUPLICATE');
  assert.equal(pool.state.orders[0].raw_text,raw);assert.equal(JSON.parse(pool.state.orders[0].command_fields).odp,'ODP-ABC/04');

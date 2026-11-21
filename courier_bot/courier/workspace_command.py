@@ -40,7 +40,7 @@ def parse_workspace_command(text, profile, bot_username=None):
             continue
         fields[label] = value.strip()
     for name in spec['required']:
-        if not fields.get(name) or fields[name] == '-':
+        if not fields.get(name) or (name == 'SC/IN' and fields[name] == '-'):
             errors.append(name)
     for name, kind in spec.get('formats', {}).items():
         value = fields.get(name)
