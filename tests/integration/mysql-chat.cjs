@@ -15,13 +15,19 @@ async function run({env=process.env,argv=process.argv.slice(2),driverFactory=()=
   let replyMessage;for(const d of await store.claim(10)){assert.equal(await policy.outgoing(d.payload,pool),true);assert.equal(d.payload.chat_id,'-1001');assert.equal(d.payload.reply_to_message_id,original.messageId);const messageId=d.delivery_id===sent[0].outboxId?'777':'776';await store.settle(d.delivery_id,{lease_token:d.lease_token,result:'sent',telegram_message_id:messageId});if(messageId==='777')replyMessage=messageId;}
   assert.equal((await chat.messages(order.id,{},people[0].user)).data.find(m=>m.id===sent[0].messageId).status,'TERKIRIM');await ingress('Reply to bot message',{replyTo:replyMessage});await processor.processNext();assert.ok((await chat.messages(order.id,{},people[0].user)).data.some(m=>m.text==='Reply to bot message'));
   // Incoming reply can precede the delivery ACK: persist the inbox and retry.
-  const pending=await chat.send(order.id,people[0].token,people[0].id,{requestId:randomUUID(),version:1,text:'Awaiting ACK'});await ingress('Arrived before ACK',{replyTo:'999'});await assert.rejects(processor.processNext(),{statusCode:503});const [lease]=await store.claim();assert.equal(lease.delivery_id,pending.outboxId);await store.settle(lease.delivery_id,{lease_token:lease.lease_token,result:'sent',telegram_message_id:'999'});shift+=3000;await processor.processNext();assert.ok((await chat.messages(order.id,{},people[0].user)).data.some(m=>m.text==='Arrived before ACK'));
-  // Unknown anchors are retained for bounded retry and then review, never rewritten to another order.
-  const unknown=await ingress('Unknown anchor',{replyTo:'9999'});for(let i=0;i<5;i++){await assert.rejects(processor.processNext(),{statusCode:503});shift+=65000;}const [[dead]]=await pool.execute('SELECT state,payload FROM hd2_courier_inbox WHERE id=?',[unknown.receipt.receipt_id]);assert.equal(dead.state,'DEAD');assert.ok(JSON.stringify(dead.payload).includes('Unknown anchor'));assert.equal((await system.status(admin)).queue.incomingFailed,1);
+  const pending=await chat.send(order.id,people[0].token,people[0].id,{requestId:randomUUID(),version:1,text:'Awaiting ACK'});
+  const [lease]=await store.claim();assert.equal(lease.delivery_id,pending.outboxId);
+  await ingress('Arrived before ACK',{replyTo:'999'});await assert.rejects(processor.processNext(),{statusCode:503});
+  await store.settle(lease.delivery_id,{lease_token:lease.lease_token,result:'sent',telegram_message_id:'999'});
+  shift+=3000;await processor.processNext();assert.ok((await chat.messages(order.id,{},people[0].user)).data.some(m=>m.text==='Arrived before ACK'));
+  const unknown=await ingress('Unknown anchor',{replyTo:'9999'});
+  assert.equal(await processor.processNext(),true);
+  const [[ignored]]=await pool.execute('SELECT state FROM hd2_courier_inbox WHERE id=?',[unknown.receipt.receipt_id]);
+  assert.equal(ignored.state,'IGNORED');
   if(browserExercise)await browserExercise({pool,chat,people,password,secret,orderId:order.id,store,policy,processor,ingress});
   await system.saveMapping(admin,{...mappings[0],requestId:randomUUID(),enabled:false});await assert.rejects(chat.send(order.id,people[0].token,people[0].id,{requestId:randomUUID(),version:1,text:'Must not route'}),{statusCode:403});await auth.logout(people[0].token);await assert.rejects(chat.send(order.id,people[0].token,people[0].id,{requestId:randomUUID(),version:1,text:'Expired'}),{statusCode:401});
   const [audit]=await pool.query("SELECT action FROM hd2_audit WHERE order_id=? AND action IN ('CHAT_SENT','CHAT_RECEIVED')",[order.id]);assert.equal(audit.filter(r=>r.action==='CHAT_SENT').length,browserExercise?3:2);assert.equal((await reader.detail(order.id,people[1].user)).data.version,1);
-  return {ok:true,checks:['TIAL-LOGIC-ingress','original-message-persistence','scope-RBAC','concurrent-idempotent-send','unchanged-order-status','reply-original-anchor','reply-to-confirmed-message','ACK-before-SENT','pre-ACK-reply-recovery','bounded-unknown-anchor-review','mapping-disable','session-revocation','durable-audit'],telegram:'FAKE_ONLY'};
+  return {ok:true,checks:['TIAL-LOGIC-ingress','original-message-persistence','scope-RBAC','concurrent-idempotent-send','unchanged-order-status','reply-original-anchor','reply-to-confirmed-message','ACK-before-SENT','pre-ACK-reply-recovery','unknown-anchor-ignored','mapping-disable','session-revocation','durable-audit'],telegram:'FAKE_ONLY'};
  }finally{await pool.end();}
 }
 if(require.main===module)run().then(r=>console.log(JSON.stringify(r))).catch(()=>{console.error('Disposable rehearsal rejected or failed; operational credentials are never logged.');process.exitCode=1;});

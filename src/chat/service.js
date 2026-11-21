@@ -18,10 +18,38 @@ function reply(input){
 async function captureIncoming({c,event:e,botId}){
  if(!e.reply_to_message_id)return false;
  let [[order]]=await c.execute('SELECT * FROM hd2_orders WHERE bot_id=? AND chat_id=? AND thread_id<=>? AND message_id=? FOR SHARE',[botId,e.chat_id,e.telegram_thread_id,e.reply_to_message_id]);
+ let pendingAck;
+ if(!order){
+  // Lock a possible in-flight delivery before checking the recorded message IDs.
+  // An ACK committing first is visible to those locking reads. Otherwise retry.
+  // For uncertain terminal deliveries, require the reply to fall within the
+  // delivery window so historical failures do not keep unrelated replies pending.
+  const [candidates]=await c.execute(`SELECT b.state,b.last_error_code FROM hd2_courier_outbox b
+   WHERE b.bot_id=? AND b.telegram_message_id IS NULL
+     AND JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.chat_id'))=?
+     AND NULLIF(JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.telegram_thread_id')),'null')<=>?
+     AND JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.thread_mode'))=?
+     AND (b.state='SENDING' OR (b.state='DEAD' AND b.last_error_code IS NOT NULL
+       AND b.lease_until_ms>=? AND b.created_at<TIMESTAMPADD(SECOND, ?, '1970-01-01 00:00:00')))
+     AND (EXISTS (SELECT 1 FROM hd2_chat_messages m WHERE m.outbox_id=b.id
+         AND m.bot_id=b.bot_id AND m.chat_id=? AND m.thread_id<=>?)
+       OR (JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.method'))='sendMessage' AND EXISTS (
+         SELECT 1 FROM hd2_orders o WHERE o.bot_id=b.bot_id
+           AND o.chat_id=JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.chat_id'))
+           AND o.thread_id<=>NULLIF(JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.telegram_thread_id')),'null')
+           AND o.message_id=JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.reply_to_message_id')))))
+   FOR SHARE`,[
+    botId,e.chat_id,e.telegram_thread_id,e.telegram_thread_id===null?'non_topic':'thread',
+    e.timestamp*1000,e.timestamp+1,e.chat_id,e.telegram_thread_id
+   ]);
+  const {uncertain}=require('../courier/delivery-state');
+  pendingAck=candidates.some(row=>row.state==='SENDING'||uncertain(row.last_error_code));
+ }
  if(!order)[[order]]=await c.execute('SELECT o.* FROM hd2_chat_messages m JOIN hd2_orders o ON o.id=m.order_id LEFT JOIN hd2_courier_outbox b ON b.id=m.outbox_id WHERE m.bot_id=? AND m.chat_id=? AND m.thread_id<=>? AND (m.telegram_message_id=? OR b.telegram_message_id=?) ORDER BY m.seq DESC LIMIT 1 FOR SHARE',[botId,e.chat_id,e.telegram_thread_id,e.reply_to_message_id,e.reply_to_message_id]);
  // Operational ACKs (PICK/DONE/etc.) also reply to the original order, but have
  // no chat-message row. Resolve only a delivered outbox in this exact route.
  if(!order)[[order]]=await c.execute("SELECT o.* FROM hd2_courier_outbox b JOIN hd2_orders o ON o.bot_id=b.bot_id AND o.chat_id=JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.chat_id')) AND o.message_id=JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.reply_to_message_id')) AND o.thread_id<=>NULLIF(JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.telegram_thread_id')),'null') WHERE o.bot_id=? AND o.chat_id=? AND o.thread_id<=>? AND b.telegram_message_id=? AND b.state='SENT' AND JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.method'))='sendMessage' AND JSON_UNQUOTE(JSON_EXTRACT(b.payload,'$.thread_mode'))=IF(o.thread_id IS NULL,'non_topic','thread') LIMIT 1 FOR SHARE",[botId,e.chat_id,e.telegram_thread_id,e.reply_to_message_id]);
+ if(!order&&pendingAck)throw fail(503,'CHAT_REPLY_ACK_PENDING');
  if(!order||!B2C.includes(moduleOf(order))||!require('../courier/shared-group').commands.includes(order.command))return false;
  const [r]=await c.execute("INSERT IGNORE INTO hd2_chat_messages(id,order_id,bot_id,chat_id,thread_id,telegram_message_id,reply_to_id,direction,sender_id,body,attachments,telegram_timestamp) VALUES (?,?,?,?,?,?,?,'IN',?,?,?,?)",[randomUUID(),order.id,botId,e.chat_id,e.telegram_thread_id,e.message_id,e.reply_to_message_id,e.sender_id,e.text,JSON.stringify(e.attachments),e.timestamp]);
  if(r.affectedRows===1){await c.execute("INSERT INTO hd2_audit(id,order_id,action,detail) VALUES (?,?,'CHAT_RECEIVED',?)",[randomUUID(),order.id,JSON.stringify({telegramMessageId:e.message_id,replyTo:e.reply_to_message_id})]);await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,'change')",[moduleOf(order)]);}
