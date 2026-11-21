@@ -43,7 +43,8 @@ function createGroupPolicy({ botId, botUsername, groups, allowReplies=false }) {
       const group = groupFor(value.chat_id,value.telegram_thread_id);
       if (!group || value.thread_mode !== group.threadMode || !value.reply_to_message_id) return false;
       const {prefix,matchesRejection}=require('../b2c-workflow/rejection');
-      if(value.text.startsWith(prefix)){
+      if(value.method!=='sendMessage'&&!allowReplies)return false;
+      if(value.method==='sendMessage'&&value.text.startsWith(prefix)){
         const [[original]]=await connection.execute(
           "SELECT payload FROM hd2_courier_inbox WHERE bot_id=? AND state='PROCESSED' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.event.chat_id'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.event.message_id'))=? LIMIT 1",
           [botId,value.chat_id,value.reply_to_message_id]

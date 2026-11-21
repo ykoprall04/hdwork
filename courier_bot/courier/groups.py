@@ -138,10 +138,11 @@ class IngressPolicy:
                 re.fullmatch(r'HD Work 2\.0 system alert: [A-Z][A-Z0-9_]{1,63}', payload.get('text', '')) and
                 any(t['chatId'] == payload.get('chat_id') and t['threadId'] == payload.get('telegram_thread_id') and t['anchorId'] == payload.get('reply_to_message_id') and payload.get('thread_mode') == ('non_topic' if t['threadId'] is None else 'thread') for t in getattr(self, 'alert_targets', []))):
             return
-        if (not isinstance(payload, dict) or payload.get('method') != 'sendMessage' or
+        photo = isinstance(payload, dict) and payload.get('method') in ('sendPhoto', 'sendDocument') and self.chat_enabled
+        if (not isinstance(payload, dict) or not (payload.get('method') == 'sendMessage' or photo) or
                 not any(g['chatId'] == payload.get('chat_id') and g['threadId'] == payload.get('telegram_thread_id') and g['threadMode'] == payload.get('thread_mode') for g in self.groups) or
                 not isinstance(payload.get('reply_to_message_id'), str) or
                 not re.fullmatch(r'[1-9]\d{0,9}', payload['reply_to_message_id']) or
                 int(payload['reply_to_message_id']) > 2147483647 or
-                not isinstance(payload.get('text'), str) or not 1 <= len(payload['text'].encode('utf-16-le')) // 2 <= 4096):
+                not isinstance(payload.get('text'), str) or not (0 if photo else 1) <= len(payload['text'].encode('utf-16-le')) // 2 <= (1024 if photo else 4096)):
             raise TransportError(400)

@@ -2,6 +2,7 @@ import json
 import time
 import uuid
 import threading
+from pathlib import Path
 from .http import TransportError
 from .raw_log import logger, observe
 
@@ -48,7 +49,7 @@ class WorkerLease:
 
 class DurableCourier:
     def __init__(self, telegram, internal, journal, policy, lease, *, poll=False, send=False,
-                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False, fifo_ack=False, ack_internal=None, scheduler=None, inbound_telegram=None, forward_internal=None):
+                 clock=time.monotonic, stopped=lambda: False, report=lambda _code: None, database_routing=False, fifo_ack=False, ack_internal=None, scheduler=None, inbound_telegram=None, forward_internal=None, media_dir=None, media_telegram=None):
         self.telegram, self.internal, self.journal, self.policy, self.lease = telegram, internal, journal, policy, lease
         self.poll, self.send, self.clock, self.stopped = poll, send, clock, stopped
         self.database_routing = database_routing
@@ -56,8 +57,13 @@ class DurableCourier:
         from .inbound_io import PollPump
         self.poll_pump=PollPump(inbound_telegram,self.wakeup.set,clock) if inbound_telegram else None
         self.forward_internal=forward_internal
+        self.media_dir=media_dir
+        self.media_telegram=media_telegram
+        self.media_cleanup_day=None
+        self.media_next_at=0
         from .ack_pump import AckPump
         self.forward_pump=AckPump(self.wakeup.set) if forward_internal else None
+        self.media_pump=AckPump(self.wakeup.set) if media_dir and media_telegram and Path(media_dir).is_absolute() else None
         self.scheduler=scheduler
         self.active=False
         self.routing_at=0
@@ -115,6 +121,11 @@ class DurableCourier:
                 self.forward_internal.worker=dict(worker) if isinstance(worker,dict) else worker
                 self.forward_pump.submit(row,lambda:observe('INBOX_FORWARD',lambda:self.forward_internal.event(json.loads(row['payload']))))
 
+    def mark_photo_delivered(self, ack):
+        if ack.get('photoKey'):
+            from .photos import mark_delivered
+            mark_delivered(self.media_dir, ack['photoKey'])
+
     def flush_ack(self):
         age_check=getattr(self.journal,'overdue_acks',None)
         for row in age_check() if callable(age_check) else ():
@@ -130,6 +141,7 @@ class DurableCourier:
             result = observe('ACK', lambda: self.internal.settle(ack, ack['result']), correlationId=ack.get('delivery_id'))
             if result.get('ok') is not True:
                 raise TransportError()
+            self.mark_photo_delivered(ack)
             observe('JOURNAL_ACK_FINISH', lambda: self.journal.finish_ack(row), correlationId=ack.get('delivery_id'))
         except TransportError as error:
             if error.status == 409:
@@ -146,6 +158,7 @@ class DurableCourier:
             if error is None and (not isinstance(result, dict) or result.get('ok') is not True):
                 error = TransportError()
             if error is None:
+                self.mark_photo_delivered(json.loads(row['ack']))
                 settled = self.journal.finish_ack(row)
                 logger().emit('ACK' if settled else 'ACK_SUPERSEDED', correlationId=row['delivery_id'], status='OK')
             else:
@@ -163,9 +176,33 @@ class DurableCourier:
             ack = json.loads(row['ack'])
             self.ack_pump.submit(row, lambda: observe('ACK_HTTP', lambda: self.ack_internal.settle(ack, ack['result']), correlationId=row['delivery_id']))
 
+    def poll_requested_media(self):
+        if not self.media_pump:
+            return
+        done = self.media_pump.poll()
+        if done:
+            _, day, error = done
+            if error:
+                logger().emit('CHAT_PHOTO_CACHE_FAILED', status='ERROR')
+            else:
+                self.media_cleanup_day = day
+        if self.media_pump.pending is not None or self.clock() < self.media_next_at:
+            return
+
+        def media_work():
+            from .photos import cleanup_due, fetch_requested
+            root = Path(self.media_dir)
+            day = cleanup_due(root, self.media_cleanup_day)
+            fetch_requested(self.media_telegram, root, self.policy.bot_id)
+            return day
+
+        self.media_next_at = self.clock() + 2
+        self.media_pump.submit(True, media_work)
+
     def close(self):
         if self.poll_pump:self.poll_pump.close()
         if self.forward_pump:self.forward_pump.close()
+        if self.media_pump:self.media_pump.close()
         if self.ack_pump:
             self.ack_pump.close()
 
@@ -206,6 +243,8 @@ class DurableCourier:
                 logger().emit('TELEGRAM_POLL_RESULT', count=len(updates))
         if self.poll and not self.stopped():
             self.flush_events()
+        if not self.stopped():
+            self.poll_requested_media()
         reason = 'SEND_DISABLED' if not self.send else 'STOPPED' if self.stopped() else 'COOLDOWN' if self.clock() < self.cooldown_until else None
         if reason:
             logger().emit('OUTBOX_BLOCKED', reason=reason, waitMs=max(0, self.cooldown_until-self.clock())*1000)

@@ -17,7 +17,8 @@ function createApiOnlyApp(env = process.env,{readinessCheck}={}) {
   if (env.HDWORK2_SERVICE_AUTH_POLICY !== undefined || env.HDWORK2_LOCAL_READ_ONLY === 'true' || env.HDWORK2_AUTH_ONLY === 'true' || env.HDWORK2_AUTH_WRITE_ENABLED !== undefined) app.use(require('./config/auth-write-policy').authWritePolicy(env));
   app.post('/api/auth/login', createRateLimit({ limit: 10, windowMs: 15 * 60_000 }));
   app.get('/api/auth/me', createRateLimit({ limit: 120, windowMs: 60_000 }));
-  app.use(express.json({ limit: '32kb' }));
+  const json=express.json({ limit: '32kb' });
+  app.use((req,res,next)=>req.method==='POST'&&/^\/api\/operations\/chat\/[a-f0-9-]{36}\/photos\/?$/i.test(req.path)?next():json(req,res,next));
   app.get('/health', (_req, res) => res.json({ ok: true, mode: 'api-only' }));
   app.get('/ready', createRateLimit({limit:10,windowMs:60000}), async (_req,res) => {
     res.set('Cache-Control','no-store');

@@ -33,7 +33,7 @@ ANTRE is not SENT; TERKIRIM requires the confirmed Telegram message ID. NETWORK
 uncertainty/expired leases stay for manual review. Only explicit RATE_LIMIT is
 retryable. Sender/reply IDs, text, timestamps, outbox status/attempts and audit are
 persisted/derived from MySQL, not local demo state. Incoming attachment metadata
-is retained privately; media download/upload/display is not implemented here.
+is retained privately. Supported images are delivered through the authenticated conversation API.
 
 ## Frontend
 
@@ -50,6 +50,59 @@ REOPEN controls reuse the original operations API. No new RECEK transition or
 operational ESKALASI routing is invented. The repository documents escalation in
 Preview only; production destination/authorization/feedback rules still need
 business confirmation. REOPEN retains its documented meaning and is not renamed.
+
+## Photos in operational Live Chat
+
+- Web replies support up to 10 JPG/PNG files, up to 5 MiB each. One click queues
+  them individually, with the optional caption on the first photo. The
+  existing owner, module, CSRF, verified route, duplicate-request and Courier ACK
+  rules apply. **Kirim sebagai file asli** uses Telegram `sendDocument`.
+- Web requests a small Telegram thumbnail (up to 128 KiB) for a visible,
+  recent message only after the API verifies access to its stored conversation.
+  Opening a photo explicitly requests the full file (up to 20 MiB, subject
+  to Telegram availability). Photo-only replies still need an order-linked
+  reply anchor. Telegram IDs, tokens and download URLs stay server-side.
+- Media bytes are in the private directory. MySQL chat and Courier outbox
+  store references. Daily cleanup at 02:00 WIB removes cache entries older
+  than 24 hours, including copies of outgoing files after a confirmed ACK.
+  Pending files remain protected. After expiry, incoming files can be requested
+  again from Telegram. Outgoing copies expire in Web and remain in Telegram.
+  Failed, uncertain and orphaned outgoing files require reconciliation before
+  removal. Chat records and Telegram messages are retained.
+
+### Windows activation
+
+1. Verify that operational text Live Chat already uses migrations 012–013
+   and the existing Live Chat grants. Check that
+   `hd2_chat_messages.attachments` is present. This change requires no new
+   SQL migration or MySQL grant.
+2. Create a private folder outside release snapshots and the served Web directory, for
+   example `D:\HDWork2-New\.local\chat-media`, with `requests` and
+   `outgoing` subfolders. Use the effective identities of the existing Web
+   and Python Courier services. Apply NTFS ACLs for Web read access on the
+   root and create/modify access in both subfolders. Give Courier modify
+   access in all three directories. Restrict access to these service identities
+   and authorized administrators. In a Linux rehearsal with separate users,
+   use a private shared group and setgid directories.
+3. Set `HDWORK2_CHAT_MEDIA_DIR` to that absolute path in the protected Web
+   and Python Courier process environments. Stage the dedicated Node Courier
+   backend and Python Courier together via the existing Courier release and
+   cooperative stop/lease handoff. Keep the same journal and offset. The
+   routine Web updater only updates Web.
+4. After the updated Courier is ready, use the existing Web deployment path
+   and set `HDWORK2_CHAT_PHOTOS_ENABLED=true` in its protected runtime
+   environment. Check Web and Courier readiness, then verify media in an
+   approved test group, including a photo-only reply, file upload, and the
+   transition from ANTRE to TERKIRIM after ACK.
+
+### Rollback
+
+Turn off `HDWORK2_CHAT_PHOTOS_ENABLED` in the Web runtime to stop new photo
+uploads. Keep the media-capable Courier and private files while existing
+photo deliveries are pending or uncertain. Resolve those rows using the
+existing outbox and ACK review. After they are settled, use the existing
+Web and Courier recovery paths and preserve the journal, offsets, database
+rows and media directory. No SQL rollback is required.
 
 ## Manual activation prerequisites
 
