@@ -26,6 +26,7 @@ def parse_command(text, profile, bot_username=None):
     if command == 'req':
         return {'valid': True, 'command': command, 'sc_in': None, 'fields': {}, 'request': body, 'original': text}
     rule, fields, errors = SPEC[command], {}, []
+    allow_dash = rule.get('allowDash', ())
     for line in body.splitlines():
         if ':' not in line: continue
         label, value = line.split(':', 1)
@@ -40,12 +41,12 @@ def parse_command(text, profile, bot_username=None):
         if label not in rule['required'] + rule['optional']: continue
         if label in fields: errors.append(label + ' berulang')
         value = value.strip()
-        fields[label] = value if value and value != '-' else None
+        fields[label] = value if value and (value != '-' or label in allow_dash) else None
     for name in rule['required']:
         if not fields.get(name): errors.append(name)
     for name, kind in rule.get('formats', {}).items():
         value = fields.get(name)
-        if value is None:
+        if value is None or (value == '-' and name in allow_dash):
             continue
         allowed = SPEC['_formats'][kind]
         valid = value.upper() in allowed if kind == 'service' else bool(re.fullmatch(allowed, value))

@@ -20,7 +20,7 @@ test('handbook matrix: required/optional, blank, dash, unknown, shuffled, aliase
   for(const field of spec[command].required){
    const rest=canonical.split('\n').filter(l=>l.split(':')[0].toUpperCase()!==field).join('\n');
    assert.equal(check(rest).valid,false,field);
-   for(const value of ['', '-', '   '])assert.equal(check(rest+'\n'+field+':'+value).valid,false,field);
+   for(const value of ['', '-', '   '])assert.equal(check(rest+'\n'+field+':'+value).valid,value==='-'&&Boolean(spec[command].allowDash?.includes(field)),field);
    assert.equal(check(canonical+'\n'+field+':duplicate').valid,false,field);
   }
   for(const field of spec[command].optional){
@@ -72,4 +72,15 @@ test('mock storage: all config fields in JSON; raw text unchanged; invalids crea
  const fields=JSON.parse(config.command_fields);assert.equal(fields['HOSTNAME GPON'],'GPON1');assert.equal(fields['IP GPON'],'192.0.2.2');assert.equal(fields.Unknown,undefined);
  assert.deepEqual(fields,parseCommand(raw,'ALL').fields);
  for(const i of [2,4]){const reply=JSON.parse(pool.state.outbox[i].payload);assert.equal(reply.reply_to_message_id,String(i+1));assert.match(reply.text,/Template:/);}
+});
+
+test('config_psb accepts a dash as the ONT serial through either supported label',()=>{
+ for(const label of ['No SN ONT','SN ONT BARU']){
+  const input=messages.config_psb.replace('No SN ONT:SN1',label+': -');
+  const result=parseCommand(input,'SOLVER1');
+  assert.equal(result.valid,true);
+  assert.equal(result.fields['SN ONT BARU'],'-');
+  assert.deepEqual(parseCommand(input.replace(': -',': '),'SOLVER1').errors,['SN ONT BARU']);
+  assert.deepEqual(parseCommand(input.replace('STO:BKL','STO:-'),'SOLVER1').errors,['STO']);
+ }
 });

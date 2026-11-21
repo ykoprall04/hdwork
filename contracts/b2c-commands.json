@@ -78,6 +78,7 @@
       "KETERANGAN",
       "STO"
     ],
+    "allowDash": ["SN ONT BARU"],
     "optional": [
       "NIK ATASAN",
       "SERVICE",

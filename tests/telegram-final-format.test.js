@@ -14,7 +14,7 @@ test('four final formats, required empties/duplicates, optional dashes and free 
   for(const field of spec[parsed.command].required){
    const lines=raw.split('\n'),index=lines.findIndex(l=>l.split(':')[0].toUpperCase()===field);
    assert.ok(index>=0);
-   for(const value of ['', '-', '   ']){const copy=[...lines];copy[index]=field+':'+value;assert.equal(check(copy.join('\n')).valid,false);}
+   for(const value of ['', '-', '   ']){const copy=[...lines];copy[index]=field+':'+value;assert.equal(check(copy.join('\n')).valid,value==='-'&&Boolean(spec[parsed.command].allowDash?.includes(field)));}
    assert.equal(check(raw+'\n'+lines[index]).valid,false);
   }
   for(const field of spec[parsed.command].optional){const present=raw.split('\n').some(l=>l.split(':')[0].toUpperCase()===field);assert.equal(check(raw+'\n'+field+':-').valid,!present);}

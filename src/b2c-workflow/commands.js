@@ -12,6 +12,7 @@ function parseCommand(text,profile,botUsername) {
   if(!['TIAL1','TIAL2','SOLVER1'].includes(profile)||(profile==='SOLVER1'&&command==='order'))return reject(['perintah tidak diizinkan di grup ini']);
   if(command==='req')return {valid:true,command,sc_in:null,fields:{},request:body,original:text};
   const rule=spec[command],fields={},errors=[];
+  const allowDash=rule.allowDash||[];
   for(const line of body.split(/\r?\n/)){
     const colon=line.indexOf(':');if(colon<0)continue;
     let label=line.slice(0,colon).trim().replace(/\s+/g,' ').toUpperCase().replace(/\s*\/\s*/g,'/');
@@ -24,11 +25,11 @@ function parseCommand(text,profile,botUsername) {
     label=rule.aliases?.[label]||label;
     if(![...rule.required,...rule.optional].includes(label))continue;
     if(Object.hasOwn(fields,label))errors.push(label+' berulang');
-    const value=line.slice(colon+1).trim();fields[label]=value&&value!=='-'?value:null;
+    const value=line.slice(colon+1).trim();fields[label]=value&&(value!=='-'||allowDash.includes(label))?value:null;
   }
   for(const name of rule.required)if(!fields[name])errors.push(name);
   for(const [name,kind] of Object.entries(rule.formats||{})){
-    const value=fields[name];if(value===undefined||value===null)continue;
+    const value=fields[name];if(value===undefined||value===null||(value==='-'&&allowDash.includes(name)))continue;
     if(kind==='service'? !spec._formats.service.includes(value.toUpperCase()) : !new RegExp(spec._formats[kind]).test(value))errors.push(name+' (format)');
   }
   let code=null;
