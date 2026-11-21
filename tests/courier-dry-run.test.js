@@ -8,7 +8,7 @@ test('dry-run detects replay and rejects unsupported manual-workspace commands w
  const base=fixture.events[0],result=dryRun({...fixture,events:[base,base,{...base,update_id:'50',event:{...base.event,text:'/ASSUREN fixture'}}]});assert.equal(result.accepted,1);assert.equal(result.replayedUpdates,1);assert.equal(result.rejected,1);assert.equal(result.sentMessages,0);
 });
 test('invalid routed orders are rejected without fields, crash, accepted counts or field coverage',()=>{
- const events=fixture.events.filter(body=>!body.event.text.startsWith('/req')).map((body,i)=>({...body,update_id:String(100+i),event:{...body.event,text:body.event.text.replace(/STO:[^\n]+/,'STO:-')}}));
+ const events=fixture.events.filter(body=>!body.event.text.startsWith('/req')).map((body,i)=>({...body,update_id:String(100+i),event:{...body.event,text:body.event.text.replace(/STO:[^\n]+/,'STO:invalid!')}}));
  const result=dryRun({...fixture,events:[...events,events[0],fixture.events[1]]});
  assert.equal(result.rejected,3);assert.equal(result.replayedUpdates,1);assert.equal(result.accepted,1);assert.deepEqual(result.commands,{req:1});
  assert.deepEqual(result.fieldCoverage,{scIn:0,inet:0,sto:0,transaction:0});

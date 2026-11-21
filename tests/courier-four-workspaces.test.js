@@ -18,7 +18,7 @@ test('four workspace parser/routing uses exact chat-topic pairs and rejects mism
  for(const changes of [{telegram_thread_id:null},{telegram_thread_id:'999'},{text:text('ASSUREN')},{kind:'edited_message'}])assert.throws(()=>policy.ingress(event(2,changes)));
  assert.throws(()=>validateGroups([...groups,groups[1]]));
  assert.throws(()=>validateGroups([{...groups[1],commands:['order']}]));
- for(const replacement of ['SC/IN:-','NO INET/TELP:letters','STO:!','TRANSAKSI:-']){
+ for(const replacement of ['SC/IN:-','NO INET/TELP:letters','STO:!','TRANSAKSI:!']){
   const field=replacement.split(':')[0];const body=text('B2B').split('\n').map(l=>l.startsWith(field+':')?replacement:l).join('\n');assert.equal(parseCommand(body,'B2B',botUsername).valid,false);
  }
  assert.equal(parseCommand(text('B2B')+'\nINET:12345','B2B',botUsername).valid,false);

@@ -21,8 +21,11 @@ Existing canonical labels remain accepted. Combined historical GPON/reporter fie
 are retained separately rather than guessing how to split historical values.
 New NIK ATASAN, HOSTNAME GPON, IP GPON, NAMA/NIK PELAPOR and WITEL are structured.
 All recognized duplicate labels are invalid, including alias/canonical pairs and
-optional labels. Required blank/dash values remain invalid. Serial/identity
-validation and normalization are unchanged.
+optional labels. Required fields still need an explicit value. A single dash is
+accepted in order details across TIAL, LOGIC, ASSUREN, B2B and REPLACEMENT.
+`SC/IN` and `Order ID DSC` still require a valid order reference. Non-placeholder
+values follow the usual format checks. In `/MO`, a combined `NO INET/TELP` line
+with two values separated by `/` populates `NO INET` and `NO VOICE`.
 
 The existing storage function serializes parsed fields into `command_fields` and
 retains the unmodified message in `raw_text`. Invalid messages remain inbox/audit

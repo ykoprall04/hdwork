@@ -26,7 +26,6 @@ def parse_command(text, profile, bot_username=None):
     if command == 'req':
         return {'valid': True, 'command': command, 'sc_in': None, 'fields': {}, 'request': body, 'original': text}
     rule, fields, errors = SPEC[command], {}, []
-    allow_dash = rule.get('allowDash', ())
     for line in body.splitlines():
         if ':' not in line: continue
         label, value = line.split(':', 1)
@@ -36,17 +35,21 @@ def parse_command(text, profile, bot_username=None):
         if label == 'TRANSAKSI' and command == 'mo': label = 'TIPE TRANSAKSI'
         if label == 'USEE TV': label = 'NO USEE'
         if label == 'ORDER ID DSC': label = 'ORDER ID'
-        if label == 'NO INET/TELP': label = 'NO INET' if 'NO INET' in rule['required'] + rule['optional'] else 'NO INTERNET'
+        combined = label == 'NO INET/TELP'
+        if combined: label = 'NO INET' if 'NO INET' in rule['required'] + rule['optional'] else 'NO INTERNET'
         label = rule.get('aliases', {}).get(label, label)
         if label not in rule['required'] + rule['optional']: continue
-        if label in fields: errors.append(label + ' berulang')
         value = value.strip()
-        fields[label] = value if value and (value != '-' or label in allow_dash) else None
+        numbers = value.split('/') if combined and command == 'mo' else []
+        entries = [(label, numbers[0].strip()), ('NO VOICE', numbers[1].strip())] if len(numbers) == 2 else [(label, value)]
+        for name, part in entries:
+            if name in fields: errors.append(name + ' berulang')
+            fields[name] = part if part and (part != '-' or name != rule['identity']) else None
     for name in rule['required']:
         if not fields.get(name): errors.append(name)
     for name, kind in rule.get('formats', {}).items():
         value = fields.get(name)
-        if value is None or (value == '-' and name in allow_dash):
+        if value is None or value == '-':
             continue
         allowed = SPEC['_formats'][kind]
         valid = value.upper() in allowed if kind == 'service' else bool(re.fullmatch(allowed, value))

@@ -34,7 +34,7 @@ class InvalidSequenceTests(unittest.TestCase):
             ack.settle.side_effect=settle
             policy=IngressPolicy('sandbox','SyntheticOpsBot',[GROUP])
             runner=DurableCourier(tg,api,journal,policy,Mock(),poll=True,send=True,fifo_ack=True,ack_internal=ack,clock=lambda:now[0])
-            texts=[VALID,VALID.replace('SC/IN:FIXTURE-AO100','SC/IN:'),VALID.replace('AO100','AO101'),VALID.replace('SN ONT:SYNTHETIC','SN ONT:-'),VALID]
+            texts=[VALID,VALID.replace('SC/IN:FIXTURE-AO100','SC/IN:'),VALID.replace('AO100','AO101'),VALID.replace('SN ONT:SYNTHETIC','SN ONT:'),VALID]
             try:
                 for index,text in enumerate(texts):
                     arrival=now[0];uid=index+1

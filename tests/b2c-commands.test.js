@@ -15,7 +15,7 @@ test('transaction extraction, labels, suffix, required/optional and profile vali
  assert.equal(parseCommand(base,'SOLVER1').valid,false);
  for(const name of ['SC/IN','TIPE TRANSAKSI','SN ONT','STO','KETERANGAN','NIK'])for(const value of ['', ' ', '-']){
   const lines=base.split('\n').filter(s=>!s.startsWith(name+':'));assert.equal(parseCommand(lines.join('\n'),'TIAL1').valid,false);
-  assert.equal(parseCommand([...lines,`${name}:${value}`].join('\n'),'TIAL1').valid,false);
+  assert.equal(parseCommand([...lines,`${name}:${value}`].join('\n'),'TIAL1').valid,value==='-'&&name!=='SC/IN');
  }
  assert.equal(parseCommand(base.replace('AOi123','MOk123'),'TIAL1').valid,true);
  for(const [cmd,label] of [['config_psb','Order ID'],['MO','SC/IN']])for(const field of [label,'STO'])for(const value of ['', ' ', '-'])assert.equal(parseCommand(`/${cmd}\n${field===label?'STO:X':label+':PREFIX-AOi1'}\n${field}:${value}`,'TIAL1').valid,false);
