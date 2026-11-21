@@ -27,18 +27,24 @@ def parse_update(update, bot_id):
         raise ValueError('invalid_timestamp')
     attachments = []
     candidates = []
+    thumbnail = None
     if m.get('photo'):
         photos = m['photo']
         if not isinstance(photos, list) or not all(isinstance(p, dict) for p in photos):
             raise ValueError('invalid_attachment')
         candidates.append(('photo', photos[-1]))
+        if len(photos) > 1:
+            thumbnail = photos[0].get('file_id')
     for name in ('document', 'video', 'audio', 'voice', 'animation', 'sticker'):
         if name in m:
             candidates.append((name, m[name]))
     for name, attachment in candidates:
         if not isinstance(attachment, dict) or not isinstance(attachment.get('file_id'), str) or not attachment['file_id']:
             raise ValueError('invalid_attachment')
+        document_thumb = attachment.get('thumbnail') if name == 'document' else None
+        thumb = thumbnail if name == 'photo' else document_thumb.get('file_id') if isinstance(document_thumb, dict) else None
         attachments.append({
+            **({'thumbnail_file_id': thumb} if isinstance(thumb, str) and thumb and thumb != attachment['file_id'] else {}),
             'kind': name, 'file_id': attachment['file_id'],
             'file_unique_id': attachment.get('file_unique_id'),
             'name': attachment.get('file_name'), 'mime_type': attachment.get('mime_type'),

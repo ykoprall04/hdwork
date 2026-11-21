@@ -100,7 +100,7 @@ class RawLog:
                 row[key] = value
             elif key == 'phase' and value in ('DNS', 'TCP', 'TLS', 'HTTP', 'NETWORK_TIMEOUT', 'REQUEST'):
                 row[key] = value
-            elif key == 'apiMethod' and value in ('getMe', 'getWebhookInfo', 'getUpdates', 'sendMessage'):
+            elif key == 'apiMethod' and value in ('getMe', 'getWebhookInfo', 'getUpdates', 'sendMessage', 'getFile', 'sendPhoto', 'sendDocument'):
                 row[key] = value
             elif key == 'command' and value in ('order', 'req', 'config_psb', 'mo', 'assuren', 'b2b', 'replacement'):
                 row[key] = value

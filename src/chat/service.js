@@ -3,7 +3,18 @@ const {logger,observe}=require('../observability/raw-log');
 const B2C=['TIAL','REQ','LOGIC_PSB','LOGIC_MO','ASSUREN','B2B','REPLACEMENT'];
 const scope=user=>user.modules.filter(m=>B2C.includes(m));
 function page(value='1'){if(typeof value!=='string'||! /^[1-9]\d{0,3}$/.test(value))throw fail();return Number(value);}
-function reply(input){if(!input||Object.keys(input).some(k=>!['requestId','version','text'].includes(k))||typeof input.text!=='string'||!input.text.trim()||input.text.trim().length>4096||/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(input.text)||!Number.isSafeInteger(input.version)||input.version<0)throw fail(400,'Pesan harus 1–4096 karakter dan versi order harus valid');uuid(input.requestId);return {...input,text:input.text.trim()};}
+const photos=require('./photos');
+function reply(input){
+ if(!input||Object.keys(input).some(k=>!['requestId','version','text','photo','asDocument'].includes(k))||typeof input.text!=='string'||/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(input.text)||!Number.isSafeInteger(input.version)||input.version<0)throw fail(400,'Pesan atau versi order tidak valid');
+ const text=input.text.trim();
+ if(input.asDocument!==undefined&&(input.photo===undefined||typeof input.asDocument!=='boolean'))throw fail(400);
+ if(input.photo!==undefined){
+  photos.upload(input.photo);
+  if(text.length>1024)throw fail(400,'Caption foto maksimal 1024 karakter');
+ }else if(!text||text.length>4096)throw fail(400,'Pesan harus 1–4096 karakter dan versi order harus valid');
+ uuid(input.requestId);
+ return {...input,text};
+}
 async function captureIncoming({c,event:e,botId}){
  if(!e.reply_to_message_id)return false;
  let [[order]]=await c.execute('SELECT * FROM hd2_orders WHERE bot_id=? AND chat_id=? AND thread_id<=>? AND message_id=? FOR SHARE',[botId,e.chat_id,e.telegram_thread_id,e.reply_to_message_id]);
@@ -17,7 +28,7 @@ async function captureIncoming({c,event:e,botId}){
  return true;
 }
 async function recordOriginal({c,event:e,botId,orderId}){await c.execute("INSERT IGNORE INTO hd2_chat_messages(id,order_id,bot_id,chat_id,thread_id,telegram_message_id,reply_to_id,direction,sender_id,body,attachments,telegram_timestamp) VALUES (?,?,?,?,?,?,NULL,'IN',?,?,?,?)",[randomUUID(),orderId,botId,e.chat_id,e.telegram_thread_id,e.message_id,e.sender_id,e.text,JSON.stringify(e.attachments),e.timestamp]);}
-function createChat({readPool,writePool,sharedGroups=process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true'}){
+function createChat({readPool,writePool,photosEnabled=process.env.HDWORK2_CHAT_PHOTOS_ENABLED==='true',sharedGroups=process.env.HDWORK2_SHARED_GROUPS_ENABLED==='true'}){
  const service={
   async incomingSummary(query,user){
    if(user.username==='trial_yanto')throw fail(403);
@@ -27,10 +38,33 @@ function createChat({readPool,writePool,sharedGroups=process.env.HDWORK2_SHARED_
    return {data:rows.map(r=>({id:r.id,sequence:String(r.sequence)}))};
   },
   async conversations(query,user){if(user.username==='trial_yanto')throw fail(403);if(Object.keys(query).some(k=>!['page','area'].includes(k)))throw fail();const n=page(query.page),modules=scope(user).filter(m=>!query.area||(query.area==='TIAL'?['TIAL','REQ'].includes(m):query.area==='LOGIC'?m.startsWith('LOGIC'):false));if(query.area&&!['TIAL','LOGIC'].includes(query.area))throw fail();const [rows]=await readPool.execute(`SELECT o.id,o.sc_in AS reference,o.access_module AS module,o.status,o.version,o.owner_user_id AS ownerId,u.name AS ownerName,DATE_FORMAT(o.started_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS startedAt,DATE_FORMAT(o.finished_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS finishedAt,o.duplicate_of AS duplicateOf,o.duplicate_decision AS decision,o.command FROM hd2_orders o LEFT JOIN users u ON u.id=o.owner_user_id WHERE o.access_module IN (${modules.map(()=>'?').join(',')||"''"}) AND o.command IN ('order','req','config_psb','mo','assuren','b2b','replacement') ORDER BY o.telegram_timestamp DESC,o.id DESC LIMIT 26 OFFSET ?`,[...modules,(n-1)*25]);return {data:rows.slice(0,25),page:n,hasMore:rows.length>25};},
+  async photo(id,messageId,user,{thumbnail=false,requestDownload=false}={}){
+   if(user.username==='trial_yanto')throw fail(403);
+   uuid(id);uuid(messageId);
+   const allowed=scope(user);
+   const [[row]]=await readPool.execute(`SELECT m.direction,m.bot_id,m.attachments,m.telegram_timestamp FROM hd2_chat_messages m JOIN hd2_orders o ON o.id=m.order_id WHERE m.id=? AND m.order_id=? AND o.access_module IN (${allowed.map(()=>'?').join(',')||"''"})`,[messageId,id,...allowed]);
+   const photo=photos.photoEntry(row?.attachments);
+   if(!photo)throw fail(404,'Foto belum tersedia');
+   if(row.direction!=='IN'){
+    if(thumbnail)throw fail(404,'Thumbnail belum tersedia');
+    return photos.outgoing(photo.key);
+   }
+   const fileId=thumbnail?photo.thumbnail_file_id:photo.file_id;
+   if(!fileId)throw fail(404,'Foto belum tersedia');
+   try{return await photos.incoming(row.bot_id,fileId,thumbnail);}
+   catch(error){
+    if(error.statusCode!==404)throw error;
+    const age=Date.now()-Number(row.telegram_timestamp)*1000;
+    const freshThumbnail=thumbnail&&age>=0&&age<86400000;
+    if(!freshThumbnail&&(thumbnail||!requestDownload))throw error;
+    await photos.requestIncoming(row.bot_id,fileId,thumbnail);
+    return null;
+   }
+  },
   async messages(id,query,user){if(user.username==='trial_yanto')throw fail(403);uuid(id);if(Object.keys(query).some(k=>k!=='page'))throw fail();const n=page(query.page),allowed=scope(user);const [[order]]=await readPool.execute(`SELECT id,bot_id,chat_id,thread_id FROM hd2_orders WHERE id=? AND access_module IN (${allowed.map(()=>'?').join(',')||"''"})`,[id,...allowed]);if(!order)throw fail(404);
    let routeActive=true;if(sharedGroups){const [[route]]=await readPool.execute('SELECT enabled,verified FROM hd2_system_mappings WHERE bot_id=? AND chat_id=? AND thread_id<=>?',[order.bot_id,order.chat_id,order.thread_id]);routeActive=!!route&&[1,true].includes(route.enabled)&&[1,true].includes(route.verified);}
-   const [rows]=await readPool.execute(`SELECT m.id,m.seq,m.direction,m.body,m.user_id AS userId,u.name AS userName,m.telegram_timestamp AS telegramTimestamp,DATE_FORMAT(m.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,m.telegram_message_id AS incomingId,m.reply_to_id AS replyTo,b.state,b.telegram_message_id,b.last_error_code,b.lease_until_ms,b.attempts${sharedGroups?",(route.id IS NULL OR route.enabled=FALSE OR route.verified=FALSE OR (route.blocked_before IS NOT NULL AND b.created_at<=route.blocked_before)) AS held":''} FROM hd2_chat_messages m LEFT JOIN users u ON u.id=m.user_id LEFT JOIN hd2_courier_outbox b ON b.id=m.outbox_id ${sharedGroups?'LEFT JOIN hd2_system_mappings route ON route.bot_id=m.bot_id AND route.chat_id=m.chat_id AND route.thread_id<=>m.thread_id':''} WHERE m.order_id=? ORDER BY m.seq DESC LIMIT 26 OFFSET ?`,[id,(n-1)*25]);return {routeActive,data:rows.slice(0,25).reverse().map(r=>({id:r.id,sequence:String(r.seq),direction:r.direction,text:r.body,userId:r.userId,userName:r.userName||'Telegram',at:r.direction==='IN'&&r.telegramTimestamp?new Date(Number(r.telegramTimestamp)*1000).toISOString():r.createdAt,telegramMessageId:r.direction==='IN'?r.incomingId:r.telegram_message_id||null,replyTo:r.replyTo,status:r.direction==='IN'?'DITERIMA':r.held&&['QUEUED','SENDING'].includes(r.state)?'DITAHAN':require('../courier/delivery-state').feedbackState(r),attempts:r.attempts||0})),page:n,hasMore:rows.length>25};},
-  async send(id,token,userId,input){uuid(id);const body=reply(input),store=new MysqlStore({pool:writePool,botId:'unused'});return store.transaction(async c=>{
+   const [rows]=await readPool.execute(`SELECT m.id,m.seq,m.direction,m.body,(JSON_CONTAINS(m.attachments,JSON_OBJECT('kind','photo')) OR JSON_CONTAINS(m.attachments,JSON_OBJECT('kind','document','mime_type','image/jpeg')) OR JSON_CONTAINS(m.attachments,JSON_OBJECT('kind','document','mime_type','image/png'))) AS hasPhoto,m.user_id AS userId,u.name AS userName,m.telegram_timestamp AS telegramTimestamp,DATE_FORMAT(m.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,m.telegram_message_id AS incomingId,m.reply_to_id AS replyTo,b.state,b.telegram_message_id,b.last_error_code,b.lease_until_ms,b.attempts${sharedGroups?",(route.id IS NULL OR route.enabled=FALSE OR route.verified=FALSE OR (route.blocked_before IS NOT NULL AND b.created_at<=route.blocked_before)) AS held":''} FROM hd2_chat_messages m LEFT JOIN users u ON u.id=m.user_id LEFT JOIN hd2_courier_outbox b ON b.id=m.outbox_id ${sharedGroups?'LEFT JOIN hd2_system_mappings route ON route.bot_id=m.bot_id AND route.chat_id=m.chat_id AND route.thread_id<=>m.thread_id':''} WHERE m.order_id=? ORDER BY m.seq DESC LIMIT 26 OFFSET ?`,[id,(n-1)*25]);return {routeActive,photosEnabled,data:rows.slice(0,25).reverse().map(r=>({id:r.id,sequence:String(r.seq),direction:r.direction,hasPhoto:Number(r.hasPhoto)===1,text:r.body,userId:r.userId,userName:r.userName||'Telegram',at:r.direction==='IN'&&r.telegramTimestamp?new Date(Number(r.telegramTimestamp)*1000).toISOString():r.createdAt,telegramMessageId:r.direction==='IN'?r.incomingId:r.telegram_message_id||null,replyTo:r.replyTo,status:r.direction==='IN'?'DITERIMA':r.held&&['QUEUED','SENDING'].includes(r.state)?'DITAHAN':require('../courier/delivery-state').feedbackState(r),attempts:r.attempts||0})),page:n,hasMore:rows.length>25};},
+  async send(id,token,userId,input){uuid(id);const body=reply(input);if(body.photo&&!photosEnabled)throw fail(403,'Kirim foto belum diaktifkan');const store=new MysqlStore({pool:writePool,botId:'unused'});return store.transaction(async c=>{
    const [[actor]]=await c.execute('SELECT id,name,username,role,is_active FROM users WHERE id=? FOR SHARE',[userId]);if(!actor||actor.username==='trial_yanto'||!['HD','ADMIN','SUPER_ADMIN'].includes(actor.role)||![1,true].includes(actor.is_active))throw fail(403,'Hanya petugas berizin yang dapat membalas percakapan');
    const [grants]=await c.execute('SELECT module FROM hd2_user_modules WHERE user_id=? FOR SHARE',[userId]);
    const [[session]]=await c.execute('SELECT token_hash FROM hd2_sessions WHERE token_hash=? AND user_id=? AND revoked=FALSE AND expires_at>UTC_TIMESTAMP(3) FOR SHARE',[digest(token),userId]);if(!session)throw fail(401);
@@ -40,8 +74,9 @@ function createChat({readPool,writePool,sharedGroups=process.env.HDWORK2_SHARED_
    const universal=sharedGroups&&require('../courier/shared-group').b2cCommands.includes(order.command);
    const category=moduleOf(order).startsWith('LOGIC')?'LOGIC':['ASSUREN','B2B','REPLACEMENT'].includes(moduleOf(order))?moduleOf(order):'TIAL';
    const [[route]]=await c.execute("SELECT id FROM hd2_system_mappings WHERE bot_id=? AND chat_id=? AND thread_id<=>? AND "+(universal?"category IN ('TIAL','LOGIC','ALL')":"category IN (?, 'ALL')")+" AND enabled=TRUE AND verified=TRUE FOR SHARE",[order.bot_id,order.chat_id,order.thread_id,...(universal?[]:[category])]);if(!route)throw fail(403,'Tujuan grup/topic belum aktif dan terverifikasi');
-   const outboxId=await new MysqlStore({pool:writePool,botId:order.bot_id}).enqueueOn(c,'web:'+userId+':'+body.requestId,{method:'sendMessage',chat_id:order.chat_id,telegram_thread_id:order.thread_id,thread_mode:order.thread_id===null?'non_topic':'thread',reply_to_message_id:order.message_id,text:body.text});const messageId=randomUUID();
-   await c.execute("INSERT INTO hd2_chat_messages(id,order_id,bot_id,chat_id,thread_id,reply_to_id,direction,user_id,body,outbox_id) VALUES (?,?,?,?,?,?,'OUT',?,?,?)",[messageId,id,order.bot_id,order.chat_id,order.thread_id,order.message_id,userId,body.text,outboxId]);await c.execute("INSERT INTO hd2_audit(id,order_id,action,user_id,detail) VALUES (?,?,'CHAT_SENT',?,?)",[randomUUID(),id,userId,JSON.stringify({messageId,requestId:body.requestId,outboxId})]);await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,'change')",[moduleOf(order)]);const result={success:true,messageId,outboxId,status:'ANTRE'};await c.execute('UPDATE hd2_web_requests SET result=? WHERE user_id=? AND request_id=?',[JSON.stringify(result),userId,body.requestId]);return result;
+   const photoKey=body.photo?await photos.storeOutgoing(userId,body.requestId,body.photo).catch(()=>{throw fail(507,'Penyimpanan lampiran belum tersedia. Foto belum masuk antrean.');}):null;
+   const outboxId=await new MysqlStore({pool:writePool,botId:order.bot_id}).enqueueOn(c,'web:'+userId+':'+body.requestId,{method:body.photo?(body.asDocument?'sendDocument':'sendPhoto'):'sendMessage',...(photoKey?{photoKey}:{}),chat_id:order.chat_id,telegram_thread_id:order.thread_id,thread_mode:order.thread_id===null?'non_topic':'thread',reply_to_message_id:order.message_id,text:body.text});const messageId=randomUUID();
+   await c.execute("INSERT INTO hd2_chat_messages(id,order_id,bot_id,chat_id,thread_id,reply_to_id,direction,user_id,body,outbox_id,attachments) VALUES (?,?,?,?,?,?,'OUT',?,?,?,?)",[messageId,id,order.bot_id,order.chat_id,order.thread_id,order.message_id,userId,body.text,outboxId,photoKey?JSON.stringify([{kind:'photo',key:photoKey}]):null]);await c.execute("INSERT INTO hd2_audit(id,order_id,action,user_id,detail) VALUES (?,?,'CHAT_SENT',?,?)",[randomUUID(),id,userId,JSON.stringify({messageId,requestId:body.requestId,outboxId})]);await c.execute("INSERT INTO hd2_live_events(module,kind) VALUES (?,'change')",[moduleOf(order)]);const result={success:true,messageId,outboxId,status:'ANTRE'};await c.execute('UPDATE hd2_web_requests SET result=? WHERE user_id=? AND request_id=?',[JSON.stringify(result),userId,body.requestId]);return result;
   });}
  };
  for(const name of ['messages','conversations']){const original=service[name];service[name]=function(...args){return observe(name==='messages'?'CHAT_HISTORY':'CHAT_CONVERSATIONS',{},()=>original.apply(this,args));};}

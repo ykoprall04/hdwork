@@ -85,6 +85,19 @@ class JsonTransport:
         else:
             logger().emit('HTTP_FAILURE', error=error, status='ERROR', phase=phase)
 
+    def download(self, url, limit):
+        try:
+            with (self.opener or urlopen)(Request(url, method='GET'), timeout=self.timeout) as response:
+                data = response.read(limit + 1)
+                if len(data) > limit:
+                    raise TransportError(413)
+                return data
+        except HTTPError as error:
+            error.close()
+            raise TransportError(error.code) from None
+        except OSError:
+            raise TransportError() from None
+
     def post(self, url, payload, headers=None):
         body = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode()
         request = Request(url, data=body, headers={'Content-Type': 'application/json', **(headers or {})}, method='POST')

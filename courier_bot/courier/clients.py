@@ -60,8 +60,10 @@ class InternalClient:
         return self.post('/internal/courier/v1/worker/' + action, {'worker_id': worker_id, **({'lease_token': token} if token else {})})
 
 class TelegramClient:
-    def __init__(self, token, transport):
+    def __init__(self, token, transport, media_dir=None):
         self._base, self.transport = 'https://api.telegram.org/bot' + token + '/', transport
+        self.media_dir = media_dir
+        self._file_base = 'https://api.telegram.org/file/bot' + token + '/'
 
     def request(self, method, body):
         # Never log URL, token, payload, response body or customer identifiers.
@@ -84,10 +86,19 @@ class TelegramClient:
             payload['offset'] = offset
         return self.request('getUpdates', payload)['result']
 
-    def send(self, payload):
-        if payload.get('method') != 'sendMessage' or payload.get('thread_mode') not in ('thread', 'non_topic'):
+    def download_photo(self, file_id, limit):
+        from .photos import valid_file_path
+        result = self.request('getFile', {'file_id': file_id})['result']
+        path = result.get('file_path') if isinstance(result, dict) else None
+        if not valid_file_path(path):
             raise TransportError(400)
-        body = {'chat_id': payload['chat_id'], 'text': payload['text']}
+        return self.transport.download(self._file_base + path, limit)
+
+    def send(self, payload):
+        method = payload.get('method')
+        if method not in ('sendMessage', 'sendPhoto', 'sendDocument') or payload.get('thread_mode') not in ('thread', 'non_topic'):
+            raise TransportError(400)
+        body = {'chat_id': payload['chat_id'], 'caption' if method != 'sendMessage' else 'text': payload['text']}
         def message_id(value):
             if not isinstance(value, str) or not re.fullmatch(r'[1-9]\d{0,9}', value) or int(value) > 2147483647:
                 raise TransportError(400)
@@ -101,7 +112,14 @@ class TelegramClient:
         if payload.get('reply_to_message_id') is not None:
             body['reply_parameters'] = {'message_id': message_id(payload['reply_to_message_id']), 'allow_sending_without_reply': False}
         try:
-            result = self.request('sendMessage', body)['result']['message_id']
+            if method != 'sendMessage':
+                from .photos import multipart_photo, read_outgoing
+                if 'reply_parameters' in body:
+                    body['reply_parameters'] = json.dumps(body['reply_parameters'], separators=(',', ':'))
+                data, headers = multipart_photo(body, read_outgoing(self.media_dir, payload.get('photoKey')), 'document' if method == 'sendDocument' else 'photo')
+                result = observe('TELEGRAM_REQUEST', lambda: self.transport.post(self._base + method, data, headers), apiMethod=method)['result']['message_id']
+            else:
+                result = self.request(method, body)['result']['message_id']
         except TransportError as error:
             evidence = getattr(error, 'api_failure', None)
             if evidence:

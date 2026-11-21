@@ -76,7 +76,7 @@ def main():
         ack_internal = InternalClient(config.base, JsonTransport(build_opener(ProxyHandler({}), NoRedirect()).open),budget=budget) if config.fifo_ack else None
         inbound_telegram=TelegramClient(config.base.token,telegram_transport(timeout=35)) if config.separate_io else None
         forward_internal=InternalClient(config.base,JsonTransport(build_opener(ProxyHandler({}),NoRedirect()).open),budget=budget) if config.separate_io else None
-        telegram = TelegramClient(config.base.token, telegram_transport())
+        telegram = TelegramClient(config.base.token, telegram_transport(), os.environ.get('HDWORK2_CHAT_MEDIA_DIR') if config.chat_enabled else None)
         if config.production_bot_id:
             telegram.verify_identity(config.production_bot_id, config.username)
         lease = WorkerLease(internal)
@@ -99,10 +99,12 @@ def main():
                 stop.set()
             else:
                 print(code, file=sys.stderr)
+        media_dir = os.environ.get('HDWORK2_CHAT_MEDIA_DIR') if config.chat_enabled and not window else None
+        media_telegram = TelegramClient(config.base.token, telegram_transport(timeout=3)) if media_dir else None
         courier = DurableCourier(telegram, internal, journal,
                                  IngressPolicy(config.base.bot_id, config.username, config.groups, test_window=window, chat_enabled=config.chat_enabled, command_settings=command_settings), lease,
                                  poll=config.poll, send=config.send, stopped=stop.is_set,
-                                 report=report, database_routing=config.database_routing, fifo_ack=config.fifo_ack, ack_internal=ack_internal,scheduler=scheduler,inbound_telegram=inbound_telegram,forward_internal=forward_internal)
+                                 report=report, database_routing=config.database_routing, fifo_ack=config.fifo_ack, ack_internal=ack_internal,scheduler=scheduler,inbound_telegram=inbound_telegram,forward_internal=forward_internal,media_dir=media_dir,media_telegram=media_telegram)
         for name in ('SIGINT', 'SIGTERM', 'SIGBREAK'):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), lambda *_args: stop.set())

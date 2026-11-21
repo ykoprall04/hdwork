@@ -144,6 +144,9 @@ class Journal:
 
     def delivery_result(self, delivery, result):
         ack = {'delivery_id': delivery['delivery_id'], 'lease_token': delivery['lease_token'], 'result': result}
+        key = delivery.get('payload', {}).get('photoKey')
+        if result['result'] == 'sent' and key:
+            ack['photoKey'] = key
         with self.db:
             self.db.execute("UPDATE deliveries SET success_id=COALESCE(?,success_id),ack=?,last_result=?,last_lease_token=?,ack_since=?,ack_alert_at=NULL,due=0,attempts=0,state='ACK_PENDING' WHERE delivery_id=?",
                             (result.get('telegram_message_id') if result['result'] == 'sent' else None, encoded(ack), encoded(result), delivery['lease_token'], self.clock(), delivery['delivery_id']))
