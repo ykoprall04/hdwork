@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,6 +12,53 @@ import { FeedbackStatus } from './OperationalStatus';
 import { confirmChatNavigation } from './unsent-chat';
 import HdNote from './HdNote';
 import FormatVlanButton from './FormatVlanButton';
+
+function OriginalTelegramMessage({ text, embedded }: { text: string; embedded: boolean }) {
+  const originalMessage = useRef<HTMLElement>(null);
+  const originalMessageId = useId();
+  const drag = useRef<{ pointer: number; startY: number; height: number } | null>(null);
+  const [originalHeight, setOriginalHeight] = useState<number>();
+  const minHeight = 44;
+  const maxHeight = () => Math.max(minHeight, Math.min(320, Math.floor(window.innerHeight * 0.36)));
+  function resizeOriginal(height: number) {
+    setOriginalHeight(Math.round(Math.max(minHeight, Math.min(maxHeight(), height))));
+  }
+  return (
+    <div>
+      <section id={originalMessageId} ref={originalMessage} aria-label="Pesan asli Telegram" className="op-original-message"
+        data-resized={embedded && originalHeight !== undefined}
+        style={embedded && originalHeight !== undefined ? { height: originalHeight } : undefined}>
+        {!embedded && <h3 className="mb-3 font-semibold">Pesan asli Telegram</h3>}
+        <p className="whitespace-pre-wrap break-words text-sm">{text}</p>
+      </section>
+      {embedded && <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label="Atur tinggi panel order"
+        aria-controls={originalMessageId} aria-valuemin={minHeight} aria-valuemax={maxHeight()} aria-valuenow={Math.min(originalHeight ?? 96, maxHeight())}
+        className="op-original-message-resize"
+        title="Tarik ke atas atau ke bawah"
+        onPointerDown={event => {
+          if (event.button !== 0 || !event.isPrimary || !originalMessage.current) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drag.current = { pointer: event.pointerId, startY: event.clientY, height: originalMessage.current.getBoundingClientRect().height };
+        }}
+        onPointerMove={event => {
+          const start = drag.current;
+          if (start?.pointer === event.pointerId) resizeOriginal(start.height + event.clientY - start.startY);
+        }}
+        onLostPointerCapture={() => { drag.current = null; }}
+        onKeyDown={event => {
+          const current = originalMessage.current?.getBoundingClientRect().height ?? 96;
+          switch (event.key) {
+            case 'ArrowUp': resizeOriginal(current - 16); break;
+            case 'ArrowDown': resizeOriginal(current + 16); break;
+            case 'Home': resizeOriginal(minHeight); break;
+            case 'End': resizeOriginal(maxHeight()); break;
+            default: return;
+          }
+          event.preventDefault();
+        }} />}
+    </div>
+  );
+}
 
 export default function OrderWorkPanel({ id, orders, onSelect, onClose, onChange, embedded = false, onMobileBack }: { id: string; orders: Work[]; onSelect: (id: string) => void; onClose: () => void; onChange: () => Promise<void>; embedded?: boolean; onMobileBack?: () => void }) {
   const panel = useRef<HTMLElement>(null);
@@ -39,7 +86,7 @@ export default function OrderWorkPanel({ id, orders, onSelect, onClose, onChange
       {detail.loading && !order && <p role="status">Memuat detail pekerjaan…</p>}
       {detail.error && <div role="alert"><p>{detail.error}</p><Button variant="outline" onClick={() => void detail.refresh()}>Coba muat detail</Button></div>}
       {order && <><div className="op-panel-summary">{!embedded && <div className="flex flex-wrap items-center gap-3"><WorkStatusBadge status={order.status} decision={order.decision} /><span className="text-xs text-muted-foreground">Petugas: {order.ownerName || 'Belum PICK'}</span></div>}
-        <section aria-label="Pesan asli Telegram" className="op-original-message">{!embedded && <h3 className="mb-3 font-semibold">Pesan asli Telegram</h3>}<p className="whitespace-pre-wrap break-words text-sm">{detail.data?.originalMessage || detail.data?.requestText || 'Pesan asli belum tersedia dari API.'}</p></section>
+        <OriginalTelegramMessage embedded={embedded} text={detail.data?.originalMessage || detail.data?.requestText || 'Pesan asli belum tersedia dari API.'} />
         <FeedbackStatus feedback={order.feedback} />
         {user?.role==='HD'&&user.username!=='trial_yanto'&&<HdNote key={`${user.id}:${id}`} order={order} verified={!detail.error}/>}
         {!embedded && <Link className="text-sm text-primary underline" to={`/orders/${id}`}>Buka halaman detail lengkap</Link>}
