@@ -1,4 +1,4 @@
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn}=require('node:child_process');
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process');
 const {configuration,hash}=require('../scripts/courier-task-runner');
 function fixture(t){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'courier-task-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
@@ -15,6 +15,27 @@ test('task refuses changed runtime, configuration, ciphertext and production pla
  }
 });
 test('task rejects traversal even when config hash matches',t=>{const f=fixture(t);f.cfg.sourceHashes={'../escape':'x'};const c=f.save();assert.throws(()=>configuration(c.file,c.digest),/TASK_CONFIG_REJECTED/);});
+test('Courier passes only the pinned media setting to the Python process',t=>{
+ const f=fixture(t),media=path.join(f.dir,'private photos');
+ f.cfg.pythonExecutable=execFileSync('python',['-c','import sys; print(sys.executable)'],{encoding:'utf8'}).trim();
+ f.cfg.environmentSha256=f.put('service/environment.json',JSON.stringify({HDWORK2_CHAT_MEDIA_DIR:media,UNRELATED_SETTING:'private'}));
+ const source=`exports.run=async()=>{
+  const child=require('node:child_process').spawn('python',['-B','-c',
+   'import json, os; print(json.dumps([os.environ.get("HDWORK2_CHAT_MEDIA_DIR"), os.environ.get("UNRELATED_SETTING")]))','--run'],
+   {env:{...process.env,HDWORK2_CHAT_MEDIA_DIR:'stale'},stdio:['pipe','pipe','pipe']});
+  child.stdout.pipe(process.stdout);
+  await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',code=>code===0?resolve():reject(Error('Python probe failed')));});
+ };`;
+ f.cfg.sourceHashes['scripts/run-production-live-chat-courier.js']=f.put('scripts/run-production-live-chat-courier.js',source);
+ const c=f.save();
+ const run=()=>execFileSync(process.execPath,[path.resolve(__dirname,'../scripts/courier-task-runner.js'),'--config',c.file,'--config-sha256',c.digest],{encoding:'utf8',timeout:5000});
+ assert.deepEqual(JSON.parse(run()),[media,null]);
+ f.put('service/environment.json','{}');
+ assert.throws(()=>configuration(c.file,c.digest),/TASK_VERSION_DRIFT/);
+ f.cfg.environmentSha256=f.put('service/environment.json','{}');
+ const absent=f.save();
+ assert.equal(configuration(absent.file,absent.digest).mediaDirectory,undefined);
+});
 test('owner pipe closure stops the supervisor and records redacted state',async t=>{
  const f=fixture(t),c=f.save();const child=spawn(process.execPath,[path.resolve(__dirname,'../scripts/courier-task-runner.js'),'--config',c.file,'--config-sha256',c.digest],{stdio:['pipe','pipe','pipe']});
  t.after(()=>{if(child.exitCode===null)child.kill();});

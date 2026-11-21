@@ -76,7 +76,7 @@ function StartupStopped($state,[string]$expectedSha,[string]$attemptId=''){retur
 function WebPath([string]$path){
  $p=$path.Replace('\','/')
  if($p -ceq 'src/b2c-workflow/order-network.js'){return $true}
- if($p -cin @('contracts/b2c-commands.json','contracts/workspace-commands.json')){return $true}
+ if($p -cin @('contracts/b2c-commands.json','contracts/workspace-commands.json','src/courier/contract.js')){return $true}
  if($DatabasePrerequisitesVerified -and $p -match '^database/.*\.sql$'){return $false}
  if($p -match '^(src/courier/|src/b2c-workflow/|src/config/production-courier\.js$|courier[-_]|courier_bot/|contracts/|docs/|tests/|scripts/hdwork-web-update\.ps1$|hdwork-update\.cmd$)'){return $false}
  if($p -match '(^|/)(migrations?|schema)(/|\.|$)|\.sql$|operational-grants\.js$|(^|/)\.env'){Fail 'WEB_UPDATE_DATABASE_OR_SECRET_CHANGE_REQUIRES_REVIEW'}
@@ -91,6 +91,26 @@ function RequiredVlanHelper($web,[string]$target){
 }
 function RequiredWebContracts($web,[string]$target){
  foreach($relative in @('contracts/b2c-commands.json','contracts/workspace-commands.json')){RequiredWebSource $web $target $relative}
+ & git.exe -C $root cat-file -e ($target+':src/chat/photos.js') 2>$null
+ if($LASTEXITCODE -eq 0){RequiredWebSource $web $target 'src/courier/contract.js'}
+}
+function StageWebSource([string]$target,[string[]]$paths,[string]$payload,[string]$archive){
+ $existing=@()
+ foreach($relative in $paths){
+  & git.exe -C $root cat-file -e ($target+':'+$relative) 2>$null
+  if($LASTEXITCODE -eq 0){$existing+=,$relative}
+ }
+ if($existing.Count){
+  & git.exe -C $root archive --format=tar ('--output='+$archive) $target -- @existing
+  if($LASTEXITCODE -ne 0){Fail 'WEB_SOURCE_ARCHIVE_FAILED'}
+  & tar.exe -xf $archive -C $payload
+  if($LASTEXITCODE -ne 0){Fail 'WEB_SOURCE_EXTRACT_FAILED'}
+ }
+ if($paths -ccontains 'src/courier/contract.js'){
+  $staged=Join-Path $payload 'src/courier/contract.js'
+  $expected=(InvokeGit @('rev-parse',($target+':src/courier/contract.js'))).Trim()
+  Need ((Test-Path -LiteralPath $staged -PathType Leaf) -and (InvokeGit @('hash-object','--path=src/courier/contract.js',$staged)).Trim() -ceq $expected) 'WEB_STAGED_COURIER_CONTRACT_MISMATCH'
+ }
 }
 function RequiredWebSource($web,[string]$target,[string]$relative){
  $file=Join-Path $web.Runtime $relative
@@ -240,7 +260,21 @@ function Main{
  $script:WebUpdatePhase='READ_ACTIVE_WEB_TASK';Write-Output 'READING_ACTIVE_WEB_TASK';$web=GetActiveWeb;$activeCommit=if($web.Config.webTargetCommit){[string]$web.Config.webTargetCommit}else{[string]$web.Config.targetCommit};$ancestor=& git -C $root merge-base --is-ancestor $activeCommit $target;if($LASTEXITCODE -ne 0){Fail 'ACTIVE_WEB_PIN_NOT_ANCESTOR_OF_MAIN'}
  $changed=@((InvokeGit @('diff','--name-only',($activeCommit+'..'+$target))).Split([Environment]::NewLine,[StringSplitOptions]::RemoveEmptyEntries));$webPaths=@();foreach($p in $changed){if($p -ceq 'src/config/operational-grants.js' -and $DatabasePrerequisitesVerified){Need (ReviewedGrantInstalled $web $target $p) 'WEB_REVIEWED_GRANT_NOT_INSTALLED_OR_PINNED';Write-Output 'WEB_REVIEWED_GRANT_ALREADY_INSTALLED';continue};if(WebPath $p){$webPaths+=,$p}}
  $webPaths=@(@($webPaths)+@(RequiredVlanHelper $web $target)+@(RequiredWebContracts $web $target)|Sort-Object -Unique)
- if($DryRun){Write-Output ('DRY_RUN target='+$target+' webChanges='+$webPaths.Count+' activeTask='+$web.Task.TaskName+' runtimeChanged=false courierTouched=false');return}
+ if($DryRun){
+  if($webPaths -ccontains 'src/courier/contract.js'){
+   $tempRoot=(Resolve-Path -LiteralPath ([IO.Path]::GetTempPath())).ProviderPath
+   $stage=Join-Path $tempRoot ('hdwork-web-contract-'+[Guid]::NewGuid().ToString('N'))
+   [void][IO.Directory]::CreateDirectory($stage)
+   try{
+    StageWebSource $target @('src/courier/contract.js') $stage (Join-Path $stage 'source.tar')
+    Write-Output 'WEB_STAGED_COURIER_CONTRACT_MATCH'
+   }finally{
+    $resolved=(Resolve-Path -LiteralPath $stage).ProviderPath
+    if($resolved -ceq $stage -and (Split-Path -Parent $resolved) -ieq $tempRoot){Remove-Item -LiteralPath $resolved -Recurse -Force}
+   }
+  }
+  Write-Output ('DRY_RUN target='+$target+' webChanges='+$webPaths.Count+' activeTask='+$web.Task.TaskName+' runtimeChanged=false courierTouched=false');return
+ }
  if($webPaths.Count -eq 0){$receipt=Join-Path $env:TEMP ('hdwork-web-health-'+[Guid]::NewGuid().ToString('N')+'.json');RetryTransientHealth { $null=Health $web $receipt };$h=Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json;Remove-Item -LiteralPath $receipt -Force;Write-Output ('SUCCESS commit='+$target+' activeWebPin='+$activeCommit+' web=UNCHANGED health=PASS courier=UNTOUCHED rounds='+$h.rounds.Count);return}
  DeployWeb $web $target $webPaths
 }
@@ -252,8 +286,8 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
  foreach($rel in $paths){if($rel.StartsWith('/') -or $rel.Split('/') -contains '..'){Fail 'WEB_PATH_REJECTED'};$p=Join-Path $runtime $rel;if(Test-Path -LiteralPath $p){$i=Get-Item -LiteralPath $p;if($i.Attributes -band [IO.FileAttributes]::ReparsePoint){Fail 'WEB_RUNTIME_LINK_REJECTED'};$pin=$cfg.sourceHashes.PSObject.Properties[$rel];$expected=if($pin){[string]$pin.Value}else{$null};if(-not $expected -or (Hash $p) -ne $expected){Fail 'WEB_RUNTIME_SOURCE_DRIFT'}}}
  $script:WebUpdatePhase='WEB_RELEASE_DIRECTORY';$releaseRoot=Join-Path (Split-Path -Parent $cfgPath) 'updates';[void][IO.Directory]::CreateDirectory($releaseRoot);$release=Join-Path $releaseRoot ($target.Substring(0,12)+'-'+[Guid]::NewGuid().ToString('N'));[void][IO.Directory]::CreateDirectory($release);$script:WebUpdateRelease=$release
  $payload=Join-Path $release 'payload';$backup=Join-Path $release 'backup';[void][IO.Directory]::CreateDirectory($payload);[void][IO.Directory]::CreateDirectory($backup)
- $script:WebUpdatePhase='WEB_SOURCE_ARCHIVE';$archive=Join-Path $release 'source.tar';$existing=@();foreach($rel in $paths){& git.exe -C $root cat-file -e ($target+':'+$rel) 2>$null;if($LASTEXITCODE -eq 0){$existing+=,$rel}}
- if($existing.Count){& git.exe -C $root archive --format=tar ('--output='+$archive) $target -- @existing;if($LASTEXITCODE -ne 0){Fail 'WEB_SOURCE_ARCHIVE_FAILED'};& tar.exe -xf $archive -C $payload;if($LASTEXITCODE -ne 0){Fail 'WEB_SOURCE_EXTRACT_FAILED'}}
+ $script:WebUpdatePhase='WEB_SOURCE_ARCHIVE'
+ StageWebSource $target $paths $payload (Join-Path $release 'source.tar')
  $frontendChanged=@($paths|Where-Object{$_ -like 'frontend/*'}).Count -gt 0
  if($frontendChanged){$script:WebUpdatePhase='WEB_FRONTEND_BUILD';$envPath=Join-Path $runtime 'service/environment.json';$envMap=Get-Content -LiteralPath $envPath -Raw|ConvertFrom-Json;$env:VITE_API_BASE_URL=[string]$envMap.HDWORK2_PUBLIC_ORIGIN;& node (Join-Path $root 'scripts/build-operational-frontend.js') --build;if($LASTEXITCODE -ne 0){Fail 'WEB_FRONTEND_BUILD_FAILED'};$script:WebUpdatePhase='WEB_FRONTEND_PACKAGE_COPY';$dist=Join-Path $root 'frontend/dist';Get-ChildItem -LiteralPath $dist -File -Recurse|Where-Object{$_.Name -ne 'release-manifest.json'}|ForEach-Object{$rel='frontend/dist/'+(RelativePath $dist $_.FullName);$to=Join-Path $payload $rel;[void][IO.Directory]::CreateDirectory((Split-Path -Parent $to));Copy-Item -LiteralPath $_.FullName -Destination $to}}
  $script:WebUpdatePhase='WEB_RELEASE_ENTRY_HASHES';$entries=@();$all=@($paths);if($frontendChanged){$payloadDist=Join-Path $payload 'frontend/dist';$all+=@(Get-ChildItem -LiteralPath $payloadDist -File -Recurse|ForEach-Object{'frontend/dist/'+(RelativePath $payloadDist $_.FullName)})};$all=@($all|Sort-Object -Unique)

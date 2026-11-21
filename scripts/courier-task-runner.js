@@ -10,17 +10,19 @@ function safeStartupDiagnostic(value){
  return {component:value.component,phase:value.phase,exceptionType:value.exceptionType,...([400,401,403,409,429,503].includes(value.httpStatus)?{httpStatus:value.httpStatus}:{}),...(Number.isInteger(value.osError)&&value.osError>0&&value.osError<256?{osError:value.osError}:{})};
 }
 function regular(file){const p=path.resolve(file),s=fs.lstatSync(p),real=fs.realpathSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>16*1024*1024||(process.platform==='win32'?real.toLowerCase()!==p.toLowerCase():real!==p))throw Error('TASK_INPUT_REJECTED');return fs.readFileSync(p);}
-function verify(file,expected){if(hash(regular(file))!==expected)throw Error('TASK_VERSION_DRIFT');}
+function verify(file,expected){const bytes=regular(file);if(hash(bytes)!==expected)throw Error('TASK_VERSION_DRIFT');return bytes;}
 function configuration(file,expected){
  verify(file,expected);const value=JSON.parse(regular(file));
  if(value.version!==1||value.kind!=='HDWORK2_COURIER_AUTOSTART'||!path.isAbsolute(value.snapshot)||!path.isAbsolute(value.productionPlan)||!path.isAbsolute(value.pythonExecutable)||!path.isAbsolute(value.nodeExecutable)||!/^S-1-[0-9-]+$/.test(value.ownerSid)||!value.sourceHashes||Object.keys(value.sourceHashes).some(name=>name.split('/').includes('..')||path.isAbsolute(name)))throw Error('TASK_CONFIG_REJECTED');
  if(value.runtimeMode!==undefined&&!['flags-off','delivery'].includes(value.runtimeMode))throw Error('TASK_RUNTIME_MODE_REJECTED');
  verify(value.productionPlan,value.productionPlanSha256);
  for(const [name,digest]of Object.entries(value.sourceHashes))verify(path.join(value.snapshot,name),digest);
- verify(path.join(value.snapshot,'service/environment.json'),value.environmentSha256);
+ const environment=JSON.parse(verify(path.join(value.snapshot,'service/environment.json'),value.environmentSha256));
+ const mediaDirectory=environment.HDWORK2_CHAT_MEDIA_DIR;
+ if(mediaDirectory!==undefined&&(typeof mediaDirectory!=='string'||!path.isAbsolute(mediaDirectory)))throw Error('TASK_CHAT_MEDIA_DIRECTORY_REJECTED');
  verify(path.join(value.snapshot,'service/secrets.dpapi'),value.encryptedBundleSha256);
  if(value.binaryHashes){for(const name of ['nodeExecutable','pythonExecutable']){const digest=value.binaryHashes[name];if(!/^[a-f0-9]{64}$/.test(digest||''))throw Error('TASK_BINARY_PIN_REQUIRED');const h=crypto.createHash('sha256'),fd=fs.openSync(value[name],'r'),buffer=Buffer.alloc(1024*1024);try{let n;while((n=fs.readSync(fd,buffer,0,buffer.length,null)))h.update(buffer.subarray(0,n));}finally{fs.closeSync(fd);}if(h.digest('hex')!==digest)throw Error('TASK_BINARY_DRIFT');}}
- return value;
+ return {...value,mediaDirectory};
 }
 function stateWriter(file){return value=>{const temp=file+'.'+crypto.randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(value,null,2)+'\n',{flag:'wx',mode:0o600});fs.renameSync(temp,file);}finally{if(fs.existsSync(temp))fs.unlinkSync(temp);}};}
 async function run(argv=process.argv.slice(2)){
@@ -42,6 +44,12 @@ async function run(argv=process.argv.slice(2)){
  cp.spawn=(exe,args,options)=>{
   if(ownerGone)throw Error('TASK_OWNER_STOPPED');
   const target=exe==='python'&&(args?.join(' ')==='-B -m courier --run'||(args?.[0]==='-B'&&args?.[1]==='-c'&&args?.[3]==='--run'));
+  if(target){
+   const env={...(options?.env??process.env)};
+   if(config.mediaDirectory!==undefined)env.HDWORK2_CHAT_MEDIA_DIR=config.mediaDirectory;
+   else delete env.HDWORK2_CHAT_MEDIA_DIR;
+   options={...options,env};
+  }
   const child=originalSpawn(target?config.pythonExecutable:exe,args,options);
   if(target){python=child;child.stdin.on('error',()=>{});}return child;
  };
