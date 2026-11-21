@@ -42,6 +42,31 @@ test('network group pairing, ambiguous groups, unrelated ports, ODP normalizatio
  for(const tail of ['\nIP OLT:10.0.0.1\nSlot:2\nfree\nPort:88','\nPort:88','\nIP OLT:10.0.0.1\nSlot:2\nPort:3\nIP OLT:10.0.0.2\nSlot:4\nPort:5'])assert.equal(require('../src/b2c-workflow/order-network').parseNetwork(tail).port,null);
  assert.equal(check(order+'\nODP:X/4\nSummary ODP:Y/9').valid,false);
 });
+test('order and MO infer transaction type and accept leading dashes in optional details',()=>{
+ for(const raw of [order,mo]){
+  const expected=raw===order?'AO':'MO';
+  assert.equal(check(raw.replace('TIPE TRANSAKSI:ignored\n','')).fields['TIPE TRANSAKSI'],expected);
+  const text=raw.replace('TIPE TRANSAKSI:ignored','TIPE TRANSAKSI:-AOI')+'\nNO INET:-123456\nSTB ID:-STB1';
+  const parsed=check(text);
+  assert.equal(parsed.valid,true,JSON.stringify(parsed));
+  assert.equal(parsed.fields['NO INET'],'-123456');
+  assert.equal(parsed.fields['STB ID'],'-STB1');
+  assert.equal(parsed.fields['TIPE TRANSAKSI'],expected);
+  assert.deepEqual(check(text.replace('NIK:TEST','NIK:-12345678')).errors,['NIK (format)']);
+  assert.deepEqual(check(text.replace('-123456','-@invalid')).errors,['NO INET (format)']);
+ }
+});
+test('config PSB optional details and REQ text accept leading dashes',()=>{
+ const parsed=check(config+'\nNIK ATASAN:-12345678\nNO INET:-123456\nSN ONT LAMA:-SN1');
+ assert.equal(parsed.valid,true,JSON.stringify(parsed));
+ assert.equal(parsed.fields['NIK ATASAN'],'-12345678');
+ assert.equal(parsed.fields['NO INTERNET'],'-123456');
+ assert.equal(parsed.fields['SN ONT LAMA'],'-SN1');
+ assert.deepEqual(check(config.replace('SNFIXTURE','-SNFIXTURE')).errors,['SN ONT BARU (format)']);
+ const request=check('/req -cek order');
+ assert.equal(request.valid,true);
+ assert.equal(request.request,' -cek order');
+});
 test('MO accepts combined INET and telephone while validating each number',()=>{
  const text=mo+'\nNO INET / TELP: 000123 / 000456';
  const parsed=check(text);

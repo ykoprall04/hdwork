@@ -18,12 +18,12 @@
     "required": [
       "SC/IN",
       "SN ONT",
-      "TIPE TRANSAKSI",
       "STO",
       "KETERANGAN",
       "NIK"
     ],
     "optional": [
+      "TIPE TRANSAKSI",
       "NO INET",
       "NO VOICE",
       "STB ID",
@@ -167,12 +167,12 @@
     "identity": "SC/IN",
     "required": [
       "SC/IN",
-      "TIPE TRANSAKSI",
       "STO",
       "KETERANGAN",
       "NIK"
     ],
     "optional": [
+      "TIPE TRANSAKSI",
       "NO INET",
       "NO VOICE",
       "SN ONT BARU",

@@ -51,6 +51,8 @@ def parse_command(text, profile, bot_username=None):
         value = fields.get(name)
         if value is None or value == '-':
             continue
+        if name in rule['optional'] and kind != 'text' and value.startswith('-'):
+            value = value[1:]
         allowed = SPEC['_formats'][kind]
         valid = value.upper() in allowed if kind == 'service' else bool(re.fullmatch(allowed, value))
         if not valid:
