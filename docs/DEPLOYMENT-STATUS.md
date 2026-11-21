@@ -269,3 +269,13 @@ mocked login/export and FORMAT VLAN browser checks, operational Vite build, and
 63 updater mock checks PASS. No deployment, database access, Courier/task/PM2 or
 personal bot action was performed. Production activation remains unchanged.
 See docs/web-handbook-export-deployment.md for later activation and rollback.
+
+## Live Chat image deployment support
+
+The Web updater stages the candidate's shared Courier message contract and
+checks its Git blob before handoff. After the media-capable Courier is
+ready, use `hdwork-update.cmd -KeepPrevious -ChatMediaDirectory "<absolute private path>"`.
+The updater checks the folder and the current protected environment pin, then
+adds the media path and upload flag to the same release and rollback packet.
+Omit the option for routine updates. Use the activation and rollback sequence
+in [Operational Live Chat](operational-live-chat.md).

@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$Mock,[switch]$DryRun,[switch]$DatabasePrerequisitesVerified,[switch]$KeepPrevious)
+param([switch]$Mock,[switch]$DryRun,[switch]$DatabasePrerequisitesVerified,[switch]$KeepPrevious,[string]$ChatMediaDirectory)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $taskNames=@('HDWork2-Web','HDWork2-Web-Standby','HDWork2-Web-Rollback')
@@ -111,6 +111,26 @@ function StageWebSource([string]$target,[string[]]$paths,[string]$payload,[strin
   $expected=(InvokeGit @('rev-parse',($target+':src/courier/contract.js'))).Trim()
   Need ((Test-Path -LiteralPath $staged -PathType Leaf) -and (InvokeGit @('hash-object','--path=src/courier/contract.js',$staged)).Trim() -ceq $expected) 'WEB_STAGED_COURIER_CONTRACT_MISMATCH'
  }
+}
+function StageChatMediaEnvironment($web,[string]$payload){
+ $relative='service/environment.json'
+ $source=Join-Path $web.Runtime $relative
+ $pin=$web.Config.sourceHashes.PSObject.Properties[$relative]
+ Need ($pin -and (Hash $source) -ceq $pin.Value) 'WEB_RUNTIME_ENVIRONMENT_DRIFT'
+ $settings=Get-Content -LiteralPath $source -Raw|ConvertFrom-Json
+ Need ($settings.HDWORK2_LIVE_CHAT_ENABLED -ceq 'true') 'WEB_LIVE_CHAT_PREREQUISITE_MISSING'
+ $media=(Get-Item -LiteralPath $ChatMediaDirectory).FullName
+ foreach($servedRoot in @($web.Runtime,$root,$settings.LOCAL_WEB_DIST)|Where-Object {$_}){
+  $prefix=[IO.Path]::GetFullPath($servedRoot).TrimEnd('\','/')+'\'
+  Need (-not ($media+'\').StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)) 'WEB_CHAT_MEDIA_INSIDE_SERVED_ROOT'
+ }
+ foreach($directory in @($media,(Join-Path $media 'requests'),(Join-Path $media 'outgoing'))){
+  $item=Get-Item -LiteralPath $directory
+  Need ($item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) 'WEB_CHAT_MEDIA_DIRECTORY_REJECTED'
+ }
+ $settings|Add-Member -NotePropertyName HDWORK2_CHAT_MEDIA_DIR -NotePropertyValue $media -Force
+ $settings|Add-Member -NotePropertyName HDWORK2_CHAT_PHOTOS_ENABLED -NotePropertyValue 'true' -Force
+ if($payload){SaveJson (Join-Path $payload $relative) $settings}
 }
 function RequiredWebSource($web,[string]$target,[string]$relative){
  $file=Join-Path $web.Runtime $relative
@@ -244,10 +264,12 @@ function PrunePrevious([string]$releaseRoot,[string]$currentRelease){
 }
 function Elevate{
  $exe=(Get-Process -Id $PID).Path;$arguments='-NoLogo -NoProfile -ExecutionPolicy Bypass -File "'+$PSCommandPath+'"';if($DryRun){$arguments+=' -DryRun'};if($DatabasePrerequisitesVerified){$arguments+=' -DatabasePrerequisitesVerified'};if($KeepPrevious){$arguments+=' -KeepPrevious'}
+ if($ChatMediaDirectory){$arguments+=' -ChatMediaDirectory "'+$ChatMediaDirectory+'"'}
  $p=Start-Process -FilePath $exe -ArgumentList $arguments -WorkingDirectory $root -Verb RunAs -PassThru -Wait;exit $p.ExitCode
 }
 function Main{
  if($Mock){MockTests;return}
+ if($ChatMediaDirectory){Need ($ChatMediaDirectory -match '^[A-Za-z]:\\[^"\r\n]*[^\\"]$') 'WEB_CHAT_MEDIA_DIRECTORY_REJECTED'}
  if(-not $DryRun -and -not (IsAdmin)){Elevate}
  if(-not $DryRun){Need (IsAdmin) 'RUN_AS_ADMINISTRATOR'}
  $script:WebUpdatePhase='CHECK_MAIN_CHECKOUT';Write-Output 'CHECKING_MAIN_CHECKOUT'
@@ -260,6 +282,12 @@ function Main{
  $script:WebUpdatePhase='READ_ACTIVE_WEB_TASK';Write-Output 'READING_ACTIVE_WEB_TASK';$web=GetActiveWeb;$activeCommit=if($web.Config.webTargetCommit){[string]$web.Config.webTargetCommit}else{[string]$web.Config.targetCommit};$ancestor=& git -C $root merge-base --is-ancestor $activeCommit $target;if($LASTEXITCODE -ne 0){Fail 'ACTIVE_WEB_PIN_NOT_ANCESTOR_OF_MAIN'}
  $changed=@((InvokeGit @('diff','--name-only',($activeCommit+'..'+$target))).Split([Environment]::NewLine,[StringSplitOptions]::RemoveEmptyEntries));$webPaths=@();foreach($p in $changed){if($p -ceq 'src/config/operational-grants.js' -and $DatabasePrerequisitesVerified){Need (ReviewedGrantInstalled $web $target $p) 'WEB_REVIEWED_GRANT_NOT_INSTALLED_OR_PINNED';Write-Output 'WEB_REVIEWED_GRANT_ALREADY_INSTALLED';continue};if(WebPath $p){$webPaths+=,$p}}
  $webPaths=@(@($webPaths)+@(RequiredVlanHelper $web $target)+@(RequiredWebContracts $web $target)|Sort-Object -Unique)
+ if($ChatMediaDirectory){
+  & git.exe -C $root cat-file -e ($target+':src/chat/photos.js') 2>$null
+  Need ($LASTEXITCODE -eq 0) 'WEB_CHAT_PHOTOS_SOURCE_MISSING'
+  StageChatMediaEnvironment $web ''
+  $webPaths+=,'service/environment.json'
+ }
  if($DryRun){
   if($webPaths -ccontains 'src/courier/contract.js'){
    $tempRoot=(Resolve-Path -LiteralPath ([IO.Path]::GetTempPath())).ProviderPath
@@ -288,6 +316,7 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
  $payload=Join-Path $release 'payload';$backup=Join-Path $release 'backup';[void][IO.Directory]::CreateDirectory($payload);[void][IO.Directory]::CreateDirectory($backup)
  $script:WebUpdatePhase='WEB_SOURCE_ARCHIVE'
  StageWebSource $target $paths $payload (Join-Path $release 'source.tar')
+ if($ChatMediaDirectory){StageChatMediaEnvironment $web $payload}
  $frontendChanged=@($paths|Where-Object{$_ -like 'frontend/*'}).Count -gt 0
  if($frontendChanged){$script:WebUpdatePhase='WEB_FRONTEND_BUILD';$envPath=Join-Path $runtime 'service/environment.json';$envMap=Get-Content -LiteralPath $envPath -Raw|ConvertFrom-Json;$env:VITE_API_BASE_URL=[string]$envMap.HDWORK2_PUBLIC_ORIGIN;& node (Join-Path $root 'scripts/build-operational-frontend.js') --build;if($LASTEXITCODE -ne 0){Fail 'WEB_FRONTEND_BUILD_FAILED'};$script:WebUpdatePhase='WEB_FRONTEND_PACKAGE_COPY';$dist=Join-Path $root 'frontend/dist';Get-ChildItem -LiteralPath $dist -File -Recurse|Where-Object{$_.Name -ne 'release-manifest.json'}|ForEach-Object{$rel='frontend/dist/'+(RelativePath $dist $_.FullName);$to=Join-Path $payload $rel;[void][IO.Directory]::CreateDirectory((Split-Path -Parent $to));Copy-Item -LiteralPath $_.FullName -Destination $to}}
  $script:WebUpdatePhase='WEB_RELEASE_ENTRY_HASHES';$entries=@();$all=@($paths);if($frontendChanged){$payloadDist=Join-Path $payload 'frontend/dist';$all+=@(Get-ChildItem -LiteralPath $payloadDist -File -Recurse|ForEach-Object{'frontend/dist/'+(RelativePath $payloadDist $_.FullName)})};$all=@($all|Sort-Object -Unique)
