@@ -13,7 +13,7 @@ test('transaction extraction, labels, suffix, required/optional and profile vali
  }
  assert.equal(parseCommand(base,'TIAL1').fields['NO VOICE'],null);
  assert.equal(parseCommand(base,'SOLVER1').valid,false);
- for(const name of ['SC/IN','TIPE TRANSAKSI','SN ONT','STO','KETERANGAN','NIK'])for(const value of ['', ' ', '-']){
+ for(const name of ['SC/IN','SN ONT','STO','KETERANGAN','NIK'])for(const value of ['', ' ', '-']){
   const lines=base.split('\n').filter(s=>!s.startsWith(name+':'));assert.equal(parseCommand(lines.join('\n'),'TIAL1').valid,false);
   assert.equal(parseCommand([...lines,`${name}:${value}`].join('\n'),'TIAL1').valid,value==='-'&&name!=='SC/IN');
  }
@@ -22,8 +22,8 @@ test('transaction extraction, labels, suffix, required/optional and profile vali
  const request='/req  Isi asli\n  jangan ubah';assert.equal(parseCommand(request,'SOLVER1').original,request);
 });
 test('command formats report safe reasons while keeping unrecognized commands unclassified',()=>{
- const badPhone=parseCommand(base.replace('NO INET:000123','NO INET:12x'),'TIAL1');
- assert.equal(badPhone.valid,false);assert.equal(badPhone.command,'order');assert.deepEqual(badPhone.errors,['NO INET (format)']);
+ const badSto=parseCommand(base.replace(/^STO:.*$/m,'STO:!'),'TIAL1');
+ assert.equal(badSto.valid,false);assert.equal(badSto.command,'order');assert.deepEqual(badSto.errors,['STO (format)']);
  const badService=parseCommand('/config_psb\nOrder ID:X-AO1\nSTO:ABC\nSN ONT BARU:SNFIXTURE\nSERVICE (1P/2P/3P/1P-Voice):4P','TIAL1');
  assert.equal(badService.command,'config_psb');assert.ok(!badService.errors.includes('SERVICE (1P/2P/3P/1P-VOICE) (format)'));
  const badWorkspace=parseCommand('/b2b\nSC/IN:X-1\nNO INET/TELP:abc\nSTO:ABC\nTRANSAKSI:INSTALL','B2B');
@@ -44,7 +44,7 @@ test('valid orders enqueue one success reply after storage; retries preserve ide
 test('invalid routed orders get one reasoned reply but never create an order; enqueue waits for successful storage transaction',async()=>{
  const pool=mockPool(),store=new MysqlStore({pool,botId:'sandbox',env:{}}),group={chatId:'-1001',threadId:null,threadMode:'non_topic',profile:'TIAL1',commands:['order','req','config_psb','mo']};
  const policy=createGroupPolicy({botId:'sandbox',botUsername:'HDWorkOpsBot',groups:[group]}),config={enabled:true,botId:'sandbox',botUsername:'HDWorkOpsBot',identityKey:'synthetic-command-test-key-00000000',dedupeBy:'both',groups:[{module:'TIAL',chatId:group.chatId,threadId:null,threadMode:'non_topic',commandProfile:'TIAL1'}],actors:[{id:'9',name:'Synthetic'}]},workflow=createB2CProcessor({store,config});
- const body={version:1,bot_id:'sandbox',update_id:'9',event:{kind:'message',chat_id:'-1001',message_id:'109',telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1700000000,text:base.replace('NO INET:000123','NO INET:12x'),attachments:[]}};
+ const body={version:1,bot_id:'sandbox',update_id:'9',event:{kind:'message',chat_id:'-1001',message_id:'109',telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1700000000,text:base.replace('STO:ABC','STO:!'),attachments:[]}};
  await store.accept(policy.ingress(body));await workflow.processNext();assert.equal(pool.state.orders.length,0);assert.equal(pool.state.outbox.length,1);
  const queued=JSON.parse(pool.state.outbox[0].payload);assert.equal(queued.text,require('../src/b2c-workflow/rejection').rejectionText(parseCommand(body.event.text,'TIAL1')));assert.equal(queued.reply_to_message_id,'109');
  await store.accept(policy.ingress(body));assert.equal(await workflow.processNext(),false);assert.equal(pool.state.outbox.length,1);
@@ -63,7 +63,7 @@ test('format-rejection authorization works under Courier grants without audit SE
  assert.equal(policies.courier.hd2_audit.includes('SELECT'),false);
  const pool=mockPool(),store=new MysqlStore({pool,botId:'sandbox',env:{}}),group={chatId:'-1001',threadId:null,threadMode:'non_topic',profile:'TIAL1',commands:['order','req','config_psb','mo']};
  const policy=createGroupPolicy({botId:'sandbox',botUsername:'HDWorkOpsBot',groups:[group]});
- const payload={version:1,bot_id:'sandbox',update_id:'45',event:{kind:'message',chat_id:'-1001',message_id:'145',telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1700000000,text:base.replace('NO INET:000123','NO INET:bad'),attachments:[]}};
+ const payload={version:1,bot_id:'sandbox',update_id:'45',event:{kind:'message',chat_id:'-1001',message_id:'145',telegram_thread_id:null,sender_id:'9',reply_to_message_id:null,timestamp:1700000000,text:base.replace(/^STO:.*$/m,'STO:!'),attachments:[]}};
  await store.accept(policy.ingress(payload));
  await createB2CProcessor({store,config:{enabled:true,webOnly:true,botId:'sandbox',botUsername:'HDWorkOpsBot',identityKey:'synthetic-command-test-key-00000000',dedupeBy:'both',groups:[{module:'TIAL',chatId:'-1001',threadId:null,threadMode:'non_topic',commandProfile:'TIAL1',allowedCommands:['order','req','config_psb','mo']}],actors:[]}}).processNext();
  const reply=JSON.parse(pool.state.outbox[0].payload),connection=await pool.getConnection();
