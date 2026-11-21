@@ -14,7 +14,7 @@ class CommandTests(unittest.TestCase):
                 self.assertTrue(result['valid']);self.assertEqual(result['sc_in'],expected)
         self.assertTrue(parse_command(BASE,'TIAL2')['valid'])
         self.assertFalse(parse_command(BASE,'SOLVER1')['valid'])
-        for field in ('SC/IN','TIPE TRANSAKSI','SN ONT','STO','KETERANGAN','NIK'):
+        for field in ('SC/IN','SN ONT','STO','KETERANGAN','NIK'):
             rest='\n'.join(s for s in BASE.splitlines() if not s.startswith(field+':'))
             for value in (None,'',' ','-'):
                 self.assertEqual(parse_command(rest+(f'\n{field}:{value}' if value is not None else ''),'TIAL1')['valid'], value == '-' and field != 'SC/IN')
@@ -42,8 +42,8 @@ class CommandTests(unittest.TestCase):
                 for value in (None,'',' ','-'):
                     self.assertFalse(parse_command(rest+(f'\n{field}:{value}' if value is not None else ''),'TIAL1')['valid'])
         self.assertTrue(parse_command('/req   ','TIAL1')['valid'])
-        bad=parse_command(BASE.replace('NO INET:000123','NO INET:12x'),'TIAL1')
-        self.assertFalse(bad['valid']);self.assertEqual(bad['command'],'order');self.assertEqual(bad['errors'],['NO INET (format)'])
+        bad=parse_command(BASE.replace('NIK:TEST','NIK:!'),'TIAL1')
+        self.assertFalse(bad['valid']);self.assertEqual(bad['command'],'order');self.assertEqual(bad['errors'],['NIK (format)'])
         workspace=parse_command('/b2b\nSC/IN:X-1\nNO INET/TELP:abc\nSTO:ABC\nTRANSAKSI:INSTALL','B2B')
         self.assertFalse(workspace['valid']);self.assertEqual(workspace['command'],'b2b');self.assertEqual(workspace['errors'],['NO INET/TELP (format)'])
         self.assertNotIn('command',parse_command('/login secret','TIAL1'))

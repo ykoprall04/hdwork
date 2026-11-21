@@ -34,9 +34,9 @@ function parseCommand(text,profile,botUsername) {
   }
   for(const name of rule.required)if(!fields[name])errors.push(name);
   for(const [name,kind] of Object.entries(rule.formats||{})){
+    if(!rule.required.includes(name))continue;
     const value=fields[name];if(value===undefined||value===null||value==='-')continue;
-    const candidate=rule.optional.includes(name)&&kind!=='text'?value.replace(/^-/,''):value;
-    if(kind==='service'? !spec._formats.service.includes(candidate.toUpperCase()) : !new RegExp(spec._formats[kind]).test(candidate))errors.push(name+' (format)');
+    if(kind==='service'? !spec._formats.service.includes(value.toUpperCase()) : !new RegExp(spec._formats[kind]).test(value))errors.push(name+' (format)');
   }
   let code=null;
   if(fields[rule.identity]){

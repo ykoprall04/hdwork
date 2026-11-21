@@ -53,12 +53,14 @@ test('order and MO infer transaction type and accept leading dashes in optional 
   assert.equal(parsed.fields['STB ID'],'-STB1');
   assert.equal(parsed.fields['TIPE TRANSAKSI'],expected);
   assert.deepEqual(check(text.replace('NIK:TEST','NIK:-12345678')).errors,['NIK (format)']);
-  assert.deepEqual(check(text.replace('-123456','-@invalid')).errors,['NO INET (format)']);
+  assert.equal(check(text.replace('-123456','-@invalid')).fields['NO INET'],'-@invalid');
  }
 });
 test('config PSB optional details and REQ text accept leading dashes',()=>{
- const parsed=check(config+'\nNIK ATASAN:-12345678\nNO INET:-123456\nSN ONT LAMA:-SN1');
+ const parsed=check(config+'\nNIK ATASAN:-12345678\nNO INET:-123456\nSN ONT LAMA:-SN1\nUsee TV:ZTEATV49300');
  assert.equal(parsed.valid,true,JSON.stringify(parsed));
+ assert.equal(parsed.fields['NO USEE'],'ZTEATV49300');
+ assert.equal(check(config+'\nUsee TV:').valid,true);
  assert.equal(parsed.fields['NIK ATASAN'],'-12345678');
  assert.equal(parsed.fields['NO INTERNET'],'-123456');
  assert.equal(parsed.fields['SN ONT LAMA'],'-SN1');
@@ -67,15 +69,15 @@ test('config PSB optional details and REQ text accept leading dashes',()=>{
  assert.equal(request.valid,true);
  assert.equal(request.request,' -cek order');
 });
-test('MO accepts combined INET and telephone while validating each number',()=>{
+test('MO accepts combined INET and telephone while keeping optional values',()=>{
  const text=mo+'\nNO INET / TELP: 000123 / 000456';
  const parsed=check(text);
  assert.equal(parsed.valid,true);
  assert.equal(parsed.fields['NO INET'],'000123');
  assert.equal(parsed.fields['NO VOICE'],'000456');
- assert.deepEqual(check(text.replace('000456','invalid')).errors,['NO VOICE (format)']);
+ assert.equal(check(text.replace('000456','free text')).fields['NO VOICE'],'free text');
  assert.deepEqual(check(text+'\nNO VOICE:000777').errors,['NO VOICE berulang']);
- assert.deepEqual(check(text+'/000999').errors,['NO INET (format)']);
+ assert.equal(check(text+'/000999').fields['NO INET'],'000123 / 000456/000999');
  assert.equal(check(mo+'\nNO INET/TELP:000123').fields['NO VOICE'],null);
 });
 test('dash is a literal placeholder in all workspace details, while SC/IN stays required',()=>{
