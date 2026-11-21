@@ -1,11 +1,12 @@
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 const {captureIncoming}=require('../src/chat/service');
-function fixture(){
+function fixture(candidates=[]){
  const order={id:randomUUID(),bot_id:'synthetic',chat_id:'-100123',thread_id:null,message_id:'10',command:'req',module:'TIAL'};
  const calls=[],seen=new Set();
  const c={async execute(sql,p){
   calls.push({sql,p});
   if(sql.startsWith('SELECT')){
+   if(sql.startsWith('SELECT b.state,b.last_error_code FROM hd2_courier_outbox'))return [candidates];
    const same=p[0]===order.bot_id&&p[1]===order.chat_id&&p[2]===order.thread_id;
    const match=sql.includes('FROM hd2_courier_outbox b JOIN')?p[3]==='11':sql.includes('FROM hd2_chat_messages m JOIN')?['12','13'].includes(p[3]):p[3]==='10';
    return [[...(same&&match?[order]:[])]];
@@ -40,4 +41,17 @@ test('unknown anchors and foreign routes do not insert incoming chat or change a
   assert.ok(f.calls.every(v=>v.sql.startsWith('SELECT')));
  }
  const f=fixture();assert.equal(await captureIncoming({c:f.c,event:f.event,botId:'foreign'}),false);assert.ok(f.calls.every(v=>v.sql.startsWith('SELECT')));
+});
+test('a possible in-flight or uncertain ACK keeps an unmatched reply retryable after all anchor lookups',async()=>{
+ for(const candidate of [{state:'SENDING'},{state:'DEAD',last_error_code:'LEASE_EXPIRED'}]){
+  const f=fixture([candidate]);
+  await assert.rejects(
+   captureIncoming({c:f.c,event:{...f.event,reply_to_message_id:'999'},botId:f.order.bot_id}),
+   {statusCode:503}
+  );
+  assert.equal(f.calls.length,4);
+  assert.ok(f.calls.every(({sql})=>sql.startsWith('SELECT')));
+ }
+ const f=fixture([{state:'DEAD',last_error_code:'BAD_REQUEST'}]);
+ assert.equal(await captureIncoming({c:f.c,event:{...f.event,reply_to_message_id:'999'},botId:f.order.bot_id}),false);
 });
