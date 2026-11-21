@@ -20,11 +20,12 @@ test('registration is atomic, lowercases usernames, hashes passwords, denies pri
 test('only Super Admin decides public applications with role/modules; rejection persists and cannot be enabled',async()=>{
  const store=memory(),service=createService(store,secret);await service.bootstrap({name:'Root',username:'root',password});
  const admin=await service.manage(1,null,managed('admin','ADMIN'));await service.manage(1,admin,{},'APPROVE');
- const id=await service.register(application());
+ const shortPassword='uJ1-pQ';
+ const id=await service.register({...application(),password:shortPassword,confirmPassword:shortPassword});
  await assert.rejects(service.manage(admin,id,{role:'HD',modules:['TIAL']},'APPROVE'),{statusCode:403});
  await assert.rejects(service.manage(1,id,{},'APPROVE'),{statusCode:400});
  await assert.rejects(service.manage(1,id,{role:'SUPER_ADMIN',modules:[]},'APPROVE'),{statusCode:400});
- await service.manage(1,id,{role:'HD',modules:['TIAL']},'APPROVE');const login=await service.login('new.user',password);assert.equal(login.user.role,'HD');assert.deepEqual(login.user.modules,['TIAL']);
+ await service.manage(1,id,{role:'HD',modules:['TIAL']},'APPROVE');const login=await service.login('new.user',shortPassword);assert.equal(login.user.role,'HD');assert.deepEqual(login.user.modules,['TIAL']);
  const denied=await service.register(application('denied'));await service.manage(1,denied,{},'REJECT');assert.equal((await store.user(denied)).approval_status,'REJECTED');
  assert.equal(await service.login('denied',password),null);await assert.rejects(service.manage(1,denied,{name:'Denied',role:'HD',modules:['TIAL'],is_active:true}),{statusCode:403});await assert.rejects(service.manage(1,denied,{role:'HD',modules:['TIAL']},'APPROVE'),{statusCode:409});
  assert.ok(store.state.audit.some(a=>a.action==='USER_REJECTED'&&a.target===denied));

@@ -5,7 +5,7 @@ const reject=(statusCode=403,message='Permintaan akun tidak diizinkan')=>Object.
 const approved=u=>u.approval_status===undefined||u.approval_status==='APPROVED';
 function username(value){if(typeof value!=='string'||! /^[a-zA-Z0-9._-]{3,64}$/.test(value))throw reject(400,'Username harus 3–64 karakter: huruf, angka, titik, garis bawah atau tanda hubung');return value.toLowerCase();}
 const digest=value=>createHash('sha256').update(value).digest('hex');
-function password(value){if(typeof value!=='string'||value.length<12||Buffer.byteLength(value)>72)throw reject(400,'Password minimal 12 karakter dan maksimal 72 byte');return value;}
+function password(value,minLength=12){if(typeof value!=='string'||value.length<minLength||Buffer.byteLength(value)>72)throw reject(400,`Password minimal ${minLength} karakter dan maksimal 72 byte`);return value;}
 function data(input){if(!input||Object.keys(input).some(k=>!['name','username','password','role','modules','is_active'].includes(k))||typeof input.name!=='string'||!input.name.trim()||input.name.length>100||!roles.includes(input.role)||typeof input.is_active!=='boolean'||!Array.isArray(input.modules)||input.modules.some(m=>!modules.includes(m))||new Set(input.modules).size!==input.modules.length)throw reject(400);return {...input,name:input.name.trim()};}
 function createService(store,secret) {
  const profile=async(s,u)=>({id:u.id,name:u.name,username:u.username,role:u.role,city_id:u.city_id??null,modules:u.role==='SUPER_ADMIN'?modules:await s.modules(u.id)});
@@ -14,7 +14,7 @@ function createService(store,secret) {
  csrf:token=>createHmac('sha256',secret).update('csrf:'+token).digest('hex'),
  async register(input){
  if(!input||Array.isArray(input)||Object.keys(input).some(k=>!['name','username','password','confirmPassword'].includes(k))||typeof input.name!=='string'||!input.name.trim()||input.name.length>100)throw reject(400,'Nama dan data pendaftaran tidak valid');
- const handle=username(input.username),pass=password(input.password);if(pass!==input.confirmPassword)throw reject(400,'Konfirmasi password tidak cocok');
+ const handle=username(input.username),pass=password(input.password,6);if(pass!==input.confirmPassword)throw reject(400,'Konfirmasi password tidak cocok');
  const password_hash=await bcrypt.hash(pass,12);
  return store.tx(async s=>{await s.lock();if(await s.username(handle))throw reject(409,'Username sudah digunakan');const id=await s.save(null,{name:input.name.trim(),username:handle,password_hash,role:'SHOW_ONLY',modules:[],is_active:false,approval_status:'PENDING'});await s.audit(null,id,'USER_REGISTERED');return id;});
  },
