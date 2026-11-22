@@ -1,6 +1,8 @@
 const { randomUUID, createHmac } = require('node:crypto');
 const { eventEnvelope, fail } = require('../courier/contract');
 const { validateConfig } = require('./config');
+const { parseCommand } = require('./commands');
+const { commandReplyRejection, rejectionText } = require('./rejection');
 const { parseOrder, parseStatus, jakartaDay } = require('./parser');
 function createB2CProcessor({ store, config }) {
   const settings = validateConfig(config);
@@ -20,6 +22,15 @@ function createB2CProcessor({ store, config }) {
     if (!group) return ignore('UNMAPPED_GROUP_OR_THREAD');
     // An edit cannot silently rewrite the original order or replay a status action.
     if (e.kind !== 'message') return ignore('EDIT_REQUIRES_REVIEW');
+    if(e.reply_to_message_id!==null&&group.commandProfile&&e.text.trimStart().startsWith('/')){
+      const parsed=parseCommand(e.text,group.commandProfile,settings.botUsername);
+      if(parsed.command){
+        if(group.allowedCommands&&!group.allowedCommands.includes(parsed.command))return ignore('COMMAND_NOT_ALLOWED_IN_GROUP');
+        await audit('ORDER_FORMAT_REJECTED',null,null,{command:parsed.command,errors:['COMMAND_MUST_BE_NEW_MESSAGE']});
+        await enqueueReply(tx,`b2c:${tx.inboxId}:format-rejected`,reply(e,group,commandReplyRejection(parsed)));
+        return {disposition:'PROCESSED'};
+      }
+    }
     if(settings.chatEnabled&&e.reply_to_message_id!==null){
       const captured=await require('../chat/service').captureIncoming({c,event:e,botId:settings.botId});
       if(!captured)return ignore('UNKNOWN_REPLY_ANCHOR');
@@ -27,12 +38,12 @@ function createB2CProcessor({ store, config }) {
     }
     if (!group.commandProfile && e.text.trimStart().startsWith('/')) return ignore('COMMAND_CONFIG_REQUIRED');
     if (group.commandProfile && (e.reply_to_message_id === null || e.text.trimStart().startsWith('/'))) {
-      const parsed=require('./commands').parseCommand(e.text,group.commandProfile,settings.botUsername);
+      const parsed=parseCommand(e.text,group.commandProfile,settings.botUsername);
       if(group.allowedCommands&&!group.allowedCommands.includes(parsed.command))return ignore('COMMAND_NOT_ALLOWED_IN_GROUP');
       if (!parsed.valid) {
         if (!parsed.command) return ignore('COMMAND_VALIDATION_REJECTED');
         const errors=Array.isArray(parsed.errors)&&parsed.errors.length?parsed.errors:['format pesan'];
-        const text=require('./rejection').rejectionText({...parsed,errors});
+        const text=rejectionText({...parsed,errors});
         if(!text)return ignore('COMMAND_VALIDATION_REJECTED');
         await audit('ORDER_FORMAT_REJECTED',null,null,{command:parsed.command,errors});
         await enqueueReply(tx,`b2c:${tx.inboxId}:format-rejected`,reply(e,group,text));
