@@ -22,6 +22,17 @@ router.get('/orders/:id',wrap(async(req,res)=>res.json({success:true,...await re
 router.post('/orders/:id/actions',wrap(async(req,res)=>{h.csrf(req,req.sessionToken);if(req.user.username==='trial_yanto'){if(!require('./testing-solver-scope').configuration())throw fail(403);return res.json(await require('../config/testing-solver-runtime').act(req.sessionToken,req.user,req.params.id,req.body));}res.json(await require('./mutate').act(writePool(),req.sessionToken,req.user.id,req.params.id,req.body));}));
 router.get('/overview',wrap(async(req,res)=>{const result=await require('./read').readTx(pool(),async c=>{const r=require('./read').reader(c);const [tial,logic]=await Promise.all(['TIAL','LOGIC'].map(area=>r.recap({area},req.user)));return {TIAL:tial.data,LOGIC:logic.data,all:require('./statistics').combine(tial.data,logic.data)};});res.json({success:true,...result});}));
 router.get('/recap',wrap(async(req,res)=>res.json({success:true,...await read().recap(req.query,req.user)})));
+router.get('/recap/chart',wrap(async(req,res)=>{
+ res.set('Cache-Control','private, no-store');
+ res.json(await require('./recap-chart').recapChart(pool(),req.query,req.user));
+}));
+router.post('/recap/chart/export',wrap(async(req,res)=>{
+ h.csrf(req,req.sessionToken);
+ const file=await require('./recap-chart-export').chartWorkbook(req.body,req.user);
+ res.set('Cache-Control','private, no-store');
+ res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+ res.attachment('hdwork-grafik.xlsx').send(file);
+}));
 router.get('/people',wrap(async(req,res)=>res.json({success:true,...await read().people(req.user,Number(req.query.page||1))})));
 router.get('/events',wrap(async(req,res)=>{live||=(require('./live').createLive({pool:pool(),authenticate:token=>h.service().me(token)}));live.open(req,res,req.user,req.sessionToken);}));
 router.post('/exports',wrap(async(req,res)=>{h.csrf(req,req.sessionToken);res.json({success:true,...exporter().ticket(req.body,req.user,req.sessionToken)});}));

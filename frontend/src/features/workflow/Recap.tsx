@@ -1,5 +1,5 @@
-import { useId, useState } from 'react';
-import { ArrowRight, CalendarX, CircleCheck, CircleX, Clock3, Inbox, SearchCheck, Timer } from 'lucide-react';
+import { lazy, Suspense, useId, useState } from 'react';
+import { ArrowRight, ChartNoAxesCombined, List, CalendarX, CircleCheck, CircleX, Clock3, Inbox, SearchCheck, Timer } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
@@ -28,7 +28,35 @@ const statuses = [
 
 const field = 'mt-1.5 block h-11 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:text-sm';
 
+const RecapChart = lazy(() => import('./RecapChart'));
+
 export default function Recap() {
+  const [tab, setTab] = useState<'orders' | 'chart'>('orders');
+
+  return (
+    <>
+      <PageHeader title="Dashboard Rekap" description="Status terbaru berdasarkan tanggal order diterima (WIB)." />
+      <div role="group" aria-label="Tampilan Dashboard Rekap" className="inline-flex w-fit max-w-full gap-1 rounded-xl border bg-card p-1">
+        <Button aria-pressed={tab === 'orders'} variant={tab === 'orders' ? 'default' : 'ghost'} onClick={() => setTab('orders')}>
+          <List aria-hidden /> Rekap Order
+        </Button>
+        <Button aria-pressed={tab === 'chart'} variant={tab === 'chart' ? 'default' : 'ghost'} onClick={() => setTab('chart')}>
+          <ChartNoAxesCombined aria-hidden /> Grafik
+        </Button>
+      </div>
+      <div hidden={tab !== 'orders'} className={tab === 'orders' ? 'min-w-0 space-y-5' : undefined}>
+        <RecapOrders />
+      </div>
+      {tab === 'chart' && (
+        <Suspense fallback={<p role="status" className="text-sm text-muted-foreground">Memuat tab Grafik…</p>}>
+          <RecapChart />
+        </Suspense>
+      )}
+    </>
+  );
+}
+
+function RecapOrders() {
   const { user } = useAuth();
   const [area, setArea] = useState('ALL');
   const [from, setFrom] = useState('');
@@ -42,8 +70,6 @@ export default function Recap() {
 
   return (
     <>
-      <PageHeader title="Dashboard Rekap" description="Status terbaru berdasarkan tanggal order diterima (WIB)." />
-
       <section aria-labelledby="recap-summary" className="min-w-0">
         <Card className="gap-0 py-0">
           <CardHeader className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b px-4 py-3.5 sm:px-6">
