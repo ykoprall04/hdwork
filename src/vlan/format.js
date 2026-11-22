@@ -7,7 +7,7 @@ function rawField(raw,labels){
  return found.length===1?found[0]:null;
 }
 async function formatOrder(detail,pool){
- if(!['order','config_psb'].includes(detail.data.command))throw fail(400,'FORMAT VLAN hanya untuk order dan config_psb');
+ if(!['order','config_psb','mo'].includes(detail.data.command))throw fail(400,'FORMAT VLAN hanya untuk /order, /config_psb, dan /MO');
  const raw=detail.originalMessage||'',parsed=parseCommand(raw,'ALL'),stored=detail.fields||{},fields=parsed.valid?parsed.fields:stored;
  const network=raw?parseNetwork(raw):stored;
  // Web-only updates intentionally leave Courier parser files in place. Older

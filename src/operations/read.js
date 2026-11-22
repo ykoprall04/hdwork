@@ -4,6 +4,14 @@ const {attachFeedback}=require('./feedback');
 const projection="o.id,o.command,o.access_module AS module,o.status,o.duplicate_of,o.duplicate_decision,o.owner_user_id,o.final_user_id,o.version,o.sc_in,o.inet,o.telegram_timestamp,o.completion_note,DATE_FORMAT(o.started_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS started_at,DATE_FORMAT(o.finished_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS finished_at,owner.name AS owner_name,finisher.name AS final_name";
 const joins=' FROM hd2_orders o LEFT JOIN users owner ON owner.id=o.owner_user_id LEFT JOIN users finisher ON finisher.id=o.final_user_id';
 const dto=r=>({id:r.id,command:r.command||'manual',module:r.module,status:r.status,duplicateOf:r.duplicate_of,decision:r.duplicate_decision,ownerId:r.owner_user_id,ownerName:r.owner_name,finalName:r.final_name,version:Number(r.version),scIn:r.sc_in,inetMasked:r.inet?(r.inet.length>4?'••••'+r.inet.slice(-4):'••••'):null,receivedAt:new Date(Number(r.telegram_timestamp)*1000).toISOString(),startedAt:r.started_at,finishedAt:r.finished_at,note:r.completion_note});
+function processSerial(row){
+ const stored=[row.sn_ont_baru,row.sn_ont].find(value=>typeof value==='string'&&value.trim()&&value.trim()!=='-');
+ if(stored)return stored.trim();
+ if(row.command==='mo'&&typeof row.mo_original==='string'){
+  return require('../vlan/format').rawField(row.mo_original,['SN ONT BARU','SN ONT','NO SN ONT']);
+ }
+ return null;
+}
 async function readTx(pool,fn){const c=await pool.getConnection();try{await c.query('SET TRANSACTION READ ONLY');await c.beginTransaction();const result=await fn(c);await c.commit();return result;}catch(e){await c.rollback();throw e;}finally{c.release();}}
 const aggregateInFlight=new WeakMap();
 function reader(pool){return {
@@ -13,8 +21,11 @@ function reader(pool){return {
   const sort=process?'o.started_at DESC,o.id DESC':'o.telegram_timestamp DESC,o.id DESC';
   const purposeField="JSON_EXTRACT(o.command_fields,'$.KETERANGAN')";
   const purpose=process?`,CASE WHEN o.command='config_psb' AND JSON_TYPE(${purposeField})='STRING' THEN JSON_UNQUOTE(${purposeField}) END AS psb_purpose`:'';
-  const [rows]=await pool.execute(`SELECT ${projection}${purpose}${joins} WHERE ${w.sql} ORDER BY ${sort} LIMIT 26 OFFSET ?`,[...w.values,(f.page-1)*25]);
-  const data=rows.slice(0,25).map(row=>({...dto(row),...(process?{inet:row.inet||null}:{}),...(process&&row.command==='config_psb'&&row.psb_purpose?{purpose:row.psb_purpose}:{})}));
+  const serial=process?`,CASE WHEN JSON_TYPE(JSON_EXTRACT(o.command_fields,'$."SN ONT BARU"'))='STRING' THEN JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."SN ONT BARU"')) END AS sn_ont_baru,
+   CASE WHEN JSON_TYPE(JSON_EXTRACT(o.command_fields,'$."SN ONT"'))='STRING' THEN JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."SN ONT"')) END AS sn_ont,
+   CASE WHEN o.command='mo' THEN o.raw_text END AS mo_original`:'';
+  const [rows]=await pool.execute(`SELECT ${projection}${purpose}${serial}${joins} WHERE ${w.sql} ORDER BY ${sort} LIMIT 26 OFFSET ?`,[...w.values,(f.page-1)*25]);
+  const data=rows.slice(0,25).map(row=>({...dto(row),...(process?{inet:row.inet||null,snOnt:processSerial(row)}:{}),...(process&&row.command==='config_psb'&&row.psb_purpose?{purpose:row.psb_purpose}:{})}));
   await attachFeedback(pool,data);
   return {data,page:f.page,hasMore:rows.length>25,serverNow:new Date().toISOString()};
  },

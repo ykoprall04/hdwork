@@ -67,13 +67,14 @@ test('optional note grants accept only backend SELECT/INSERT/UPDATE and never gr
   assert.equal(reviewOperationalGrants(extra('DELETE'),role).ok,false);
  }
 });
-test('process list projects full INET and only config_psb purpose, with other lists still masked',async()=>{
+test('process list projects full INET, SN ONT and config_psb purpose only in Proses Cek',async()=>{
  const {reader}=require('../src/operations/read');
- const sample={id:randomUUID(),command:'config_psb',inet:'12345678',telegram_timestamp:1700000000,psb_purpose:'Pasang baru'};
+ const sample={id:randomUUID(),command:'config_psb',inet:'12345678',telegram_timestamp:1700000000,psb_purpose:'Pasang baru',sn_ont_baru:'SN-NEW',sn_ont:'SN-OTHER'};
  const mock={async execute(sql){
   if(sql.includes('hd2_web_requests'))return [[]];
   assert.equal(sql.includes('AS psb_purpose'),sql.includes("o.status='IN_PROGRESS'"));
-  return [[sample,{...sample,id:randomUUID(),command:'mo'}]];
+  assert.equal(sql.includes('AS mo_original'),sql.includes("o.status='IN_PROGRESS'"));
+  return [[sample,{...sample,id:randomUUID(),command:'mo',sn_ont_baru:'-',sn_ont:null,mo_original:'/MO\nSN ONT: SN-LEGACY\nSN ONT LAMA: SN-OLD'}]];
  }};
  const read=reader(mock),actor={...user,modules:['LOGIC_PSB','LOGIC_MO']};
  const process=await read.list({area:'LOGIC',tab:'process'},actor);
@@ -81,7 +82,10 @@ test('process list projects full INET and only config_psb purpose, with other li
  assert.equal(process.data[0].inetMasked,'••••5678');
  assert.equal(process.data[0].inet,'12345678');
  assert.equal(process.data[1].purpose,undefined);
+ assert.equal(process.data[0].snOnt,'SN-NEW');
+ assert.equal(process.data[1].snOnt,'SN-LEGACY');
+ assert.equal(Object.hasOwn(process.data[1],'mo_original'),false);
  const finished=await read.list({area:'LOGIC',tab:'finished'},actor);
- assert.ok(finished.data.every(order=>!Object.hasOwn(order,'purpose')&&!Object.hasOwn(order,'inet')));
+ assert.ok(finished.data.every(order=>!Object.hasOwn(order,'purpose')&&!Object.hasOwn(order,'inet')&&!Object.hasOwn(order,'snOnt')));
  assert.ok(!JSON.stringify(finished).includes('12345678'));
 });

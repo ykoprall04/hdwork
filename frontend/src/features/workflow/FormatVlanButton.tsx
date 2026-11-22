@@ -7,7 +7,7 @@ export default function FormatVlanButton({id,command,disabled=false}:{id:string;
  const [open,setOpen]=useState(false),[text,setText]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[copied,setCopied]=useState(false);
  const controller=useRef<AbortController|null>(null);
  useEffect(()=>()=>controller.current?.abort(),[]);
- if(!['order','config_psb'].includes(command||''))return null;
+ if(!['order','config_psb','mo'].includes(command||''))return null;
  function close(){controller.current?.abort();controller.current=null;setOpen(false);setText('');setError('');setCopied(false);setBusy(false);}
  async function show(){
   controller.current?.abort();const current=new AbortController();controller.current=current;

@@ -37,7 +37,11 @@ export default function WorkList(){
  const noteIds=(data?.data||[]).map(order=>order.id).join(',');
  const tableNotes=useWorkData<{data:HdNoteData[]}>('/order-notes?ids='+encodeURIComponent(noteIds),{area,enabled:Boolean(noteIds)&&canReadNotes});
  const notesById=new Map(tableNotes.data?.data.map(note=>[note.id,note]));
- const privateOrders=sortUnread(mineWork.data||[],incoming.isUnread).filter(order=>`${order.scIn||''} ${order.inetMasked||''} ${order.module} ${order.command}`.toLowerCase().includes(mySearch.trim().toLowerCase()));
+ const mySearchTerms=mySearch.toLowerCase().split(/[\s/]+/).filter(Boolean);
+ const privateOrders=sortUnread(mineWork.data||[],incoming.isUnread).filter(order=>{
+  const searchable=[order.scIn,order.inet,order.inetMasked,order.snOnt,order.module,order.command].join(' ').toLowerCase();
+  return mySearchTerms.every(term=>searchable.includes(term));
+ });
  useEffect(()=>{if(inlineWorkspace&&selectedOrder&&mineWork.loaded&&!mineWork.data.some(order=>order.id===selectedOrder)){setSelectedOrder(null);}},[inlineWorkspace,selectedOrder,mineWork.loaded,mineWork.data]);
  async function copyIdentifier(id:string,value:string){
   try{
@@ -78,7 +82,7 @@ export default function WorkList(){
  {incoming.storageWarning&&<p role="status" className="text-xs">Status baca hanya tersimpan selama sesi ini karena penyimpanan browser tidak tersedia.</p>}
  <Section title={tab==='incoming'?'ORDER MASUK':tab==='duplicates'?'DUPLIKAT MENUNGGU':tab==='process'?'PROSES CEK':'SELESAI'} description="Data diperbarui otomatis · sesuai filter dan akses modul Anda." hideHeader={processWorkspaceVisible} className={processWorkspaceVisible?'op-process-workspace-card':''} contentClassName={processWorkspaceVisible?'op-process-workspace-card-content':''}>
  {processWorkspaceVisible?<div className="op-process-workspace" data-selected={Boolean(selectedOrder)}>
-  <aside className="op-process-work-list" aria-label="Pekerjaan Saya"><header className="flex items-center justify-between gap-2"><div><h2 className="font-semibold">Pekerjaan Saya</h2><p className="text-xs text-muted-foreground">Order aktif milik Anda</p></div><Button variant="ghost" size="sm" onClick={closePanel}>Kembali ke tabel</Button></header><input aria-label="Cari pekerjaan saya" className="w-full rounded-lg border bg-background p-2 text-sm" placeholder="Cari order…" value={mySearch} onChange={event=>setMySearch(event.target.value)}/>
+  <aside className="op-process-work-list" aria-label="Pekerjaan Saya"><header className="flex items-center justify-between gap-2"><div><h2 className="font-semibold">Pekerjaan Saya</h2><p className="text-xs text-muted-foreground">Order aktif milik Anda</p></div><Button variant="ghost" size="sm" onClick={closePanel}>Kembali ke tabel</Button></header><input aria-label="Cari pekerjaan saya" className="w-full rounded-lg border bg-background p-2 text-sm" placeholder="Cari order, INET, atau SN…" value={mySearch} onChange={event=>setMySearch(event.target.value)}/>
    {mineWork.loading&&!mineWork.data.length&&<p role="status" className="text-xs">Memuat pekerjaan…</p>}{mineWork.error&&<p role="alert" className="text-xs">{mineWork.error}<Button variant="outline" onClick={()=>void mineWork.refresh()}>Coba lagi</Button></p>}
    <ul className="op-process-work-items">{privateOrders.map(order=><li key={order.id}><button type="button" data-selected={selectedOrder===order.id} aria-current={selectedOrder===order.id?'true':undefined} onClick={()=>selectPrivate(order.id)}><span className="block break-all font-medium">{order.scIn||order.inetMasked||'Order /'+order.command}</span>{incoming.isUnread(order.id)&&<span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">PESAN BARU</span>}<span className="mt-1 block text-xs text-muted-foreground">{order.module} /{order.command} · <WorkTimer order={order} now={now}/></span></button></li>)}</ul>
    {!mineWork.loading&&!mineWork.error&&!privateOrders.length&&<Empty text={mySearch?'Tidak ada order yang cocok.':'Tidak ada pekerjaan aktif.'}/>}
@@ -94,6 +98,7 @@ export default function WorkList(){
   const purpose=inProcess&&order.command==='config_psb'?order.purpose?.trim():undefined;
   const inet=order.inet??order.inetMasked;
   const identifier=order.scIn||(inProcess?inet:order.inetMasked);
+  const processInet=inet&&inet!==identifier?inet:null;
   const feedback=copyFeedback?.id===order.id?copyFeedback:null;
   const note=notesById.get(order.id);
   return <tr key={order.id} data-selected={selectedOrder===order.id} className="border-b last:border-0 hover:bg-muted/40">
@@ -107,7 +112,9 @@ export default function WorkList(){
       {incoming.isUnread(order.id)&&<span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">PESAN BARU</span>}
       {validDate&&!inProcess&&<Actions key={`${user?.id}:${order.id}`} compact order={order} refresh={refresh}/>}
      </div>
-     {inProcess?inet&&inet!==identifier&&<p className="mt-1 text-xs tabular-nums text-muted-foreground">{inet}</p>:<p className="mt-1 text-[10px] text-muted-foreground">SC/IN: {order.scIn||'—'} &middot; INET: {order.inetMasked||'—'}</p>}
+     {inProcess?(processInet||order.snOnt)&&<p className="mt-1 flex flex-wrap gap-x-2 gap-y-1 break-all text-xs tabular-nums text-muted-foreground">
+       {processInet&&<span>{processInet}</span>}{order.snOnt&&<span>{order.snOnt}</span>}
+     </p>:<p className="mt-1 text-[10px] text-muted-foreground">SC/IN: {order.scIn||'—'} &middot; INET: {order.inetMasked||'—'}</p>}
      {inProcess&&<span role="status" className={feedback&&!feedback.copied?'text-xs text-destructive':'sr-only'}>{feedback&&(feedback.copied?'Identifier tersalin.':'Gagal menyalin. Pilih teks untuk menyalinnya.')}</span>}
     </div>
    </div>
