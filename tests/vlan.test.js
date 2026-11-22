@@ -99,3 +99,15 @@ test('grant review accepts additive reference grants only for correct Web roles'
   if(role==='read')assert.equal(reviewOperationalGrants([...grants,{grant:'GRANT DELETE ON hdwork2.hd2_vlan_reference TO fixture'}],role).ok,false);
  }
 });
+
+test('FORMAT VLAN supports MO using its order identity and original network details',async()=>{
+ const raw='/MO\nSC/IN:DGPS-PDA123_fixture\nTIPE TRANSAKSI:PDA\nSTO:BBA\nKETERANGAN:fixture\nNIK:TEST\nNO INET/TELP:000123'+network;
+ const pool={async execute(sql,params){
+  assert.deepEqual(params,['192.0.2.1','SBU']);
+  return [[{vlan_inet:'1035',vlan_voip:'0'}]];
+ }};
+ const result=await formatOrder({data:{command:'mo',scIn:'PDA123'},originalMessage:raw,fields:{}},pool);
+ assert.match(result.text,/INET \/ POTS : 000123\n/);
+ assert.match(result.text,/SLOT \/ PORT : 2 \/ 3\nID VALINS : VALINS-TEST/);
+ assert.match(result.text,/PESAN : IP INET\nPDA123\nDATA VLAN INET 1035/);
+});
