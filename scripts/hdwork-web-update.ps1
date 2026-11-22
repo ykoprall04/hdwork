@@ -1,6 +1,7 @@
 [CmdletBinding()]
-param([switch]$Mock,[switch]$DryRun,[switch]$DatabasePrerequisitesVerified,[switch]$KeepPrevious,[string]$ChatMediaDirectory)
+param([switch]$Mock,[switch]$DryRun,[switch]$DatabasePrerequisitesVerified,[switch]$KeepPrevious,[string]$ChatMediaDirectory,[string]$TargetCommit,[string]$ExpectedActiveCommit,[string]$TargetWorktree)
 $ErrorActionPreference='Stop'
+$explicitTargetRequested=$PSBoundParameters.ContainsKey('TargetCommit') -or $PSBoundParameters.ContainsKey('ExpectedActiveCommit') -or $PSBoundParameters.ContainsKey('TargetWorktree')
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $taskNames=@('HDWork2-Web','HDWork2-Web-Standby','HDWork2-Web-Rollback')
 $script:WebUpdatePhase='STARTUP'
@@ -83,6 +84,45 @@ function WebPath([string]$path){
  return $p -match '^(frontend/|public/|views/|server\.js$|api-only-server\.js$|local-web-server\.js$|src/|scripts/(protected-web-service|run-protected-web|check-operational-release|build-operational-frontend)\.|ops/windows/web-|package\.json$|package-lock\.json$)'
 }
 function InvokeGit([string[]]$gitArgs){$out=& git.exe -C $root @gitArgs;if($LASTEXITCODE -ne 0){Fail 'GIT_UPDATE_FAILED'};return ($out -join [Environment]::NewLine)}
+function RecapReleasePaths {
+ @(
+  'frontend/src/features/workflow/Recap.tsx'
+  'frontend/src/features/workflow/RecapChart.tsx'
+  'frontend/tests/recap-chart.browser.cjs'
+  'src/operations/recap-chart-export.js'
+  'src/operations/recap-chart.js'
+  'src/operations/routes.js'
+  'tests/operations.test.js'
+  'tests/recap-chart.test.js'
+ )
+}
+function AssertRecapReleaseScope([string[]]$changed,[string[]]$webPaths){
+ $expected=@(RecapReleasePaths)
+ $expectedWeb=@($expected | Where-Object { WebPath $_ })
+ Need ($changed.Count -eq $expected.Count -and -not @($changed | Where-Object { $_ -cnotin $expected }).Count -and
+       -not @($expected | Where-Object { $_ -cnotin $changed }).Count) 'WEB_EXPLICIT_RECAP_DELTA_MISMATCH'
+ Need ($webPaths.Count -eq $expectedWeb.Count -and -not @($webPaths | Where-Object { $_ -cnotin $expectedWeb }).Count -and
+       -not @($expectedWeb | Where-Object { $_ -cnotin $webPaths }).Count) 'WEB_EXPLICIT_RECAP_PAYLOAD_MISMATCH'
+}
+function ResolveExplicitRecapTarget {
+ Need ($TargetCommit -cmatch '^[a-f0-9]{40}$' -and $ExpectedActiveCommit -cmatch '^[a-f0-9]{40}$' -and
+       -not [string]::IsNullOrWhiteSpace($TargetWorktree) -and [IO.Path]::IsPathRooted($TargetWorktree)) 'WEB_EXPLICIT_TARGET_ARGUMENTS_INVALID'
+ Need (-not $ChatMediaDirectory -and -not $DatabasePrerequisitesVerified) 'WEB_EXPLICIT_TARGET_OPTIONS_CONFLICT'
+ $script:root=(Resolve-Path -LiteralPath $TargetWorktree).ProviderPath
+ $top=(InvokeGit @('rev-parse','--show-toplevel')).Trim()
+ Need ([IO.Path]::GetFullPath($top) -ieq [IO.Path]::GetFullPath($root)) 'WEB_EXPLICIT_WORKTREE_NOT_ROOT'
+ Need ((InvokeGit @('rev-parse','HEAD')).Trim() -ceq $TargetCommit) 'WEB_EXPLICIT_WORKTREE_HEAD_MISMATCH'
+ Need (-not (InvokeGit @('status','--porcelain=v1','--untracked-files=all'))) 'WEB_EXPLICIT_WORKTREE_DIRTY'
+ foreach($rel in @('.env','.env.local','.env.production','.env.production.local')){
+  Need (-not(Test-Path -LiteralPath (Join-Path $root ('frontend/'+$rel)))) 'WEB_EXPLICIT_FRONTEND_ENV_OVERRIDE'
+ }
+ $script:KeepPrevious=$true
+ return $TargetCommit
+}
+function ActiveWebCommit($config){
+ if($config.webTargetCommit){return [string]$config.webTargetCommit}
+ return [string]$config.targetCommit
+}
 function RequiredVlanHelper($web,[string]$target){
  $format=Join-Path $web.Runtime 'src/vlan/format.js'
  & git.exe -C $root cat-file -e ($target+':src/vlan/format.js') 2>$null
@@ -158,6 +198,21 @@ function Atomic([string]$path,[byte[]]$bytes){
  $dir=Split-Path -Parent $path;[void][IO.Directory]::CreateDirectory($dir)
  $tmp=$path+'.update-'+[Guid]::NewGuid().ToString('N')+'.tmp';[IO.File]::WriteAllBytes($tmp,$bytes)
  if(Test-Path -LiteralPath $path){$acl=Get-Acl -LiteralPath $path;Set-Acl -LiteralPath $tmp -AclObject $acl;Move-Item -LiteralPath $tmp -Destination $path -Force}else{[IO.File]::Move($tmp,$path)}
+}
+function NewWebRollbackConfig($config,[string]$attemptId){
+ $rollback=$config|ConvertTo-Json -Depth 100|ConvertFrom-Json
+ SetJsonProperty $rollback 'attemptId' $attemptId
+ SetJsonProperty $rollback 'attemptRole' 'rollback'
+ return $rollback
+}
+function RestoreWebFiles([string]$runtime,[string]$backup,$entries){
+ foreach($entry in $entries){
+  $destination=Join-Path $runtime $entry.path
+  if($entry.before){
+   $original=Join-Path $backup $entry.path
+   Atomic $destination ([IO.File]::ReadAllBytes($original))
+  }elseif(Test-Path -LiteralPath $destination){Remove-Item -LiteralPath $destination -Force}
+ }
 }
 function SaveJson([string]$path,$value){$bytes=[Text.UTF8Encoding]::new($false).GetBytes(($value|ConvertTo-Json -Depth 100)+[Environment]::NewLine);Atomic $path $bytes}
 function UpdateAttemptRecord([string]$path,[string]$attemptId,[string]$role,[string]$phase,[string]$expectedSha,[hashtable]$extra=@{}){
@@ -269,19 +324,34 @@ function Elevate{
 }
 function Main{
  if($Mock){MockTests;return}
+ $explicit=$explicitTargetRequested
  if($ChatMediaDirectory){Need ($ChatMediaDirectory -match '^[A-Za-z]:\\[^"\r\n]*[^\\"]$') 'WEB_CHAT_MEDIA_DIRECTORY_REJECTED'}
- if(-not $DryRun -and -not (IsAdmin)){Elevate}
+ if(-not $explicit -and -not $DryRun -and -not (IsAdmin)){Elevate}
  if(-not $DryRun){Need (IsAdmin) 'RUN_AS_ADMINISTRATOR'}
- $script:WebUpdatePhase='CHECK_MAIN_CHECKOUT';Write-Output 'CHECKING_MAIN_CHECKOUT'
- $branch=(InvokeGit @('branch','--show-current')).Trim();Need ($branch -eq 'main') 'CHECKOUT_MUST_BE_MAIN'
- & git.exe -C $root diff --quiet;if($LASTEXITCODE -ne 0){Fail 'TRACKED_LOCAL_CHANGES_BLOCK_UPDATE'}
- & git.exe -C $root diff --cached --quiet;if($LASTEXITCODE -ne 0){Fail 'STAGED_LOCAL_CHANGES_BLOCK_UPDATE'}
- if(-not $DryRun){InvokeGit @('fetch','origin','main')|Out-Null}
- $localHead=(InvokeGit @('rev-parse','HEAD')).Trim();$target=(InvokeGit @('rev-parse',$(if($DryRun){'origin/main'}else{'FETCH_HEAD'}))).Trim()
- if(-not $DryRun -and $target -ne $localHead){InvokeGit @('pull','--ff-only','origin','main')|Out-Null;$target=(InvokeGit @('rev-parse','HEAD')).Trim()}
- $script:WebUpdatePhase='READ_ACTIVE_WEB_TASK';Write-Output 'READING_ACTIVE_WEB_TASK';$web=GetActiveWeb;$activeCommit=if($web.Config.webTargetCommit){[string]$web.Config.webTargetCommit}else{[string]$web.Config.targetCommit};$ancestor=& git -C $root merge-base --is-ancestor $activeCommit $target;if($LASTEXITCODE -ne 0){Fail 'ACTIVE_WEB_PIN_NOT_ANCESTOR_OF_MAIN'}
+ if($explicit){
+  $script:WebUpdatePhase='CHECK_EXPLICIT_WORKTREE';Write-Output 'CHECKING_EXPLICIT_WORKTREE'
+  $target=ResolveExplicitRecapTarget
+ }else{
+  $script:WebUpdatePhase='CHECK_MAIN_CHECKOUT';Write-Output 'CHECKING_MAIN_CHECKOUT'
+  $branch=(InvokeGit @('branch','--show-current')).Trim();Need ($branch -eq 'main') 'CHECKOUT_MUST_BE_MAIN'
+  & git.exe -C $root diff --quiet;if($LASTEXITCODE -ne 0){Fail 'TRACKED_LOCAL_CHANGES_BLOCK_UPDATE'}
+  & git.exe -C $root diff --cached --quiet;if($LASTEXITCODE -ne 0){Fail 'STAGED_LOCAL_CHANGES_BLOCK_UPDATE'}
+  if(-not $DryRun){InvokeGit @('fetch','origin','main')|Out-Null}
+  $localHead=(InvokeGit @('rev-parse','HEAD')).Trim();$target=(InvokeGit @('rev-parse',$(if($DryRun){'origin/main'}else{'FETCH_HEAD'}))).Trim()
+  if(-not $DryRun -and $target -ne $localHead){InvokeGit @('pull','--ff-only','origin','main')|Out-Null;$target=(InvokeGit @('rev-parse','HEAD')).Trim()}
+ }
+ $script:WebUpdatePhase='READ_ACTIVE_WEB_TASK';Write-Output 'READING_ACTIVE_WEB_TASK'
+ $web=GetActiveWeb
+ $activeCommit=ActiveWebCommit $web.Config
+ if($explicit){Need ($activeCommit -ceq $ExpectedActiveCommit) 'WEB_EXPLICIT_ACTIVE_COMMIT_MISMATCH'}
+ & git.exe -C $root merge-base --is-ancestor $activeCommit $target
+ if($LASTEXITCODE -ne 0){if($explicit){Fail 'WEB_EXPLICIT_BASE_NOT_ANCESTOR_OF_TARGET'};Fail 'ACTIVE_WEB_PIN_NOT_ANCESTOR_OF_MAIN'}
  $changed=@((InvokeGit @('diff','--name-only',($activeCommit+'..'+$target))).Split([Environment]::NewLine,[StringSplitOptions]::RemoveEmptyEntries));$webPaths=@();foreach($p in $changed){if($p -ceq 'src/config/operational-grants.js' -and $DatabasePrerequisitesVerified){Need (ReviewedGrantInstalled $web $target $p) 'WEB_REVIEWED_GRANT_NOT_INSTALLED_OR_PINNED';Write-Output 'WEB_REVIEWED_GRANT_ALREADY_INSTALLED';continue};if(WebPath $p){$webPaths+=,$p}}
  $webPaths=@(@($webPaths)+@(RequiredVlanHelper $web $target)+@(RequiredWebContracts $web $target)|Sort-Object -Unique)
+ if($explicit){
+  AssertRecapReleaseScope $changed $webPaths
+  Write-Output ('WEB_EXPLICIT_RECAP_SCOPE target='+$target+' rollback='+$activeCommit+' changed='+$changed.Count+' payloadSource='+$webPaths.Count)
+ }
  if($ChatMediaDirectory){
   & git.exe -C $root cat-file -e ($target+':src/chat/photos.js') 2>$null
   Need ($LASTEXITCODE -eq 0) 'WEB_CHAT_PHOTOS_SOURCE_MISSING'
@@ -332,11 +402,11 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
  foreach($entry in $entries){if($entry.after){$next.sourceHashes|Add-Member -NotePropertyName $entry.path -NotePropertyValue $entry.after -Force}else{$next.sourceHashes.PSObject.Properties.Remove($entry.path)}}
  $codePath=[string]$next.childCodeFile;$supervisor=[string]$next.supervisorScript;if(Test-Path (Join-Path $payload 'scripts/protected-web-service.js')){$next.childCodeSha256=Hash (Join-Path $payload 'scripts/protected-web-service.js')};if(Test-Path (Join-Path $payload 'ops/windows/web-native-supervisor.ps1')){$next.supervisorSha256=Hash (Join-Path $payload 'ops/windows/web-native-supervisor.ps1')}
  $newConfigBytes=[Text.UTF8Encoding]::new($false).GetBytes(($next|ConvertTo-Json -Depth 100)+[Environment]::NewLine);[IO.File]::WriteAllBytes((Join-Path $release 'new-control.json'),$newConfigBytes);$newConfigHash=Hash (Join-Path $release 'new-control.json')
- $rollbackAttemptId=[Guid]::NewGuid().ToString('N');$script:WebUpdateRollbackAttemptId=$rollbackAttemptId;$rollbackCfg=$web.Config|ConvertTo-Json -Depth 100|ConvertFrom-Json;SetJsonProperty $rollbackCfg 'attemptId' $rollbackAttemptId;SetJsonProperty $rollbackCfg 'attemptRole' 'rollback';$rollbackConfigBytes=[Text.UTF8Encoding]::new($false).GetBytes(($rollbackCfg|ConvertTo-Json -Depth 100)+[Environment]::NewLine);$rollbackConfigPath=Join-Path $release 'rollback-control.json';[IO.File]::WriteAllBytes($rollbackConfigPath,$rollbackConfigBytes);$rollbackConfigHash=Hash $rollbackConfigPath
+ $rollbackAttemptId=[Guid]::NewGuid().ToString('N');$script:WebUpdateRollbackAttemptId=$rollbackAttemptId;$rollbackCfg=NewWebRollbackConfig $web.Config $rollbackAttemptId;$rollbackConfigBytes=[Text.UTF8Encoding]::new($false).GetBytes(($rollbackCfg|ConvertTo-Json -Depth 100)+[Environment]::NewLine);$rollbackConfigPath=Join-Path $release 'rollback-control.json';[IO.File]::WriteAllBytes($rollbackConfigPath,$rollbackConfigBytes);$rollbackConfigHash=Hash $rollbackConfigPath
  $argsNew=RewriteTaskConfigSha ([string]$oldAction.Arguments) $web.ConfigSha $newConfigHash;[void](AssertTaskConfigAction $argsNew $cfgPath $newConfigHash 'WEB_TASK_CANDIDATE_ACTION_INVALID')
  $rollbackArgs=RewriteTaskConfigSha ([string]$oldAction.Arguments) $web.ConfigSha $rollbackConfigHash;[void](AssertTaskConfigAction $rollbackArgs $cfgPath $rollbackConfigHash 'WEB_TASK_ROLLBACK_ACTION_INVALID')
  $rollbackAction=New-ScheduledTaskAction -Execute $oldAction.Execute -Argument $rollbackArgs -WorkingDirectory $oldAction.WorkingDirectory
- $script:WebUpdatePhase='WEB_RELEASE_MANIFEST';$manifest=@{kind='HDWORK2_WEB_UPDATE';version=1;state='STAGED';targetCommit=$target;runtime=$runtime;taskName=$cfg.taskName;configPath=$cfgPath;beforeConfigSha256=$web.ConfigSha;afterConfigSha256=$newConfigHash;candidateAttemptId=$candidateAttemptId;rollbackAttemptId=$rollbackAttemptId;rollbackConfigSha256=$rollbackConfigHash;oldTaskArguments=[string]$oldAction.Arguments;candidateTaskArguments=$argsNew;rollbackTaskArguments=$rollbackArgs;entries=$entries;checkedAtUtc=[DateTimeOffset]::UtcNow.ToString('o')};SaveJson (Join-Path $release 'manifest.json') $manifest;$planHash=Hash (Join-Path $release 'manifest.json');$barrier=[Guid]::NewGuid().ToString()
+ $script:WebUpdatePhase='WEB_RELEASE_MANIFEST';$manifest=@{kind='HDWORK2_WEB_UPDATE';version=1;state='STAGED';targetCommit=$target;rollbackTargetCommit=(ActiveWebCommit $web.Config);runtime=$runtime;taskName=$cfg.taskName;configPath=$cfgPath;beforeConfigSha256=$web.ConfigSha;afterConfigSha256=$newConfigHash;candidateAttemptId=$candidateAttemptId;rollbackAttemptId=$rollbackAttemptId;rollbackConfigSha256=$rollbackConfigHash;oldTaskArguments=[string]$oldAction.Arguments;candidateTaskArguments=$argsNew;rollbackTaskArguments=$rollbackArgs;entries=$entries;checkedAtUtc=[DateTimeOffset]::UtcNow.ToString('o')};SaveJson (Join-Path $release 'manifest.json') $manifest;$planHash=Hash (Join-Path $release 'manifest.json');$barrier=[Guid]::NewGuid().ToString()
  $operator=[Security.Principal.WindowsIdentity]::GetCurrent().Name;$approvalPath=Join-Path $release 'approval.json';SaveJson $approvalPath @{kind='HDWORK2_OPERATOR_WEB_HANDOFF_APPROVAL';approved=$true;scope='WEB_HANDOFF_ONLY_NO_TELEGRAM';operator=$operator;decisionId=('WEBUPDATE-'+$barrier);targetCommit=$cfg.targetCommit;planSha256=$planHash;nativeConfigSha256=$web.ConfigSha;expiresAtUtc=[DateTimeOffset]::UtcNow.AddMinutes(5).ToString('o')}
  $control=Join-Path $runtime 'ops/windows/web-native-control.ps1';$fenceAttempted=$false;$fenced=$false;$quiescent=$false;$mutated=$false
  try{
@@ -361,7 +431,7 @@ function DeployWeb($web,[string]$target,[string[]]$paths){
   try{
    $taskNow=Get-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName
    if([string]$taskNow.State -eq 'Running'){Disable-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName|Out-Null;Stop-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;for($i=0;$i -lt 60;$i++){if(-not(Get-CimInstance Win32_Process -Filter ("Name='powershell.exe' OR Name='node.exe'" )|Where-Object{$_.CommandLine -and $_.CommandLine.Contains($runtime)})){break};Start-Sleep -Milliseconds 500};$alive=@(Get-CimInstance Win32_Process -Filter ("Name='powershell.exe' OR Name='node.exe'" )|Where-Object{$_.CommandLine -and $_.CommandLine.Contains($runtime)});if($alive.Count){Fail 'WEB_ROLLBACK_STOP_NOT_CONFIRMED'}}
-   if($mutated){foreach($entry in $entries){$dest=Join-Path $runtime $entry.path;$b=Join-Path $backup $entry.path;if($entry.before){Atomic $dest ([IO.File]::ReadAllBytes($b))}elseif(Test-Path -LiteralPath $dest){Remove-Item -LiteralPath $dest -Force}}}
+   if($mutated){RestoreWebFiles $runtime $backup $entries}
    [void](AssertConfigFileSha $rollbackConfigPath $rollbackConfigHash 'WEB_ROLLBACK_CONFIG_PIN_MISMATCH');Atomic $cfgPath $rollbackConfigBytes;if(Test-Path -LiteralPath $cfg.fenceFile){$f=Get-Content -LiteralPath $cfg.fenceFile -Raw|ConvertFrom-Json;if($f.barrierId -ne $barrier -or $f.configSha256 -ne $web.ConfigSha){Fail 'UNEXPECTED_WEB_STARTUP_FENCE'};Remove-Item -LiteralPath $cfg.fenceFile -Force};[void](AssertConfigFileSha $cfgPath $rollbackConfigHash 'WEB_ROLLBACK_CONFIG_ACTIVATION_PIN_MISMATCH');Set-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName -Action $rollbackAction|Out-Null;$rollbackTask=Get-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;Need (@($rollbackTask.Actions).Count -eq 1 -and $rollbackTask.Actions[0].Execute -ceq $oldAction.Execute -and $rollbackTask.Actions[0].WorkingDirectory -ceq $oldAction.WorkingDirectory) 'WEB_TASK_ROLLBACK_ACTION_CHANGED';[void](AssertTaskConfigAction ([string]$rollbackTask.Actions[0].Arguments) $cfgPath $rollbackConfigHash 'WEB_TASK_ROLLBACK_ACTION_READBACK_INVALID');UpdateAttemptRecord (AttemptDiagnosticPath $cfgPath $rollbackAttemptId) $rollbackAttemptId 'rollback' 'ROLLBACK_STARTING' $rollbackConfigHash @{ };Enable-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName|Out-Null;Start-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;$null=WaitReady $cfgPath $rollbackConfigHash $rollbackAttemptId
    $rollbackHealth=Join-Path $release 'rollback-health.json';RetryTransientHealth { $null=Health $web $rollbackHealth };UpdateAttemptRecord (AttemptDiagnosticPath $cfgPath $rollbackAttemptId) $rollbackAttemptId 'rollback' 'ROLLBACK_COMPLETED' $rollbackConfigHash @{};$manifest.state='ROLLED_BACK';$manifest.failureCode=$original;$manifest.rollbackHealth='PASS';SaveJson (Join-Path $release 'manifest.json') $manifest;Fail ('WEB_UPDATE_FAILED_ROLLED_BACK_'+$original)
   }catch{if($_.Exception.Message -like 'WEB_UPDATE_FAILED_ROLLED_BACK_*'){throw};$rollbackError=$_.Exception.Message;$rollbackExceptionType=$_.Exception.GetType().Name;$rollbackCode=if($rollbackError -match '^([A-Z][A-Z0-9_]{0,63})'){$Matches[1]}else{'WEB_ROLLBACK_FAILED'};UpdateAttemptRecord (AttemptDiagnosticPath $cfgPath $rollbackAttemptId) $rollbackAttemptId 'rollback' 'ROLLBACK_FAILED' $rollbackConfigHash @{exceptionType=$rollbackExceptionType;code=$rollbackCode;taskResult=1};if($rollbackError -like 'WEB_HEALTH_FAILED_*'){$restoredTask=Get-ScheduledTask -TaskPath '\' -TaskName $cfg.taskName;$preservedState=RollbackHealthFailureState ([string]$restoredTask.State) ([bool]$restoredTask.Settings.Enabled);if($preservedState){$manifest.state=$preservedState;$manifest.failureCode=$original;$manifest.rollbackError=$rollbackError;$manifest.rollbackHealth='FAIL';$manifest.rollbackTaskPreserved=$true;SaveJson (Join-Path $release 'manifest.json') $manifest;Fail 'WEB_ROLLBACK_HEALTH_FAILED_TASK_PRESERVED'}};$manifest.state='ROLLBACK_FAILED';$manifest.failureCode=$original;$manifest.rollbackError=$rollbackError;SaveJson (Join-Path $release 'manifest.json') $manifest;Fail 'WEB_ROLLBACK_FAILED_PRESERVE_RELEASE_AND_TASK_STATE'}
