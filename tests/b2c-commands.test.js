@@ -85,3 +85,31 @@ test('full-history cross-chat TIAL dedup, final canonical, repeat commands, repl
  assert.equal(pool.state.orders[0].raw_text,base);assert.equal(pool.state.orders[0].sender_id,'9');
  await store.accept(event(20,'/order\nSC/IN:bad'));await workflow.processNext();assert.equal(pool.state.orders.length,9);
 });
+
+test('routed order commands sent as replies get an authorized rejection without creating an order or chat message',async()=>{
+ const pool=mockPool(),store=new MysqlStore({pool,botId:'sandbox',env:{}});
+ const commands=require('../src/courier/shared-group').commands;
+ const group={chatId:'-1001',threadId:null,threadMode:'non_topic',profile:'ALL',commands};
+ const policy=createGroupPolicy({botId:'sandbox',botUsername:'HDWorkOpsBot',groups:[group],allowReplies:true});
+ const workflow=createB2CProcessor({store,config:{enabled:true,botId:'sandbox',botUsername:'HDWorkOpsBot',
+  identityKey:'synthetic-command-test-key-00000000',dedupeBy:'both',webOnly:true,chatEnabled:true,actors:[],
+  groups:[{...group,module:'TIAL',commandProfile:'ALL',allowedCommands:commands}]}});
+ for(const [index,command] of commands.entries()){
+  const updateId=String(index+1),messageId=String(index+100);
+  const body={version:1,bot_id:'sandbox',update_id:updateId,event:{kind:'message',chat_id:group.chatId,
+   message_id:messageId,telegram_thread_id:null,sender_id:'9',reply_to_message_id:'42',timestamp:1700000000,
+   text:command==='order'?base:`/${command}@HDWorkOpsBot`,attachments:[]}};
+  await store.accept(policy.ingress(body));
+  await workflow.processNext();
+  const queued=JSON.parse(pool.state.outbox[index].payload);
+  assert.equal(queued.reply_to_message_id,messageId);
+  assert.equal(queued.text,'❌ Order harus dikirim sebagai pesan baru.');
+  const connection=await pool.getConnection();
+  try{
+   assert.equal(await policy.outgoing(queued,connection),true);
+   assert.equal(await policy.outgoing({...queued,text:queued.text+' changed'},connection),false);
+  }finally{connection.release();}
+ }
+ assert.equal(pool.state.orders.length,0);
+ assert.equal(pool.state.outbox.length,commands.length);
+});
