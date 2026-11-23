@@ -37,7 +37,7 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
   }
   const checkIn = pathname === '/check-in';
   const assistantAllowed = operationsEnabled && import.meta.env.VITE_HDWORK2_ASSISTANT === 'true' &&
-    (['ADMIN', 'SUPER_ADMIN'].includes(user.role) || (user.role === 'HD' && Boolean(user.modules?.length) && user.username !== 'trial_yanto'));
+    user.role === 'SUPER_ADMIN';
   function launcher(compact = false) {
     return assistantAllowed && <Button type="button" className="mb-2 w-full min-h-11" variant="outline" aria-label="Tanya Yanto" title={compact ? 'Tanya Yanto' : undefined}
       onClick={() => { setDrawerOpen(false); setAssistant('open'); }}><Bot aria-hidden />{!compact && <span>Tanya Yanto</span>}</Button>;

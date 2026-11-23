@@ -45,10 +45,9 @@ function createRoutes({ http, store = createStore(process.env.HDWORK2_ASSISTANT_
   const router = express.Router(), running = new Set();
   const burst = createRateLimit({limit: 20, windowMs: 60000, keyFor: req => String(req.user.id)});
   router.use((_, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-  const wrap = (admin, handler) => async (req, res) => {
+  const wrap = handler => async (req, res) => {
     try {
-      if (admin ? req.user.role !== 'SUPER_ADMIN' : !roles.includes(req.user.role) ||
-          (req.user.role === 'HD' && (!req.user.modules?.length || req.user.username === 'trial_yanto'))) {
+      if (req.user.role !== 'SUPER_ADMIN') {
         throw new AssistantError(403, 'Akses Tanya Yanto tidak diizinkan.');
       }
       if (req.method !== 'GET') http.csrf(req, req.sessionToken);
@@ -77,8 +76,8 @@ function createRoutes({ http, store = createStore(process.env.HDWORK2_ASSISTANT_
       articles: articles.map(({ id, title, published }) => ({ id, title: redact(title), published })),
       backupAvailable: await store.backupAvailable() });
   }
-  router.get('/settings', wrap(true, async (_req, res) => settings(res, await store.get())));
-  router.post('/settings', wrap(true, async (req, res) => {
+  router.get('/settings', wrap(async (_req, res) => settings(res, await store.get())));
+  router.post('/settings', wrap(async (req, res) => {
     const url = baseUrl(req.body?.baseUrl);
     const model = field(req.body?.model, 160), key = field(req.body?.apiKey ?? '', 512);
     if (typeof req.body?.enabled !== 'boolean' || !/^[ -~]*$/.test(key) || /\s/.test(key) ||
@@ -98,14 +97,14 @@ function createRoutes({ http, store = createStore(process.env.HDWORK2_ASSISTANT_
     });
     await settings(res, result);
   }));
-  router.get('/articles/:id', wrap(true, async (req, res) => {
+  router.get('/articles/:id', wrap(async (req, res) => {
     const state = await store.get();
     const item = state.articles.find(entry => entry.id === req.params.id);
     if (!item) throw new AssistantError(404, 'Artikel tidak ditemukan.');
     const redact = value => state.apiKey ? value.replaceAll(state.apiKey, '[disembunyikan]') : value;
     res.json({ ...item, title: redact(item.title), tags: redact(item.tags), text: redact(item.text) });
   }));
-  router.post('/articles', wrap(true, async (req, res) => {
+  router.post('/articles', wrap(async (req, res) => {
     if (!['save', 'delete'].includes(req.body?.operation)) throw bad();
     const id = req.body?.id == null ? '' : field(req.body.id, 64);
     const item = req.body.operation === 'save' ? article(req.body) : null;
@@ -123,9 +122,9 @@ function createRoutes({ http, store = createStore(process.env.HDWORK2_ASSISTANT_
     });
     await settings(res, result);
   }));
-  router.post('/backup', wrap(true, async (_req, res) => { await store.backup(); res.json({ backupAvailable: true }); }));
-  router.post('/restore', wrap(true, async (_req, res) => { await store.restore(); await settings(res, await store.get()); }));
-  router.post('/test', burst, wrap(true, (req, res) => external(req, res, async signal => {
+  router.post('/backup', wrap(async (_req, res) => { await store.backup(); res.json({ backupAvailable: true }); }));
+  router.post('/restore', wrap(async (_req, res) => { await store.restore(); await settings(res, await store.get()); }));
+  router.post('/test', burst, wrap((req, res) => external(req, res, async signal => {
     const state = await store.get();
     if (!state.apiKey) throw new AssistantError(400, 'Simpan API key terlebih dahulu.');
     if (!state.model) {
@@ -151,7 +150,7 @@ function createRoutes({ http, store = createStore(process.env.HDWORK2_ASSISTANT_
     });
     if (!res.destroyed) res.json({ models: [], modelVerified: true });
   })));
-  router.post('/chat', burst, wrap(false, (req, res) => external(req, res, async signal => {
+  router.post('/chat', burst, wrap((req, res) => external(req, res, async signal => {
     const state = await store.get();
     if (!state.enabled || state.verified !== true || !state.apiKey || !state.model) throw new AssistantError(503, 'Tanya Yanto belum diaktifkan.');
     const conversation = context(req.body);

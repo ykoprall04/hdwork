@@ -109,11 +109,12 @@ test('assistant RBAC, knowledge, general conversation, safe failure, backup and 
   const config = { baseUrl: 'https://api.dinero.web.id/v1', model: 'synthetic', enabled: true };
   assert.equal((await request('/settings')).status, 401);
   for (const role of ['HD', 'ADMIN', 'SHOW_ONLY']) {
+    assert.equal((await request('/chat', role, { question: 'Halo' })).status, 403);
     assert.equal((await request('/settings', role)).status, 403);
     for (const endpoint of ['/test', '/settings', '/articles', '/backup', '/restore']) assert.equal((await request(endpoint, role, {})).status, 403);
   }
   assert.equal((await request('/settings', admin, config, { 'x-csrf': 'bad' })).status, 403);
-  assert.equal((await request('/chat', 'HD', { question: 'Apa itu hujan?' })).status, 503);
+  assert.equal((await request('/chat', admin, { question: 'Apa itu hujan?' })).status, 503);
   assert.equal((await request('/settings', admin, { ...config, apiKey: secret })).status, 409);
   assert.equal((await request('/settings', admin, { ...config, enabled: false, apiKey: secret })).body.keyConfigured, true);
   assert.equal((await request('/settings', admin, config)).status, 409);
@@ -127,31 +128,31 @@ test('assistant RBAC, knowledge, general conversation, safe failure, backup and 
   assert.deepEqual(exposed.slice(beforeProbe).map(entry => entry.endpoint), ['/chat/completions']);
   assert.equal((await request('/settings', admin, config)).body.enabled, true);
   assert.equal((await request('/settings', admin, { ...config, model: 'changed' })).status, 409);
-  const article = { operation: 'save', title: 'Kebijakan Rhorium', tags: 'rhorium', text: 'Panduan Rhorium khusus petugas TIAL.', roles: ['HD'], modules: ['TIAL'], published: false };
+  const article = { operation: 'save', title: 'Kebijakan Rhorium', tags: 'rhorium', text: 'Panduan Rhorium khusus petugas TIAL.', roles: ['SUPER_ADMIN'], modules: ['TIAL'], published: false };
   const draft = (await request('/articles', admin, article)).body.articles.at(-1);
   assert.equal(draft.text, undefined);
   assert.equal((await request('/articles/' + draft.id, 'HD')).status, 403);
   assert.equal((await request('/articles/' + draft.id, admin)).body.text, article.text);
-  await request('/chat', 'HD', { question: 'Rhorium?' });
+  await request('/chat', admin, { question: 'Rhorium?' });
   assert.doesNotMatch(exposed.at(-1).body.messages[0].content, /Panduan Rhorium/);
   await request('/articles', admin, { ...article, id: draft.id, published: true });
   const question = 'Bagaimana Rhorium?';
-  assert.equal((await request('/chat', 'HD', { question })).body.answer, 'Jawaban singkat.');
+  assert.equal((await request('/chat', admin, { question })).body.answer, 'Jawaban singkat.');
   assert.match(exposed.at(-1).body.messages[0].content, /Panduan Rhorium/);
-  await request('/chat', 'HD', { question: 'Lalu bagaimana?', history: [{ role: 'user', content: question }, { role: 'assistant', content: 'Jawaban singkat.' }] });
+  await request('/chat', admin, { question: 'Lalu bagaimana?', history: [{ role: 'user', content: question }, { role: 'assistant', content: 'Jawaban singkat.' }] });
   assert.match(exposed.at(-1).body.messages[0].content, /Panduan Rhorium/);
-  await request('/chat', 'HD', { question }, { 'x-scope': 'other' });
+  await request('/chat', admin, { question }, { 'x-scope': 'other' });
   assert.doesNotMatch(exposed.at(-1).body.messages[0].content, /Panduan Rhorium/);
-  await request('/chat', 'HD', { question: 'Mengapa hujan turun?' });
+  await request('/chat', admin, { question: 'Mengapa hujan turun?' });
   assert.match(exposed.at(-1).body.messages[0].content, /Referensi HD Work tidak tersedia/);
-  assert.equal((await request('/chat', 'HD', { question: 'NO INET: 123456789000' })).status, 400);
+  assert.equal((await request('/chat', admin, { question: 'NO INET: 123456789000' })).status, 400);
   assert.equal((await request('/chat', 'SHOW_ONLY', { question })).status, 403);
   for (const status of [429, 504]) {
     failure = new AssistantError(status, 'Kesalahan penyedia.');
-    assert.equal((await request('/chat', 'HD', { question })).status, status);
+    assert.equal((await request('/chat', admin, { question })).status, status);
   }
   failure = Error(secret);
-  assert.equal((await request('/chat', 'HD', { question })).status, 503);
+  assert.equal((await request('/chat', admin, { question })).status, 503);
   await request('/backup', admin, {});
   await request('/articles', admin, { operation: 'delete', id: draft.id });
   await request('/settings', admin, { ...config, enabled: false });

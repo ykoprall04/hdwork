@@ -1,6 +1,6 @@
 # Tanya Yanto
 
-Assistant Web tersedia untuk HD dengan akses modul serta Admin dan Super Admin. Akun lihat-saja dan akun uji Solver tidak memiliki akses. Hanya Super Admin yang dapat mengatur penyedia, menerbitkan artikel, membuat backup, atau memulihkan data. Akses diperiksa kembali pada API dengan sesi dan CSRF yang sudah dipakai Web.
+Untuk tahap awal, tombol dan API Tanya Yanto hanya tersedia bagi Super Admin. Hanya Super Admin yang dapat mengatur penyedia, menerbitkan artikel, membuat backup, atau memulihkan data. Akses diperiksa kembali pada API dengan sesi dan CSRF yang sudah dipakai Web.
 
 ## Persiapan Windows
 

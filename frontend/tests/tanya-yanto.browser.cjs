@@ -49,6 +49,13 @@ const base = process.env.HD_PREVIEW_URL || 'http://127.0.0.1:5203';
       await draft.fill(question);
       await panel.getByRole('button', { name: 'Kirim pertanyaan' }).click();
     };
+    for (const denied of ['HD', 'ADMIN']) {
+      role = denied;
+      await page.goto(base + '/work/B2C');
+      await page.getByRole('heading', { name: 'Dashboard Pekerjaan' }).waitFor();
+      assert.equal(await launch.count(), 0);
+    }
+    role = 'SUPER_ADMIN';
     await page.goto(base + '/work/B2C');
     await launch.waitFor();
     assert.equal(fetchedChunk, false);
@@ -57,7 +64,7 @@ const base = process.env.HD_PREVIEW_URL || 'http://127.0.0.1:5203';
     await panel.waitFor();
     assert.equal(fetchedChunk, true);
     assert.equal(requests.length, 0);
-    assert.equal(await panel.getByRole('button', { name: 'Pengaturan Tanya Yanto' }).count(), 0);
+    assert.equal(await panel.getByRole('button', { name: 'Pengaturan Tanya Yanto' }).count(), 1);
     await send('Bagaimana cara mengambil order?');
     await panel.getByText(/Tekan PICK/).waitFor();
     assert.deepEqual(requests.at(-1).history, []);
@@ -107,7 +114,6 @@ const base = process.env.HD_PREVIEW_URL || 'http://127.0.0.1:5203';
     assert.equal(await panel.getByLabel('API Key').inputValue(), '');
     await panel.getByRole('button', { name: 'Tutup Tanya Yanto' }).click();
 
-    role = 'HD';
     await page.setViewportSize({ width: 360, height: 660 });
     await page.goto(base + '/work/B2C');
     await page.getByRole('button', { name: 'Buka navigasi' }).click();
@@ -119,6 +125,6 @@ const base = process.env.HD_PREVIEW_URL || 'http://127.0.0.1:5203';
     await page.getByRole('button', { name: 'Gunakan mode pagi' }).click();
     await capture('light-mobile');
     assert.deepEqual(errors, []);
-    console.log('PASS: Tanya Yanto lazy loading, HD/Super Admin, themes, mobile, drag/resize, session reset and safe failure.');
+    console.log('PASS: Tanya Yanto lazy loading, Super Admin only, themes, mobile, drag/resize, session reset and safe failure.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
