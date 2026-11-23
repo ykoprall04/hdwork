@@ -60,8 +60,9 @@ test('MySQL 8.4: verified final actor, WIB boundaries, weighted totals and atomi
       INSERT INTO users(id,username,name,password_hash,role,is_active) VALUES
         (1,'ami','Ami','fixture','HD',1),(2,'budi','Budi','fixture','HD',1),
         (3,'adminfixture','Admin Fixture','fixture','SUPER_ADMIN',1),
-        (4,'zack','Zack','fixture','HD',1),(5,'inactive','Inactive','fixture','HD',0);
-      INSERT INTO hd2_sessions(token_hash,user_id,expires_at) VALUES ('${digest('fixture-token')}',3,'2099-01-01');
+        (4,'zack','Zack','fixture','HD',1),(5,'inactive','Inactive','fixture','HD',0),
+        (6,'regularadmin','Admin Regular','fixture','ADMIN',1);
+      INSERT INTO hd2_sessions(token_hash,user_id,expires_at) VALUES ('${digest('fixture-token')}',3,'2099-01-01'),('${digest('fixture-admin-token')}',6,'2099-01-01');
     `);
     const port = Number(docker('port',container,'3306').trim().split(':').at(-1));
     const makePool = (user,password) => {
@@ -72,6 +73,7 @@ test('MySQL 8.4: verified final actor, WIB boundaries, weighted totals and atomi
     const reader = makePool('perf_reader','fixture-read'), writer = makePool('perf_writer','fixture-write');
     const hd = { id:1, role:'HD', modules:['TIAL','REQ','LOGIC_MO','LOGIC_PSB'] };
     const admin = { ...hd, id:3, role:'SUPER_ADMIN' };
+    const regularAdmin = { ...hd, id:6, role:'ADMIN' };
     function order({ command='order', status='DONE', actor=1, finish='2026-11-21 17:00:00', audit=true, auditActor=actor, auditTime=finish, repeats=1, id=randomUUID() } = {}) {
       const module={order:'TIAL',req:'TIAL',mo:'LOGIC_MO',config_psb:'LOGIC_PSB',assuren:'ASSUREN'}[command];
       let statement = `INSERT INTO hd2_orders(id,bot_id,module,business_day,chat_id,message_id,status,command,final_user_id,finished_at)
@@ -108,7 +110,10 @@ test('MySQL 8.4: verified final actor, WIB boundaries, weighted totals and atomi
     assert.equal((await performance(reader,query,{...hd,modules:['TIAL']})).totals.points,1);
     await assert.rejects(performance(reader,query,{...hd,role:'SHOW_ONLY'}),{statusCode:403});
     await assert.rejects(performance(reader,{...query,date:'2026-02-30'},hd),{statusCode:400});
-    const change={version:data.version,weights:{...data.weights,order:{done:2.5,failed:5},config_psb:{done:1,failed:0.75}}};
+    assert.equal(Object.hasOwn(data,'weights'),false);
+    assert.equal(Object.hasOwn(data,'version'),false);
+    const configuration = await performance(reader,query,regularAdmin);
+    const change={version:configuration.version,weights:{...configuration.weights,order:{done:2.5,failed:5},config_psb:{done:1,failed:0.75}}};
     await assert.rejects(saveWeights(writer,hd,'fixture-token',change),{statusCode:403});
     await assert.rejects(saveWeights(writer,admin,'wrong-token',change),{statusCode:401});
     await assert.rejects(saveWeights(writer,admin,'fixture-token',{...change,weights:{...change.weights,mo:{done:-1,failed:1}}}),{statusCode:400});
@@ -119,16 +124,16 @@ test('MySQL 8.4: verified final actor, WIB boundaries, weighted totals and atomi
     await assert.rejects(saveWeights(writer,admin,'fixture-token',change),/fixture audit error/);
     assert.equal((await performance(reader,query,hd)).totals.points,2);
     sql('DROP TRIGGER fixture_audit_error;');
-    const saved = await saveWeights(writer,admin,'fixture-token',change);
-    assert.notEqual(saved.version,data.version);
+    const saved = await saveWeights(writer,regularAdmin,'fixture-admin-token',change);
+    assert.notEqual(saved.version,configuration.version);
     assert.equal((await performance(reader,query,hd)).totals.points,3.25);
     const previousYear = await performance(reader,{...query,date:'2025-03-01'},hd);
     assert.equal(previousYear.totals.points,2.5);
     await assert.rejects(saveWeights(writer,admin,'fixture-token',change),{statusCode:409});
     await saveWeights(writer,admin,'fixture-token',saved);
     const audit = sql("SELECT user_id,detail,created_at IS NOT NULL FROM hd2_audit WHERE action='HD_PERFORMANCE_WEIGHTS_CHANGED';").split('\t');
-    assert.equal(audit[0],'3');
-    assert.deepEqual(JSON.parse(audit[1]),{before:data.weights,after:change.weights});
+    assert.equal(audit[0],'6');
+    assert.deepEqual(JSON.parse(audit[1]),{before:configuration.weights,after:change.weights});
     assert.equal(audit[2],'1');
     sql(migration);
     assert.equal((await performance(reader,query,hd)).totals.points,3.25);

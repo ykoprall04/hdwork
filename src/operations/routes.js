@@ -38,7 +38,7 @@ router.get('/recap/performance',wrap(async(req,res)=>res.json(
 )));
 router.post('/recap/performance/weights',wrap(async(req,res)=>{
  h.csrf(req,req.sessionToken);
- if(req.user.role!=='SUPER_ADMIN')throw fail(403);
+ require('../system/policy').admin(req.user);
  res.json(await require('./hd-performance').saveWeights(writePool(),req.user,req.sessionToken,req.body));
 }));
 router.get('/people',wrap(async(req,res)=>res.json({success:true,...await read().people(req.user,Number(req.query.page||1))})));

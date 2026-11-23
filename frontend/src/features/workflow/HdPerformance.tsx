@@ -11,7 +11,7 @@ type Person = Counts & { id: string; name: string; commands: Record<Command, Cou
 type Weights = Record<Command, Pick<Counts, 'done' | 'failed'>>;
 type Draft = Record<Command, { done: string; failed: string }>;
 type Data = {
-  people: Person[]; commands: Command[]; weights: Weights; version: string; years: number[];
+  people: Person[]; commands: Command[]; weights?: Weights; version?: string; years: number[];
   from: string; to: string; totals: Counts & { active: number; average: number };
 };
 type Period = 'daily' | 'weekly' | 'monthly';
@@ -39,6 +39,7 @@ function Heading({ icon: Icon, title, description }: { icon: typeof Activity; ti
 
 export default function HdPerformance() {
   const { user } = useAuth();
+  const canManageWeights = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [area, setArea] = useState('ALL');
   const [period, setPeriod] = useState<Period>('weekly');
   const [date, setDate] = useState(() => dates.format(new Date()));
@@ -121,7 +122,7 @@ export default function HdPerformance() {
 
     {data && <>
       <Summary totals={data.totals} />
-      <WeightCard key={data.version} data={data} canEdit={user?.role === 'SUPER_ADMIN'} onSaved={update} />
+      {canManageWeights && data.weights && data.version && <WeightCard key={data.version} weights={data.weights} version={data.version} onSaved={update} />}
       <DetailCard key={query} data={data} value={detail} onChange={setDetail} />
     </>}
     <p className="text-xs leading-relaxed text-muted-foreground">
@@ -189,46 +190,45 @@ function Summary({ totals }: { totals: Data['totals'] }) {
   </dl>;
 }
 
-function WeightCard({ data, canEdit, onSaved }: { data: Data; canEdit: boolean; onSaved: () => void }) {
+function WeightCard({ weights, version, onSaved }: { weights: Weights; version: string; onSaved: () => void }) {
   const [draft, setDraft] = useState<Draft>(() => Object.fromEntries(commands.map(command => [command,
-    { done: String(data.weights[command].done), failed: String(data.weights[command].failed) }
+    { done: String(weights[command].done), failed: String(weights[command].failed) }
   ])) as Draft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const invalid = commands.some(command => Object.values(draft[command]).some(value => !/^\d+(?:\.\d{1,2})?$/.test(value) || Number(value) > 10000));
-  const changed = commands.some(command => (['done', 'failed'] as const).some(status => Number(draft[command][status]) !== data.weights[command][status]));
+  const changed = commands.some(command => (['done', 'failed'] as const).some(status => Number(draft[command][status]) !== weights[command][status]));
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    if (busy || invalid || !changed || !canEdit) return;
+    if (busy || invalid || !changed) return;
     setBusy(true); setError('');
     try {
-      const weights = Object.fromEntries(commands.map(command => [command, { done: Number(draft[command].done), failed: Number(draft[command].failed) }]));
-      await request('/recap/performance/weights', { version: data.version, weights });
+      const next = Object.fromEntries(commands.map(command => [command, { done: Number(draft[command].done), failed: Number(draft[command].failed) }]));
+      await request('/recap/performance/weights', { version, weights: next });
       onSaved();
     } catch (error) { setError(error instanceof Error ? error.message : 'Bobot gagal disimpan.'); }
     finally { setBusy(false); }
   }
   return <article className={panel}>
-    <Heading icon={Settings} title="Pengaturan Bobot" description={canEdit ? 'Atur bobot DONE dan GAGAL per perintah, 0–10.000 dengan maksimal dua desimal.' : 'Bobot aktif per perintah. Perubahan hanya tersedia untuk Super Admin.'} />
+    <Heading icon={Settings} title="Pengaturan Bobot" description="Atur bobot DONE dan GAGAL per perintah, 0–10.000 dengan maksimal dua desimal." />
     <form onSubmit={save}>
       <table className="w-full table-fixed overflow-hidden rounded-lg text-sm">
         <thead className="bg-muted"><tr><th className="px-2 py-2 text-left">Perintah</th><th className="bg-emerald-500/10 px-1">Bobot DONE</th><th className="bg-amber-500/10 px-1">Bobot GAGAL</th></tr></thead>
         <tbody>{commands.map(command => <tr key={command} className="border-b">
           <th scope="row" className="px-2 py-2 text-left font-medium">/{command}</th>
           {(['done', 'failed'] as const).map(status => <td key={status} className="px-1 py-1.5 text-center">
-            {canEdit ? <input aria-label={`Bobot ${status === 'done' ? 'DONE' : 'GAGAL'} /${command}`} type="number" min="0" max="10000" step="0.01" required
+            <input aria-label={`Bobot ${status === 'done' ? 'DONE' : 'GAGAL'} /${command}`} type="number" min="0" max="10000" step="0.01" required
               className={input + ' w-full max-w-24 text-center tabular-nums'} value={draft[command][status]} disabled={busy}
               onChange={event => setDraft({ ...draft, [command]: { ...draft[command], [status]: event.target.value } })} />
-              : number.format(data.weights[command][status])}
           </td>)}
         </tr>)}</tbody>
       </table>
       {error && <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 text-sm text-destructive">
         <p>{error}</p><Button type="button" size="sm" variant="outline" onClick={onSaved}>Muat ulang bobot</Button>
       </div>}
-      {canEdit && <div className="mt-3 flex justify-end"><Button type="submit" disabled={busy || invalid || !changed}>
+      <div className="mt-3 flex justify-end"><Button type="submit" disabled={busy || invalid || !changed}>
         <Save aria-hidden />{busy ? 'Menyimpan…' : 'Simpan Bobot'}
-      </Button></div>}
+      </Button></div>
     </form>
   </article>;
 }

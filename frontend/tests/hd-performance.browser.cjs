@@ -135,13 +135,27 @@ async function run() {
 
     await page.getByRole('button', { name: 'Rekap Order' }).click();
     assert.equal(await page.getByRole('button', { name: 'Export Excel' }).isVisible(), true);
-    user.role = 'HD';
+    user.role = 'ADMIN';
     await page.reload();
     await page.getByRole('button', { name: 'Performansi HD' }).click();
     await tab.getByRole('heading', { name: 'Pengaturan Bobot' }).waitFor();
+    await tab.getByLabel('Bobot DONE /mo').fill('3');
+    const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/operations/recap/performance');
+    await tab.getByRole('button', { name: 'Simpan Bobot' }).click();
+    await refreshed;
+    await detail.waitFor();
+    await page.waitForFunction(() => document.querySelector('[aria-label="Bobot DONE /mo"]')?.value === '3' &&
+      !!Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Simpan Bobot' && button.disabled));
+    assert.equal(changes.length, 2);
+
+    user.role = 'HD';
+    await page.reload();
+    await page.getByRole('button', { name: 'Performansi HD' }).click();
+    await detail.waitFor();
+    assert.equal(await tab.getByRole('heading', { name: 'Pengaturan Bobot' }).count(), 0);
     assert.equal(await tab.getByRole('button', { name: 'Simpan Bobot' }).count(), 0);
     assert.deepEqual(errors, []);
-    console.log('PASS: Performansi HD desktop/mobile, filters, stacked chart, empty and detail states, save/refresh, and read-only HD.');
+    console.log('PASS: Performansi HD desktop/mobile, filters, stacked chart, empty and detail states, save/refresh, Admin/Super Admin writes and hidden settings for HD.');
   } finally {
     await browser.close();
   }

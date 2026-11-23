@@ -11,7 +11,7 @@ router operasional yang sudah memakai autentikasi sesi dan rate limit.
   respons yang sama. Tabel ALL memuat 15 baris per halaman.
 - `POST /api/operations/recap/performance/weights` menerima empat pasang bobot
   dan versi yang dibaca sebelumnya. Perubahan memerlukan CSRF serta sesi
-  Super Admin yang masih berlaku. Transaksi mengunci baris bobot, menolak versi
+  Admin atau Super Admin yang masih berlaku. Transaksi mengunci baris bobot, menolak versi
   lama, dan mencatat audit pelaku, waktu, bobot sebelum dan sesudah.
 
 Audit kode menemukan identitas order pada `hd2_orders.id`, perintah pada
@@ -27,7 +27,7 @@ duplikat berstatus DUPLICATE tidak dihitung sebagai GAGAL.
 
 Roster hanya memuat akun dengan role HD dan `is_active=TRUE`. HD aktif tanpa
 pekerjaan tetap nol. Jumlah order yang terlihat dibatasi akses modul sesi,
-termasuk untuk akun admin. Role HD, Admin, dan Super Admin dapat melihat.
+termasuk untuk akun admin. Role HD, Admin, dan Super Admin dapat melihat statistik. Pengaturan bobot hanya tampil dan dapat disimpan oleh Admin dan Super Admin.
 Akun pengujian solver serta SHOW_ONLY tidak mendapat akses. Histori yang tidak
 memiliki identitas, waktu, atau audit Web yang cocok dikecualikan. Jumlah
 histori tak terverifikasi di produksi belum diperiksa. Perubahan bobot
@@ -78,7 +78,7 @@ menjalankan SQL migrasi.
    EXPLAIN dan waktu baca untuk volume kantor sebelum aktivasi umum. Query
    periode memakai rentang `finished_at`; pemilihan tahun membaca cakupan
    histori yang diizinkan. Tidak ada indeks baru pada tabel order dalam rilis ini.
-3. Setelah persetujuan deploy, aktivasi Web saja dan uji Super Admin, HD biasa,
+3. Setelah persetujuan deploy, aktivasi Web saja dan uji Super Admin, Admin, HD biasa,
    kedua tab lama, dan kedua unduhan Excel. Jangan menjalankan updater dengan
    flag review database sebelum prasyarat validator dan schema terverifikasi.
 4. Jika kembali ke Web yang validatornya belum mengenali tabel baru, rencanakan

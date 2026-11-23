@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { chartSelection } = require('./recap-chart');
 const { filters, fail } = require('./policy');
+const { admin } = require('../system/policy');
 const { readTx } = require('./read');
 const { digest } = require('../access/service');
 const { run } = require('./transaction-gate');
@@ -95,7 +96,7 @@ async function performance(pool, query, user) {
     }
     const active = people.length;
     return {
-      ...config, people: [...byId.values()], commands: commands.filter(command => selected.includes(command)),
+      ...(['ADMIN', 'SUPER_ADMIN'].includes(user.role) ? config : {}), people: [...byId.values()], commands: commands.filter(command => selected.includes(command)),
       years: yearRows.map(row => Number(row.year)), from: calendarDate(start), to: calendarDate(end - day),
       totals: { done, failed, points: totalCents / 100, active, average: active ? totalCents / 100 / active : 0 }
     };
@@ -103,7 +104,7 @@ async function performance(pool, query, user) {
 }
 
 async function saveWeights(pool, user, token, input) {
-  if (user?.role !== 'SUPER_ADMIN') throw fail(403);
+  admin(user);
   if (!input || Object.keys(input).length !== 2 || typeof input.version !== 'string' ||
       !/^\d{1,10}(:\d{1,10}){3}$/.test(input.version) ||
       !input.weights || Object.keys(input.weights).length !== commands.length ||
@@ -116,7 +117,8 @@ async function saveWeights(pool, user, token, input) {
     try {
       await connection.beginTransaction();
       const [[actor]] = await connection.execute('SELECT role,is_active FROM users WHERE id=? FOR SHARE', [user.id]);
-      if (actor?.role !== 'SUPER_ADMIN' || ![true, 1].includes(actor.is_active)) throw fail(403);
+      admin(actor);
+      if (![true, 1].includes(actor.is_active)) throw fail(403);
       const [[session]] = await connection.execute(
         'SELECT token_hash FROM hd2_sessions WHERE token_hash=? AND user_id=? AND revoked=FALSE AND expires_at>UTC_TIMESTAMP(3) FOR SHARE',
         [digest(token), user.id]
