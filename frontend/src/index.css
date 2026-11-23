@@ -1,6 +1,8 @@
 @import "@fontsource-variable/geist";
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -146,18 +148,6 @@ body {
   color:var(--foreground);
   font-family:'Geist Variable',Arial,sans-serif;
   font-size:14px;
-}
-.dark .op-shell {
-  --background:#0f172a;
-  --foreground:#f1f5f9;
-  --card:#172238;
-  --card-foreground:#f1f5f9;
-  --primary:#93b4ff;
-  --primary-foreground:#101b35;
-  --border:#334155;
-  --muted:#1e293b;
-  --muted-foreground:#b4c0d1;
-  --input:#475569;
 }
 .op-shell[data-collapsed="true"] {
   --op-sidebar:76px;
@@ -386,19 +376,6 @@ body {
   margin:0 auto;
   padding:16px 28px 40px;
   outline:none;
-}
-.op-local-status {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  margin:0 0 16px;
-  font-size:10px;
-  color:var(--muted-foreground);
-}
-.op-local-status>span {
-  width:6px;
-  height:6px;
-  border-radius:50%;
 }
 .op-page>header h1 {
   font-size:26px;
@@ -808,11 +785,6 @@ body {
 }
 
 /* B2C work panel is nonmodal: the list remains available for switching orders. */
-.op-status-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 8px; margin-bottom: 18px;
-}
-.op-status-bar button { min-height: 36px; font-size: 11px; }
 .op-work-panel {
   position: fixed; inset: 0 0 0 auto; width: 50vw; height: 100dvh;
   z-index: 45; display: flex; flex-direction: column; outline: none;

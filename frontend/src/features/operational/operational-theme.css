@@ -1,0 +1,322 @@
+/* The document selector lets operational dialog and menu portals inherit the palette. */
+html.dark:has(.op-shell) {
+  color-scheme: dark;
+  --background: #040d17;
+  --foreground: #eaf7ff;
+  --card: #081725;
+  --card-foreground: #eaf7ff;
+  --popover: #0a1b2b;
+  --popover-foreground: #eaf7ff;
+  --primary: #49dcff;
+  --primary-foreground: #04131f;
+  --secondary: #12334b;
+  --secondary-foreground: #d4edff;
+  --muted: #0e2537;
+  --muted-foreground: #a5bfd1;
+  --accent: #103149;
+  --accent-foreground: #dcf6ff;
+  --destructive: #ff8992;
+  --border: #204154;
+  --input: #2a5065;
+  --ring: #51e4ff;
+}
+
+html.dark .op-shell {
+  --background: #040d17;
+  --foreground: #eaf7ff;
+  --card: #081725;
+  --card-foreground: #eaf7ff;
+  --primary: #49dcff;
+  --primary-foreground: #04131f;
+  --muted: #0e2537;
+  --muted-foreground: #a5bfd1;
+  --border: #204154;
+  --input: #2a5065;
+  background: radial-gradient(ellipse at 85% 0%, #0a2033 0%, transparent 53%), var(--background);
+}
+
+.op-header-status {
+  --status-color: #4b5563;
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: .45rem;
+  padding: .3rem .7rem;
+  border: 1px solid color-mix(in srgb, var(--status-color) 24%, transparent);
+  border-radius: 999px;
+  color: var(--status-color);
+  background: color-mix(in srgb, var(--status-color) 8%, var(--card));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.op-header-status[data-status="ONLINE"] { --status-color: #08764d; }
+.op-header-status[data-status="SIBUK"] { --status-color: #955700; }
+.op-status-dot {
+  inline-size: .44rem;
+  block-size: .44rem;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.op-body[data-jobs="true"] {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  overflow: clip;
+}
+.op-body[data-jobs="true"] .op-main { position: relative; }
+.op-job-selection {
+  display: grid;
+  gap: clamp(1.25rem, 3.2vw, 3rem);
+  padding: clamp(1.5rem, 6vw, 6rem) clamp(0rem, 1.7vw, 2.5rem) 3rem;
+}
+.op-job-intro { max-width: 56rem; }
+.op-job-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  color: var(--primary);
+  font-size: .75rem;
+  font-weight: 750;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.op-job-intro h1 {
+  margin-top: .85rem;
+  font-size: clamp(1.85rem, 4vw, 3.45rem);
+  font-weight: 720;
+  line-height: 1.08;
+  letter-spacing: -.045em;
+  text-wrap: balance;
+}
+.op-job-description {
+  margin-top: .9rem;
+  max-width: 47rem;
+  color: var(--muted-foreground);
+  font-size: clamp(.9rem, 1.45vw, 1.12rem);
+  line-height: 1.6;
+}
+.op-job-grid { display: grid; gap: 1rem; }
+.op-job-card {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(.9rem, 2.5vw, 2.2rem);
+  min-height: clamp(10.5rem, 17vw, 15.5rem);
+  padding: clamp(1rem, 3vw, 2.25rem);
+  border: 1px solid #d7e4f6;
+  border-radius: 1.25rem;
+  color: var(--foreground);
+  background: linear-gradient(128deg, #f0f6ff, #fff 68%);
+  box-shadow: 0 10px 30px -23px #31589080;
+  transition: border-color .16s, box-shadow .16s;
+}
+.op-job-card:hover { border-color: #8db8f0; box-shadow: 0 15px 36px -20px #317ae36b; }
+.op-job-icon {
+  display: grid;
+  width: clamp(3.15rem, 8vw, 6rem);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid #c9dcfb;
+  border-radius: 1rem;
+  color: var(--primary);
+  background: #e5efff;
+}
+.op-job-icon svg { width: 49%; height: auto; stroke-width: 1.6; }
+.op-job-card-copy h2 {
+  font-size: clamp(1.45rem, 3.4vw, 2.8rem);
+  line-height: 1.1;
+  font-weight: 720;
+  letter-spacing: -.04em;
+  overflow-wrap: anywhere;
+}
+.op-job-card-copy p {
+  margin-top: .55rem;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+.op-job-tags { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .9rem; }
+.op-job-tags span {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: .4rem;
+  padding: .25rem .65rem;
+  border: 1px solid #c5dafb;
+  border-radius: 999px;
+  background: #edf5ff;
+  color: #1e4dab;
+  font-size: .75rem;
+  font-weight: 700;
+}
+.op-job-tags span:last-child { border-color: #dbd1fa; background: #f4efff; color: #5d389c; }
+.op-job-tags svg, .op-job-open svg { width: 1rem; height: 1rem; flex: none; }
+.op-job-open {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  align-self: end;
+  padding: .6rem .95rem;
+  border: 1px solid transparent;
+  border-radius: .7rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: .875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+html.dark .op-sidebar,
+html.dark .op-drawer {
+  background: linear-gradient(168deg, #071723, #05101a 70%, #081a2a);
+  border-right-color: #10a0be;
+  box-shadow: 12px 0 38px -32px #15d6ff;
+}
+html.dark .op-topbar {
+  background: linear-gradient(100deg, #081724, #07121e 68%);
+  border-bottom-color: #16768e;
+  box-shadow: 0 2px 14px -10px #03d5ff;
+}
+html.dark .op-topbar::after {
+  position: absolute;
+  inset: auto 0 -1px 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, #16deff 0%, #058eee 19%, #109bbd00 57%);
+  content: "";
+}
+html.dark .op-brand-mark,
+html.dark .op-avatar {
+  border: 1px solid #28d9f7;
+  color: #baf5ff;
+  background: #0b263b;
+  box-shadow: inset 0 0 14px #009fff2e, 0 0 12px #11caff38;
+}
+html.dark .op-nav-heading { color: #5ae2fb; }
+html.dark .op-nav-link { border: 1px solid transparent; }
+html.dark .op-nav-link svg { color: #59d6f1; }
+html.dark .op-nav-link[aria-current="page"] {
+  border-color: #3adcf6;
+  color: #e8fbff;
+  background: linear-gradient(100deg, #125575, #0a2941);
+  box-shadow: inset 0 0 15px #0fb6ff35, 0 0 13px #02beff30;
+}
+html.dark .op-submenu { border-left-color: #205873; }
+html.dark .op-sidebar-bottom [data-slot="button"],
+html.dark .op-back {
+  border-color: #23536a;
+  color: #d5f5ff;
+  background: #081b2a;
+}
+html.dark .op-header-status { --status-color: #b3c5d6; }
+html.dark .op-header-status[data-status="ONLINE"] { --status-color: #48f4b9; }
+html.dark .op-header-status[data-status="SIBUK"] { --status-color: #ffd183; }
+html.dark .op-status-dot { box-shadow: 0 0 8px currentColor; }
+
+html.dark .op-shell [data-slot="card"] {
+  box-shadow: 0 0 0 1px var(--border), 0 12px 25px -23px #00b8f967;
+}
+html.dark .op-shell [data-slot="button"].bg-primary {
+  border-color: #4bdcf9;
+  background: linear-gradient(130deg, #58e7fb, #44baff);
+  box-shadow: 0 0 12px #0fb9ed38;
+}
+html.dark .op-shell [data-slot="button"].bg-primary:hover { filter: brightness(1.09); }
+html.dark .op-shell [data-slot="button"].bg-primary:disabled { box-shadow: none; }
+html.dark .op-page table thead { background-color: #0b223437; }
+html.dark .op-page table th { color: #c5e5f6; }
+html.dark:has(.op-shell) :is(.op-account-menu, [role="dialog"]:not(.op-drawer)) {
+  border: 1px solid #2b6281;
+  background-color: var(--popover);
+  box-shadow: 0 18px 48px #010810bb, 0 0 19px #1bbbfa1f;
+}
+html.dark:has(.op-shell) select option { color: var(--foreground); background: var(--popover); }
+
+html.dark .op-body[data-jobs="true"]::before {
+  position: absolute;
+  z-index: -1;
+  inset: auto -14% -3.5rem;
+  height: min(43vh, 24rem);
+  pointer-events: none;
+  content: "";
+  background:
+    repeating-linear-gradient(90deg, transparent 0 6.2rem, #1680ae55 6.2rem calc(6.2rem + 1px)),
+    repeating-linear-gradient(0deg, transparent 0 3.1rem, #1680ae45 3.1rem calc(3.1rem + 1px)),
+    radial-gradient(ellipse at 44% 75%, #0052a755, transparent 65%);
+  mask-image: linear-gradient(0deg, #000, #0009 56%, transparent 100%);
+  transform: perspective(420px) rotateX(54deg);
+  transform-origin: center bottom;
+}
+html.dark .op-job-eyebrow::after {
+  width: min(12rem, 30%);
+  height: .55rem;
+  content: "";
+  background:
+    repeating-linear-gradient(130deg, transparent 0 4px, #13b7ed 4px 8px) left / 2.85rem 100% no-repeat,
+    linear-gradient(90deg, #127ba9, transparent) right center / calc(100% - 3.15rem) 1px no-repeat;
+}
+html.dark .op-job-card {
+  --job-notch: polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0 calc(100% - 16px), 0 16px);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: 0 0 30px -11px #009cfc6b;
+}
+html.dark .op-job-card::before,
+html.dark .op-job-card::after {
+  position: absolute;
+  z-index: -1;
+  clip-path: var(--job-notch);
+  pointer-events: none;
+  content: "";
+}
+html.dark .op-job-card::before {
+  inset: 0;
+  background: linear-gradient(145deg, #70ecff 0%, #1dbce9 18%, #155883 51%, #199dee 83%, #5beaff 100%);
+}
+html.dark .op-job-card::after {
+  inset: 1px;
+  background:
+    linear-gradient(90deg, #0c91b8, #43eaff 53%, #1469b0) 57% 0 / 40% 3px no-repeat,
+    linear-gradient(90deg, #48ecff, transparent) 0 100% / 24% 3px no-repeat,
+    radial-gradient(ellipse at 43% -19%, #07447d, transparent 63%),
+    linear-gradient(112deg, #091e30, #061321 72%, #092031);
+}
+html.dark .op-job-card:hover { box-shadow: 0 0 38px -11px #10acffbc; }
+html.dark .op-job-icon {
+  border-color: #28cce8;
+  color: #78ecff;
+  background: #0b2b43;
+  box-shadow: inset 0 0 20px #047deb48, 0 0 16px #0391df35;
+}
+html.dark .op-job-icon svg { filter: drop-shadow(0 0 5px #11cfff80); }
+html.dark .op-job-tags span { border-color: #24768d; color: #77e9fb; background: #0c3449; }
+html.dark .op-job-tags span:last-child { border-color: #785bae; color: #ddc8ff; background: #261d48; }
+html.dark .op-job-open {
+  border-color: #52dffa;
+  color: #e3fcff;
+  background: linear-gradient(138deg, #0b4970, #072840);
+  box-shadow: inset 0 0 12px #0daff25c, 0 0 17px #10baff50;
+}
+html.dark .op-job-card:hover .op-job-open { background: linear-gradient(138deg, #0f5e89, #0a3355); }
+
+@media (max-width: 639px) {
+  .op-job-selection { padding-inline: 0; }
+  .op-job-card { grid-template-columns: auto minmax(0, 1fr); }
+  .op-job-open { grid-column: 1 / -1; }
+  .op-header-status { min-height: 30px; padding-inline: .45rem; font-size: 10px; }
+  .op-profile { min-width: 44px; }
+  .op-back { min-width: 36px; }
+  html.dark .op-body[data-jobs="true"]::before { height: 13rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .op-job-card,
+  html:has(.op-shell) [role="dialog"] { transition: none; }
+}

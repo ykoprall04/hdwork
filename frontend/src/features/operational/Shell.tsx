@@ -17,7 +17,7 @@ export function Unavailable({ title = 'Fitur operasional' }: { title?: string })
 }
 export function Jobs() {
   const { user } = useAuth();
-  return <JobSelection base="" allowedCategories={user ? visibleWorkspaces(user) : []} description="Pilih ruang kerja sesuai akses modul Anda untuk membuka antrean dan memulai pekerjaan." />;
+  return <JobSelection operational base="" allowedCategories={user ? visibleWorkspaces(user) : []} description="Pilih ruang kerja sesuai akses modul Anda untuk membuka antrean dan memulai pekerjaan." />;
 }
 export function B2cHome() {
   const { user } = useAuth();

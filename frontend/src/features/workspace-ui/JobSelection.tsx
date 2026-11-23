@@ -1,7 +1,37 @@
 import { Link } from "react-router-dom";
-import { BriefcaseBusiness, ArrowRight } from "lucide-react";
+import { BriefcaseBusiness, ArrowRight, CodeXml, Layers } from "lucide-react";
 import { workspaces as categories } from "../operational/workspaces";
-export default function JobSelection({ base = "/preview", description, categoryText, allowedCategories }: { base?: string; description?: string; categoryText?: (category: string) => string; allowedCategories?: readonly string[] }) {
+export default function JobSelection({ base = "/preview", description, categoryText, allowedCategories, operational = false }: { base?: string; description?: string; categoryText?: (category: string) => string; allowedCategories?: readonly string[]; operational?: boolean }) {
+  const available = categories.filter(category => !allowedCategories || allowedCategories.includes(category));
+  const summary = (category: string) => categoryText ? categoryText(category) : category === "B2C"
+    ? "Dua alur pengecekan: TIAL dan LOGIC."
+    : "Dashboard, antrean, dan kolaborasi pengecekan.";
+  if (operational) return (
+    <section className="op-job-selection" aria-labelledby="op-job-title">
+      <header className="op-job-intro">
+        <p className="op-job-eyebrow">Ruang kerja</p>
+        <h1 id="op-job-title">Apa yang Anda kerjakan hari ini?</h1>
+        <p className="op-job-description">{description}</p>
+      </header>
+      {available.length === 0 && <p role="status" className="rounded-xl border bg-card p-4 text-sm">Belum ada modul yang ditugaskan. Hubungi Super Admin untuk akses workspace.</p>}
+      <div className="op-job-grid">
+        {available.map(category => (
+          <Link key={category} to={`${base}/work/${category}`} className="op-job-card">
+            <span className="op-job-icon" aria-hidden="true"><BriefcaseBusiness /></span>
+            <div className="op-job-card-copy">
+              <h2>HD {category}</h2>
+              <p>{summary(category)}</p>
+              {category === 'B2C' && <div className="op-job-tags">
+                <span><Layers aria-hidden="true" /> TIAL</span>
+                <span><CodeXml aria-hidden="true" /> LOGIC</span>
+              </div>}
+            </div>
+            <span className="op-job-open">Buka workspace <ArrowRight aria-hidden="true" /></span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
   return (
     <>
       <div className="py-5">
@@ -17,7 +47,7 @@ export default function JobSelection({ base = "/preview", description, categoryT
       </div>
       {allowedCategories?.length === 0 && <p role="status" className="rounded-lg border bg-card p-4 text-sm">Belum ada modul yang ditugaskan. Hubungi Super Admin untuk akses workspace.</p>}
       <div className="grid gap-5 sm:grid-cols-2">
-        {categories.filter(category => !allowedCategories || allowedCategories.includes(category)).map((category, index) => (
+        {available.map((category, index) => (
           <Link
             key={category}
             to={`${base}/work/${category}`}
@@ -33,9 +63,7 @@ export default function JobSelection({ base = "/preview", description, categoryT
             </div>
             <h2 className="mt-7 text-2xl font-semibold">HD {category}</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              {categoryText ? categoryText(category) : category === "B2C"
-                ? "Dua alur pengecekan: TIAL dan LOGIC."
-                : "Dashboard, antrean, dan kolaborasi pengecekan."}
+              {summary(category)}
             </p>
             <span className="mt-7 inline-flex items-center gap-2 text-sm font-medium text-primary">
               Buka workspace

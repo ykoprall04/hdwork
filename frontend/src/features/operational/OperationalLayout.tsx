@@ -11,12 +11,14 @@ import { operationsEnabled } from '../workflow/api';
 import { operationalNavigation, pageContext } from './navigation';
 import { showOperationalBackButton, workspaceBackFallback } from './back-navigation';
 import { confirmChatNavigation } from '../workflow/unsent-chat';
+import type { Status } from './local-status';
+import './operational-theme.css';
 
-type Props = { user: User; local: { status: string; select: (value: 'ONLINE' | 'SIBUK' | 'OFFLINE') => void }; onLogout: () => Promise<void>; children: ReactNode };
+type Props = { user: User; local: { status: Status; select: (value: Status) => void }; onLogout: () => Promise<void>; children: ReactNode };
 export default function OperationalLayout({ user, local, onLogout, children }: Props) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  function selectStatus(status: 'ONLINE' | 'SIBUK' | 'OFFLINE') {
+  function selectStatus(status: Status) {
     if (!confirmChatNavigation()) return;
     local.select(status); navigate('/jobs');
   }
@@ -24,7 +26,6 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('hdwork2:sidebar-collapsed') === 'true'; } catch { return false; } });
   const groups = operationalNavigation(user, cookieMode, operationsEnabled, import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true');
   const page = pageContext(pathname);
-  const hideQueueLocalStatus = pathname.startsWith('/work/B2C/') && ['TIAL / REQ', 'LOGIC / SOLVER'].includes(page.label);
   const showBackButton = showOperationalBackButton(pathname);
   function goBack() {
     if (!confirmChatNavigation()) return;
@@ -48,9 +49,9 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
   return <div className="op-shell" data-collapsed={collapsed}>
     <a href="#operational-main" className="op-skip">Langsung ke konten</a>
     {!checkIn && <aside className="op-sidebar" aria-label="Sidebar">{brand}{navigation(collapsed)}<div className="op-sidebar-bottom"><Button variant="ghost" className="w-full min-h-11" onClick={toggle} aria-label={collapsed ? 'Perlebar sidebar' : 'Ciutkan sidebar'} aria-expanded={!collapsed}>{collapsed ? <PanelLeftOpen /> : <><PanelLeftClose /><span>Ciutkan sidebar</span></>}</Button></div></aside>}
-    <div className="op-body" data-checkin={checkIn}>
+    <div className="op-body" data-checkin={checkIn} data-jobs={pathname === '/jobs'}>
       <header className="op-topbar">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-1 sm:gap-3">
           {!checkIn && <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
             <Dialog.Trigger render={<Button className="op-mobile-trigger min-h-11 min-w-11" variant="ghost" size="icon" aria-label="Buka navigasi" />}><MenuIcon /></Dialog.Trigger>
             <Dialog.Portal><Dialog.Backdrop className="op-drawer-backdrop" /><Dialog.Popup className="op-drawer">
@@ -59,14 +60,18 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
               {navigation()}<p className="op-sidebar-bottom text-xs text-muted-foreground">Ruang kerja sesuai akses modul akun.</p>
             </Dialog.Popup></Dialog.Portal>
           </Dialog.Root>}
-          {showBackButton && <Button variant="outline" className="min-h-10 shrink-0 gap-1.5 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm" onClick={goBack}><ArrowLeft aria-hidden="true" className="size-4" /><span>Kembali</span></Button>}
+          {showBackButton && <Button variant="outline" className="op-back min-h-10 shrink-0 gap-1.5 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm" aria-label="Kembali" onClick={goBack}><ArrowLeft aria-hidden="true" className="size-4" /><span className="hidden min-[420px]:inline">Kembali</span></Button>}
           <nav aria-label="Breadcrumb" className="op-breadcrumb"><Link to="/jobs">Workspace</Link><ChevronRight aria-hidden="true" />{page.parent && <><Link to={page.parent.to}>{page.parent.label}</Link><ChevronRight aria-hidden="true" /></>}<span aria-current="page">{page.label}</span></nav>
         </div>
-        <div className="flex shrink-0 items-center gap-1 sm:gap-3"><ThemeToggle compact />
-          <Menu.Root><Menu.Trigger render={<Button variant="ghost" className="min-h-11 gap-2" aria-label="Menu akun" />}><span className="op-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span className="hidden max-w-36 truncate text-left text-xs sm:block">{user.name}<small className="block text-muted-foreground">{user.role === 'SUPER_ADMIN' ? 'Super Admin' : user.role === 'SHOW_ONLY' ? 'View Only' : user.role}</small></span><ChevronDown /></Menu.Trigger>
+        <div className="op-header-controls flex shrink-0 items-center gap-1 sm:gap-3">
+          <span className="op-header-status" data-status={local.status} role="status" title="Status kerja pada tab ini">
+            <span className="op-status-dot" aria-hidden="true" /><span className="sr-only">Status kerja: </span>{local.status}
+          </span>
+          <ThemeToggle compact />
+          <Menu.Root><Menu.Trigger render={<Button variant="ghost" className="op-profile min-h-11 gap-2 px-1.5 sm:px-2.5" aria-label="Menu akun" />}><span className="op-avatar">{user.name.slice(0, 1).toUpperCase()}</span><span className="hidden max-w-36 truncate text-left text-xs sm:block">{user.name}<small className="block text-muted-foreground">{user.role === 'SUPER_ADMIN' ? 'Super Admin' : user.role === 'SHOW_ONLY' ? 'View Only' : user.role}</small></span><ChevronDown className="hidden min-[420px]:block" /></Menu.Trigger>
             <Menu.Portal><Menu.Positioner align="end" sideOffset={8} collisionPadding={12} className="z-[90]"><Menu.Popup className="op-account-menu">
               <p className="break-words border-b px-3 py-3 text-sm font-medium">{user.name}</p>
-              <label className="block px-3 py-3 text-xs">Status kerja lokal<select aria-label="Status kerja" className="op-field mt-2" value={local.status} onChange={event => selectStatus(event.target.value as 'ONLINE' | 'SIBUK' | 'OFFLINE')}>{['ONLINE', 'SIBUK', 'OFFLINE'].map(status => <option key={status}>{status}</option>)}</select><span className="mt-2 block text-muted-foreground">Preferensi tab · belum tersinkronisasi</span></label>
+              <label className="block px-3 py-3 text-xs">Status kerja lokal<select aria-label="Status kerja" className="op-field mt-2" value={local.status} onChange={event => selectStatus(event.target.value as Status)}>{['ONLINE', 'SIBUK', 'OFFLINE'].map(status => <option key={status}>{status}</option>)}</select><span className="mt-2 block text-muted-foreground">Preferensi tab · belum tersinkronisasi</span></label>
               <Menu.Item render={<Link to="/check-in" />} className="op-menu-item"><Settings2 />Ubah check-in</Menu.Item>
               {cookieMode && <Menu.Item render={<Link to="/change-password" />} className="op-menu-item"><Settings2 />Ganti Password</Menu.Item>}
               <Menu.Separator className="my-1 border-t" /><Menu.Item onClick={() => { if (confirmChatNavigation()) void onLogout(); }} className="op-menu-item text-destructive"><LogOut />Logout</Menu.Item>
@@ -75,8 +80,6 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
         </div>
       </header>
       <main id="operational-main" tabIndex={-1} className="op-main">
-        {!checkIn && !hideQueueLocalStatus && <div className="op-status-bar"><div role="group" aria-label="Pilihan status kerja" className="flex flex-wrap gap-1">{(['ONLINE', 'SIBUK', 'OFFLINE'] as const).map(status => <Button key={status} variant={local.status === status ? 'secondary' : 'ghost'} size="sm" aria-pressed={local.status === status} onClick={() => selectStatus(status)}>{status}</Button>)}</div><p className="text-[10px] text-muted-foreground">{local.status} · status lokal{!operationsEnabled && ' · tindakan order nonaktif'}</p></div>}
-
         <div className="op-page space-y-5">{children}</div>
       </main>
     </div>
