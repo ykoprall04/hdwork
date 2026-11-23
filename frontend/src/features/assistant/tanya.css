@@ -1,0 +1,44 @@
+.tanya-panel {
+  --op-sidebar-width: 248px;
+  position: fixed; z-index: 85; left: min(calc(var(--op-sidebar-width, 240px) + 12px), calc(100vw - 424px));
+  bottom: max(18px, env(safe-area-inset-bottom)); width: min(410px, calc(100vw - 16px));
+  height: min(500px, calc(100dvh - 32px)); display: flex; flex-direction: column;
+  overflow: hidden; border: 1px solid var(--border); border-radius: 20px; background: var(--card);
+  color: var(--foreground); box-shadow: 0 16px 48px #09214126; font-size: .875rem;
+}
+.tanya-panel[hidden] { display: none; }
+.tanya-header { display: flex; flex: none; gap: 8px; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.tanya-avatar { border-radius: 50%; display: grid; place-items: center; flex: none; width: 42px; height: 42px; background: color-mix(in srgb,var(--primary) 13%,var(--card)); color: var(--primary); }
+.tanya-heading { flex: 1; min-width: 0; }
+.tanya-heading h2 { font-weight: 700; font-size: 1.06rem; line-height: 1.2; }
+.tanya-heading p, .tanya-composer small { color: var(--muted-foreground); font-size: .72rem; }
+.tanya-icon, .tanya-send { display: grid; place-items: center; flex: none; border-radius: 10px; min-width: 36px; min-height: 36px; }
+.tanya-icon:hover { background: var(--muted); }
+.tanya-icon svg { width: 17px; height: 17px; }
+.tanya-drag { width: 24px; min-width: 24px; cursor: grab; touch-action: none; }
+.tanya-history, .tanya-settings { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 14px; }
+.tanya-history { display: flex; flex-direction: column; gap: 12px; }
+.tanya-message { flex: none; width: fit-content; max-width: 92%; padding: 10px 13px; border: 1px solid var(--border); border-radius: 14px; background: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tanya-message[data-role="user"] { align-self: flex-end; background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
+.tanya-composer { padding: 10px 14px 15px; border-top: 1px solid var(--border); }
+.tanya-composer > div { display: flex; align-items: end; gap: 8px; margin-bottom: 5px; }
+.tanya-composer textarea, .tanya-settings :is(input:not([type="checkbox"]), textarea, select) { width: 100%; min-width: 0; background: var(--background); border: 1px solid var(--input); border-radius: 9px; padding: 8px; }
+.tanya-composer textarea { resize: none; }
+.tanya-send { background: var(--primary); color: var(--primary-foreground); min-width: 42px; min-height: 42px; }
+.tanya-panel button:disabled { opacity: .5; }
+.tanya-panel :focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.tanya-resize { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; touch-action: none; cursor: nwse-resize; }
+.tanya-resize::after { content: ''; display: block; width: 9px; height: 9px; margin: 2px auto 0; border: solid var(--muted-foreground); border-width: 0 1px 1px 0; }
+.tanya-settings h3 { font-weight: 700; margin: 8px 0; }
+.tanya-settings label { display: grid; gap: 4px; margin: 8px 0; }
+.tanya-settings .tanya-check { display: flex; align-items: center; }
+.tanya-settings button { border: 1px solid var(--border); padding: 6px 9px; border-radius: 8px; margin: 3px 5px 4px 0; }
+.op-shell[data-collapsed="true"] .tanya-panel { --op-sidebar-width: 68px; }
+html.dark .tanya-panel { border-color: #28cde8; box-shadow: 0 0 20px #03d9ff36, 0 16px 48px #0009; }
+html.dark .tanya-avatar { box-shadow: inset 0 0 12px #03d9ff32; }
+html.dark .tanya-message[data-role="assistant"] { background: color-mix(in srgb, var(--primary) 9%, var(--card)); }
+@media (max-width: 767px) {
+  .tanya-panel { inset: auto 8px max(8px, env(safe-area-inset-bottom)) !important; width: auto !important; height: min(540px, calc(100dvh - 32px)) !important; border-radius: 16px; }
+  .tanya-drag, .tanya-resize { display: none; }
+  .tanya-composer textarea, .tanya-settings :is(input, textarea, select) { font-size: 16px; }
+}

@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Dialog } from '@base-ui/react/dialog';
 import { Menu } from '@base-ui/react/menu';
-import { ArrowLeft, ChevronDown, ChevronRight, LogOut, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Settings2, X } from 'lucide-react';
+import { ArrowLeft, Bot, ChevronDown, ChevronRight, LogOut, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, Settings2, X } from 'lucide-react';
 import type { User } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -14,6 +14,8 @@ import { confirmChatNavigation } from '../workflow/unsent-chat';
 import type { Status } from './local-status';
 import './operational-theme.css';
 
+const TanyaYanto = lazy(() => import('../assistant/TanyaYanto'));
+
 type Props = { user: User; local: { status: Status; select: (value: Status) => void }; onLogout: () => Promise<void>; children: ReactNode };
 export default function OperationalLayout({ user, local, onLogout, children }: Props) {
   const { pathname } = useLocation();
@@ -22,6 +24,7 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
     if (!confirmChatNavigation()) return;
     local.select(status); navigate('/jobs');
   }
+  const [assistant, setAssistant] = useState<'open' | 'minimized' | 'closed'>('closed');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('hdwork2:sidebar-collapsed') === 'true'; } catch { return false; } });
   const groups = operationalNavigation(user, cookieMode, operationsEnabled, import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true');
@@ -33,6 +36,12 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
     else navigate(-1);
   }
   const checkIn = pathname === '/check-in';
+  const assistantAllowed = operationsEnabled && import.meta.env.VITE_HDWORK2_ASSISTANT === 'true' &&
+    (['ADMIN', 'SUPER_ADMIN'].includes(user.role) || (user.role === 'HD' && Boolean(user.modules?.length) && user.username !== 'trial_yanto'));
+  function launcher(compact = false) {
+    return assistantAllowed && <Button type="button" className="mb-2 w-full min-h-11" variant="outline" aria-label="Tanya Yanto" title={compact ? 'Tanya Yanto' : undefined}
+      onClick={() => { setDrawerOpen(false); setAssistant('open'); }}><Bot aria-hidden />{!compact && <span>Tanya Yanto</span>}</Button>;
+  }
   function toggle() { setCollapsed(value => { try { localStorage.setItem('hdwork2:sidebar-collapsed', String(!value)); } catch { /* optional preference */ } return !value; }); }
   function navigation(compact = false) {
     return <nav aria-label="Navigasi operasional" className="op-navigation" onClick={event => { if ((event.target as HTMLElement).closest('a')) setDrawerOpen(false); }}>{groups.map(group => <section key={group.label}>
@@ -48,7 +57,10 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
   const brand = <Link to="/jobs" className="op-brand" aria-label="HD Work 2.0 · Pilih pekerjaan"><span className="op-brand-mark">HD</span><span className="op-brand-name">HD Work <span className="text-primary">2.0</span><small>Operations workspace</small></span></Link>;
   return <div className="op-shell" data-collapsed={collapsed}>
     <a href="#operational-main" className="op-skip">Langsung ke konten</a>
-    {!checkIn && <aside className="op-sidebar" aria-label="Sidebar">{brand}{navigation(collapsed)}<div className="op-sidebar-bottom"><Button variant="ghost" className="w-full min-h-11" onClick={toggle} aria-label={collapsed ? 'Perlebar sidebar' : 'Ciutkan sidebar'} aria-expanded={!collapsed}>{collapsed ? <PanelLeftOpen /> : <><PanelLeftClose /><span>Ciutkan sidebar</span></>}</Button></div></aside>}
+    {!checkIn && <aside className="op-sidebar" aria-label="Sidebar">{brand}{navigation(collapsed)}<div className="op-sidebar-bottom">{launcher(collapsed)}<Button variant="ghost" className="w-full min-h-11" onClick={toggle} aria-label={collapsed ? 'Perlebar sidebar' : 'Ciutkan sidebar'} aria-expanded={!collapsed}>{collapsed ? <PanelLeftOpen /> : <><PanelLeftClose /><span>Ciutkan sidebar</span></>}</Button></div></aside>}
+    {assistantAllowed && assistant !== 'closed' && <Suspense fallback={<p className="fixed bottom-4 left-4 z-[85] rounded-lg border bg-card p-3" role="status">Memuat Tanya Yanto…</p>}>
+      <TanyaYanto key={user.id} admin={user.role === 'SUPER_ADMIN'} minimized={checkIn || assistant === 'minimized'} minimize={() => setAssistant('minimized')} close={() => setAssistant('closed')} />
+    </Suspense>}
     <div className="op-body" data-checkin={checkIn} data-jobs={pathname === '/jobs'}>
       <header className="op-topbar">
         <div className="flex min-w-0 items-center gap-1 sm:gap-3">
@@ -57,7 +69,7 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
             <Dialog.Portal><Dialog.Backdrop className="op-drawer-backdrop" /><Dialog.Popup className="op-drawer">
               <Dialog.Title className="sr-only">Navigasi HD Work 2.0</Dialog.Title>
               <div className="flex items-center justify-between gap-2 p-4">{brand}<Dialog.Close render={<Button variant="ghost" size="icon" className="min-h-11 min-w-11" aria-label="Tutup navigasi" />}><X /></Dialog.Close></div>
-              {navigation()}<p className="op-sidebar-bottom text-xs text-muted-foreground">Ruang kerja sesuai akses modul akun.</p>
+              {navigation()}<div className="op-sidebar-bottom">{assistantAllowed ? launcher() : <p className="text-xs text-muted-foreground">Ruang kerja sesuai akses modul akun.</p>}</div>
             </Dialog.Popup></Dialog.Portal>
           </Dialog.Root>}
           {showBackButton && <Button variant="outline" className="op-back min-h-10 shrink-0 gap-1.5 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm" aria-label="Kembali" onClick={goBack}><ArrowLeft aria-hidden="true" className="size-4" /><span className="hidden min-[420px]:inline">Kembali</span></Button>}
