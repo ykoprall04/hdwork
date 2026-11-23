@@ -908,3 +908,21 @@ body {
 @media (max-height: 700px) {
   .op-work-panel .op-chat-composer textarea { height: 44px; min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
 }
+
+/* Keep the order, notes, and composer reachable on short screens. */
+.op-work-panel[data-workflow-detail] .op-work-panel-content { overflow-y: auto; }
+.op-work-panel[data-workflow-detail] .op-panel-summary {
+  flex: 0 0 auto; max-height: none; overflow: visible;
+}
+.op-work-panel[data-workflow-detail] .op-original-message {
+  min-height: 44px; max-height: max(44px, min(34dvh, 300px));
+  overflow-y: auto; cursor: text;
+}
+.op-work-panel[data-workflow-detail] .op-original-message[data-resized="true"] {
+  max-height: max(44px, min(36dvh, 320px));
+}
+.op-original-message:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.op-work-panel[data-workflow-detail] .op-order-chat { min-height: 254px; overflow: visible; }
+.op-work-panel[data-workflow-detail] .op-chat-composer { flex: 0 0 auto; max-height: max(140px, 50dvh); }
+.op-work-panel[data-workflow-detail] .op-chat-history { min-height: 96px; }
+.op-history-start { flex: 0 0 1px; }

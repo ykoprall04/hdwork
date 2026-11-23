@@ -25,6 +25,7 @@ export default function WorkList(){
  const [copyFeedback,setCopyFeedback]=useState<{id:string;copied:boolean}|null>(null);
  const [selectedOrder,setSelectedOrder]=useState<string|null>(null),[inlineWorkspace,setInlineWorkspace]=useState(false),[workspaceOpen,setWorkspaceOpen]=useState(false),[mySearch,setMySearch]=useState('');
  const {user}=useAuth();const location=useLocation();const workspace=location.pathname.split('/')[2]||'B2C';const area=workspace==='B2C'?(location.pathname.includes('LOGIC')?'LOGIC':'TIAL'):workspace;
+ const compactWorkflow = area === 'TIAL' || area === 'LOGIC';
  const [tab,setTab]=useState('incoming'),[command,setCommand]=useState(''),[mine,setMine]=useState(true),[from,setFrom]=useState(''),[to,setTo]=useState(''),[hd,setHd]=useState(''),[status,setStatus]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(1);
  const [debouncedSearch,setDebouncedSearch]=useState('');useEffect(()=>{if(search===debouncedSearch)return;const timer=setTimeout(()=>{setDebouncedSearch(search);setPage(1);},350);return()=>clearTimeout(timer);},[search,debouncedSearch]);
  const query={area,command,tab,mine:String(mine),from,to,hd,status,q:debouncedSearch.trim(),page:String(page)};const validDate=(!from&&!to)||(Boolean(from&&to)&&from<=to);
@@ -76,7 +77,7 @@ export default function WorkList(){
  </section>
  {!validDate&&<p role="alert">Isi rentang tanggal lengkap dan benar. Filter belum diterapkan.</p>}
  {arrival&&page>1&&<Button variant="outline" onClick={()=>setPage(1)}>Ada order baru</Button>}
- {user?.role!=='SHOW_ONLY'&&validDate&&search===debouncedSearch&&<ExportButton key={user?.id} query={query}/>}
+ {!compactWorkflow&&user?.role!=='SHOW_ONLY'&&validDate&&search===debouncedSearch&&<ExportButton key={user?.id} query={query}/>}
  </>}
  {tab==='process'&&incoming.error&&<p role="status" className="text-xs">Indikator pesan belum berhasil diperbarui.</p>}
  {incoming.storageWarning&&<p role="status" className="text-xs">Status baca hanya tersimpan selama sesi ini karena penyimpanan browser tidak tersedia.</p>}
@@ -87,7 +88,7 @@ export default function WorkList(){
    <ul className="op-process-work-items">{privateOrders.map(order=><li key={order.id}><button type="button" data-selected={selectedOrder===order.id} aria-current={selectedOrder===order.id?'true':undefined} onClick={()=>selectPrivate(order.id)}><span className="block break-all font-medium">{order.scIn||order.inetMasked||'Order /'+order.command}</span>{incoming.isUnread(order.id)&&<span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">PESAN BARU</span>}<span className="mt-1 block text-xs text-muted-foreground">{order.module} /{order.command} · <WorkTimer order={order} now={now}/></span></button></li>)}</ul>
    {!mineWork.loading&&!mineWork.error&&!privateOrders.length&&<Empty text={mySearch?'Tidak ada order yang cocok.':'Tidak ada pekerjaan aktif.'}/>}
   </aside>
-  {selectedOrder?<OrderWorkPanel embedded id={selectedOrder} orders={mineWork.data} onSelect={selectPrivate} onClose={closePanel} onMobileBack={()=>setSelectedOrder(null)} onChange={async()=>{await Promise.all([refresh(),mineWork.refresh()]);}}/>:<div className="op-process-work-empty"><p>Pilih pekerjaan untuk melihat detail.</p><Button variant="outline" onClick={closePanel}>Kembali ke tabel PROSES CEK</Button></div>}
+  {selectedOrder?<OrderWorkPanel embedded compactWorkflow={compactWorkflow} id={selectedOrder} orders={mineWork.data} onSelect={selectPrivate} onClose={closePanel} onMobileBack={()=>setSelectedOrder(null)} onChange={async()=>{await Promise.all([refresh(),mineWork.refresh()]);}}/>:<div className="op-process-work-empty"><p>Pilih pekerjaan untuk melihat detail.</p><Button variant="outline" onClick={closePanel}>Kembali ke tabel PROSES CEK</Button></div>}
  </div>:<>
  {loading&&<p role="status" className="mb-2 text-xs text-muted-foreground">{data?'Memperbarui data…':'Memuat pekerjaan…'}</p>}{error&&<div role="alert" className="mb-3 text-sm"><p>{error}</p>{data&&<p>Data terakhir belum berhasil diperbarui.</p>}<Button variant="outline" onClick={()=>void refresh()}>Coba lagi</Button></div>}
  {data&&!data.data.length?<Empty text="Tidak ada pekerjaan sesuai filter."/>:data&&<div className="op-order-table-wrap"><table data-process={tab==='process'} className="op-order-table w-full text-left text-sm"><caption className="sr-only">Daftar pekerjaan {area}</caption>
@@ -128,7 +129,7 @@ export default function WorkList(){
  </>}
  </Section>
  {!processWorkspaceVisible&&<OrderNotifications area={area} showSoundControl={false}/>}
- {selectedOrder&&!inlineWorkspace&&<OrderWorkPanel id={selectedOrder} orders={data?.data||[]} onSelect={setSelectedOrder} onClose={closePanel} onChange={refresh}/>}
+ {selectedOrder&&!inlineWorkspace&&<OrderWorkPanel compactWorkflow={compactWorkflow} id={selectedOrder} orders={data?.data||[]} onSelect={setSelectedOrder} onClose={closePanel} onChange={refresh}/>}
  {!processWorkspaceVisible&&<Link className="text-sm text-primary underline" to="/recap">Dashboard Rekap</Link>}
  </>;
 }

@@ -1,5 +1,5 @@
 import { Send } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type ReactNode, type ChangeEvent, type ClipboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject, type ChangeEvent, type ClipboardEvent } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { useWorkData } from './hooks';
@@ -10,6 +10,88 @@ import { useUnsentChatWarning } from './unsent-chat';
 import type { Work } from './model';
 import {saveCursor,validSequence} from './incoming-cursor';
 export type ChatMessage = { id: string; sequence?:string; direction: string; text: string; userName: string; at: string; status: string; telegramMessageId: string | null; replyTo: string | null; attempts: number; hasPhoto?: boolean };
+
+type ChatPage = { data: ChatMessage[]; hasMore: boolean; routeActive?: boolean; photosEnabled?: boolean };
+
+function useOlderMessages(
+  id: string, enabled: boolean, latest: ChatPage | null,
+  scroller: RefObject<HTMLDivElement | null>, start: RefObject<HTMLDivElement | null>
+) {
+  const [older, setOlder] = useState<{ page: number; data: ChatMessage[]; hasMore: boolean }>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const active = useRef<AbortController | null>(null);
+  const anchor = useRef<{ node: Element; top: number } | null>(null);
+  const followLatest = useRef(true);
+  const previousLatest = useRef<ChatPage | null>(null);
+  const hasMore = latest && (older?.hasMore ?? latest.hasMore);
+  const nextPage = (older?.page ?? 1) + 1;
+
+  useLayoutEffect(() => {
+    const root = scroller.current;
+    if (!enabled || !root) return;
+    if (!latest) {
+      previousLatest.current = null;
+      return;
+    }
+    const previous = previousLatest.current;
+    previousLatest.current = latest;
+    if (older && previous && previous !== latest) {
+      // Keep messages displaced from page 1 by new arrivals connected to older pages.
+      const seen = new Set([...older.data, ...latest.data].map(message => message.id));
+      const displaced = previous.data.filter(message => !seen.has(message.id));
+      if (displaced.length) setOlder({ ...older, data: [...older.data, ...displaced] });
+    }
+    if (followLatest.current) {
+      root.scrollTo(0, root.scrollHeight);
+      followLatest.current = false;
+    } else if (anchor.current) {
+      const { node, top } = anchor.current;
+      if (node.isConnected) root.scrollTo(0, root.scrollTop + node.getBoundingClientRect().top - top);
+    }
+    anchor.current = null;
+  }, [enabled, latest, older, scroller]);
+
+  useEffect(() => () => active.current?.abort(), [id]);
+
+  useEffect(() => {
+    const root = scroller.current;
+    const marker = start.current;
+    if (!enabled || !hasMore || !root || !marker || error || loading) return;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting) || active.current) return;
+      const controller = new AbortController();
+      active.current = controller;
+      setLoading(true);
+      void request<ChatPage>(`/chat/${id}/messages?page=${nextPage}`, undefined, controller.signal)
+        .then(result => {
+          if (controller.signal.aborted) return;
+          const node = root.querySelector('.op-chat-messages > li');
+          if (node) anchor.current = { node, top: node.getBoundingClientRect().top };
+          setOlder(previous => ({ page: nextPage, data: [...result.data, ...(previous?.data ?? [])], hasMore: result.hasMore }));
+        })
+        .catch(cause => {
+          if (controller.signal.aborted) return;
+          if ([401, 403, 404].includes((cause as { status?: number })?.status ?? 0)) setOlder(undefined);
+          setError(cause instanceof Error ? cause.message : 'Riwayat belum dapat dimuat.');
+        })
+        .finally(() => {
+          if (active.current === controller) active.current = null;
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, { root });
+    observer.observe(marker);
+    return () => observer.disconnect();
+  }, [enabled, error, hasMore, id, loading, nextPage, scroller, start]);
+
+  function jumpToLatest() {
+    followLatest.current = true;
+    const root = scroller.current;
+    if (root) root.scrollTo(0, root.scrollHeight);
+  }
+
+  return { older, loading, error, retry: () => setError(''), jumpToLatest };
+}
 
 function ChatPhoto({ orderId, message }: { orderId: string; message: ChatMessage }) {
   const path = `/chat/${orderId}/messages/${message.id}/photo`;
@@ -138,7 +220,7 @@ async function encodePhoto(file: File) {
   });
 }
 
-export default function OrderChat({ id, order, onChange, actions, originalMessage, hideHeading = false }: { id: string; order?: Work; onChange: () => Promise<void>; actions?: ReactNode; originalMessage?: string; hideHeading?: boolean }) {
+export default function OrderChat({ id, order, onChange, actions, originalMessage, hideHeading = false, scrollHistory = false }: { id: string; order?: Work; onChange: () => Promise<void>; actions?: ReactNode; originalMessage?: string; hideHeading?: boolean; scrollHistory?: boolean }) {
   const { user } = useAuth();
   const account = String(user?.id);
   const [page, setPage] = useState(1), [text, setText] = useState(() => readChatDraft(account, id).text);
@@ -148,7 +230,7 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
   const [asDocument, setAsDocument] = useState(false);
   const [photoPending, setPhotoPending] = useState<{ file: File; body: PendingReply } | null>(null);
   const sending = useRef(false);
-  const messages = useWorkData<{ data: ChatMessage[]; hasMore: boolean; routeActive?: boolean; photosEnabled?: boolean }>(`/chat/${id}/messages?page=${page}`, { page });
+  const messages = useWorkData<ChatPage>(`/chat/${id}/messages?page=${page}`, { page });
   const allowed = messages.data?.routeActive !== false && !messages.error && Boolean(messages.data) && ['HD', 'ADMIN', 'SUPER_ADMIN'].includes(user?.role || '') && user?.username !== 'trial_yanto' && order?.status === 'IN_PROGRESS' && String(order.ownerId) === String(user?.id) && user?.modules?.includes(order.module);
   const photosEnabled = messages.data?.photosEnabled === true;
   const replyId = useId();
@@ -157,8 +239,17 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
   const canSend = (allowed || retrying) && !busy && Boolean(text.trim() || files.length) &&
     (!files.length || (photosEnabled && text.trim().length <= 1024));
   useUnsentChatWarning(text || (files.length ? 'Foto terlampir' : ''), busy);
-  const originalIndex = messages.data?.data.findIndex(message => originalMessage && message.direction === 'IN' && !message.replyTo && !message.hasPhoto && message.text === originalMessage) ?? -1;
-  const chatMessages = messages.data?.data.filter((_message, index) => index !== originalIndex);
+  const historyScroller = useRef<HTMLDivElement>(null);
+  const historyStart = useRef<HTMLDivElement>(null);
+  const older = useOlderMessages(id, scrollHistory, messages.data, historyScroller, historyStart);
+  // Later pages can overlap when new messages arrive before the next request.
+  // Page 1 is live and takes precedence so current delivery status stays accurate.
+  const latestMessages = messages.data?.data;
+  const uniqueMessages = scrollHistory && latestMessages && older.older
+    ? [...new Map([...older.older.data, ...latestMessages].map(message => [message.id, message])).values()]
+    : latestMessages;
+  const originalIndex = uniqueMessages?.findIndex(message => originalMessage && message.direction === 'IN' && !message.replyTo && !message.hasPhoto && message.text === originalMessage) ?? -1;
+  const chatMessages = uniqueMessages?.filter((_message, index) => index !== originalIndex);
   const history=useRef<HTMLOListElement>(null);
   const [cursorWarning,setCursorWarning]=useState(false);
   useEffect(()=>{
@@ -170,7 +261,7 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
     root.querySelectorAll('[data-incoming-sequence]').forEach(element=>observer.observe(element));
     document.addEventListener('visibilitychange',mark);
     return()=>{observer.disconnect();document.removeEventListener('visibilitychange',mark);};
-  },[account,id,page,messages.data,messages.loading,messages.error,order?.status,order?.ownerId]);
+  },[account,id,page,messages.data,messages.loading,messages.error,older.older,order?.status,order?.ownerId]);
   function addPhotos(selected: File[]) {
     if (!canAttach || !selected.length) return;
     if (selected.length + files.length > 10) {
@@ -235,6 +326,7 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
         setPending(null); saveChatDraft(account, id, { text: '', pending: null }); setText('');
       }
       setPage(1);
+      older.jumpToLatest();
       setNotice('Pesan tersimpan dalam antrean Courier. Status pengiriman akan diperbarui.');
     } catch (cause) {
       if ([400, 401, 403, 404, 409, 413, 507].includes((cause as { status: number }).status)) {
@@ -249,11 +341,16 @@ export default function OrderChat({ id, order, onChange, actions, originalMessag
     }
   }
   return <section aria-label="Live chat order" className="op-order-chat">
-    <div className="op-chat-history">
+    <div className="op-chat-history" ref={scrollHistory ? historyScroller : undefined}
+      tabIndex={scrollHistory ? 0 : undefined} role={scrollHistory ? 'region' : undefined}
+      aria-label={scrollHistory ? 'Riwayat percakapan' : undefined}>
+    {scrollHistory && <div ref={historyStart} className="op-history-start" aria-hidden="true" />}
+    {scrollHistory && older.loading && <p role="status" className="text-xs text-muted-foreground">Memuat riwayat…</p>}
+    {scrollHistory && older.error && <div role="alert"><p>{older.error}</p><Button variant="outline" onClick={older.retry}>Coba muat riwayat</Button></div>}
     {!hideHeading && <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-semibold">Live chat order</h3><p className="mt-1 text-xs text-muted-foreground">Balasan menuju pesan dan topic Telegram asli. ANTRE menunggu giliran; MENGIRIM mencakup proses kirim atau menunggu ACK. TERKIRIM setelah backend mengonfirmasi.</p></div></div>}
     {messages.loading && <p role="status" className="text-xs text-muted-foreground">{messages.data ? 'Memperbarui percakapan…' : 'Memuat percakapan…'}</p>}
     {messages.error && <div role="alert"><p>{messages.error}</p><Button variant="outline" onClick={() => void messages.refresh()}>Coba muat percakapan</Button></div>}
-    <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={messages.loading || !messages.data?.hasMore} onClick={() => setPage(value => value + 1)}>Pesan lebih lama</Button><Button variant="outline" disabled={messages.loading || page <= 1} onClick={() => setPage(value => value - 1)}>Pesan lebih baru</Button></div>
+    {!scrollHistory && <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={messages.loading || !messages.data?.hasMore} onClick={() => setPage(value => value + 1)}>Pesan lebih lama</Button><Button variant="outline" disabled={messages.loading || page <= 1} onClick={() => setPage(value => value - 1)}>Pesan lebih baru</Button></div>}
     <ol ref={history} className="op-chat-messages" aria-label="Pesan percakapan">{chatMessages?.map(message => <li key={message.id} data-incoming-sequence={message.direction==='IN'&&message.replyTo?message.sequence:undefined} className={message.direction === 'OUT' ? 'op-chat-out' : 'op-chat-in'}><p className="text-xs font-semibold">{message.userName}</p><p className="whitespace-pre-wrap break-words text-sm">{message.text || (!message.hasPhoto && '[Pesan dengan lampiran]')}</p>{message.hasPhoto && <ChatPhoto orderId={id} message={message} />}<p className="mt-2 text-[10px] text-muted-foreground">{new Date(message.at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB · {message.status}{message.attempts > 0 ? ` · percobaan ${message.attempts}` : ''}{message.replyTo ? ` · Reply ${message.replyTo}` : ' · Pesan order'}{message.telegramMessageId ? ` · Telegram #${message.telegramMessageId}` : ''}</p></li>)}</ol>
     {cursorWarning&&<p role="status" className="text-xs">Status baca hanya tersimpan selama sesi ini karena penyimpanan browser tidak tersedia.</p>}
     {messages.data && !chatMessages?.length && <p className="text-sm text-muted-foreground">Belum ada pesan chat tersimpan untuk order ini.</p>}

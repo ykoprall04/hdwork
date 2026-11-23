@@ -63,12 +63,12 @@ export function HdNoteField({ id, note, editable, readError, refresh, compact = 
   );
 }
 
-export default function HdNote({ order, verified }: { order: Work; verified: boolean }) {
+export default function HdNote({ order, verified, compact = false }: { order: Work; verified: boolean; compact?: boolean }) {
   const { user } = useAuth();
   const notes = useWorkData<{ data: HdNoteData[] }>('/order-notes?ids=' + encodeURIComponent(order.id));
   const editable = verified && ownsActiveOrder(order, user?.id);
   return (
-    <details aria-label="Catatan HD" className="space-y-2 rounded-lg border p-3">
+    <details aria-label="Catatan HD" className={compact ? "rounded-lg border px-3 py-1.5 open:space-y-2 open:pb-3" : "space-y-2 rounded-lg border p-3"}>
       <summary className="cursor-pointer text-sm font-semibold">CATATAN HD</summary>
       <HdNoteField key={String(editable)} id={order.id} note={notes.data?.data.find(row => row.id === order.id)} editable={editable} readError={notes.error} refresh={() => void notes.refresh()} />
     </details>
