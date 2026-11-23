@@ -8,7 +8,7 @@ Assistant Web tersedia untuk HD dengan akses modul serta Admin dan Super Admin. 
 - Tambahkan `HDWORK2_ASSISTANT_DIRECTORY` dengan path absolut tersebut ke konfigurasi runtime Web yang dipin. Bangun frontend dengan `VITE_HDWORK2_ASSISTANT=true` dalam proses persiapan rilis Web. Tanpa pengaturan runtime, endpoint tidak aktif. Tanpa flag build, tombol disembunyikan.
 - Jalankan uji DPAPI dengan identitas layanan dan profil Windows yang sama pada direktori uji. DPAPI CurrentUser dan profil Windows melindungi konfigurasi saat istirahat. Uji baca ulang dari proses baru dan pemulihan cadangan sebelum mengaktifkan fitur. Jangan memasukkan key penyedia ke file environment, command line, tiket, atau log.
 - Dari akun Super Admin, buka Tanya Yanto, pilih ikon pengaturan, isi Base URL HTTPS dan API key, lalu simpan. Jalankan **Uji konfigurasi tersimpan** untuk membaca daftar model. Masukkan ID model yang diterima, simpan, lalu uji kembali hingga jawaban teks terverifikasi. Setelah meninjau kebijakan retensi penyedia, aktifkan Tanya Yanto.
-- API memakai `GET /models` dan `POST /chat/completions` dengan autentikasi Bearer. Uji koneksi dengan model yang tersimpan dapat membuat satu permintaan inferensi pendek yang dikenai biaya oleh penyedia.
+- API memakai `GET /models` dan `POST /chat/completions` dengan autentikasi Bearer. Jika ID model kosong, uji meminta daftar model. Jika ID sudah tersimpan, uji langsung memakai model tersebut tanpa bergantung pada daftar. Uji koneksi dengan model yang tersimpan dapat membuat satu permintaan inferensi pendek yang dikenai biaya oleh penyedia.
 
 ## Preflight terisolasi di PC kantor
 
@@ -31,7 +31,7 @@ Jalankan tahap ini setelah kandidat tersedia di PC kantor. Persiapan memakai wor
 4. Buat backup staging. Buat perubahan pada artikel uji lalu pulihkan backup dan periksa bahwa artikel kembali. Hentikan dan jalankan ulang **staging saja**, pastikan UI masih menunjukkan key tersimpan, lalu ulangi uji koneksi tanpa memasukkan key lagi. Pastikan chat tetap nonaktif. Kegagalan TLS, DNS, DPAPI, daftar model, atau jawaban teks harus selesai sebelum permintaan aktivasi diajukan.
 5. Laporkan pin kandidat dan baseline, hasil DPAPI di bawah identitas layanan, hasil uji Dinero, status nonaktif, serta rencana rollback Web. Minta persetujuan terpisah untuk cutover dan aktivasi. Setelah cutover yang disetujui, uji konfigurasi aktual dalam keadaan nonaktif sebelum mengaktifkan chat.
 
-Server hanya menerima aktivasi setelah daftar model dan respons teks diverifikasi untuk kombinasi Base URL, API key, dan model yang tersimpan. Perubahan konfigurasi tersebut saat asisten aktif harus disimpan dalam keadaan nonaktif dan diuji kembali.
+Server hanya menerima aktivasi setelah respons teks model diverifikasi untuk kombinasi Base URL, API key, dan model yang tersimpan. Perubahan konfigurasi tersebut saat asisten aktif harus disimpan dalam keadaan nonaktif dan diuji kembali.
 
 ## Knowledge Base dan privasi
 

@@ -98,7 +98,13 @@ test('assistant RBAC, knowledge, general conversation, safe failure, backup and 
   assert.equal((await request('/settings', admin, { ...config, enabled: false, apiKey: secret })).body.keyConfigured, true);
   assert.equal((await request('/settings', admin, config)).status, 409);
   assert.equal((await request('/settings', admin, { ...config, baseUrl: 'https://other.net/v1', apiKey: secret })).status, 400);
-  assert.deepEqual((await request('/test', admin, {})).body, { models: ['synthetic'], modelVerified: true });
+  assert.equal((await request('/settings', admin, { ...config, model: '', enabled: false })).status, 200);
+  assert.deepEqual((await request('/test', admin, {})).body, { models: ['synthetic'], modelVerified: false });
+  assert.equal(exposed.at(-1).endpoint, '/models');
+  assert.equal((await request('/settings', admin, { ...config, enabled: false })).status, 200);
+  const beforeProbe = exposed.length;
+  assert.deepEqual((await request('/test', admin, {})).body, { models: [], modelVerified: true });
+  assert.deepEqual(exposed.slice(beforeProbe).map(entry => entry.endpoint), ['/chat/completions']);
   assert.equal((await request('/settings', admin, config)).body.enabled, true);
   assert.equal((await request('/settings', admin, { ...config, model: 'changed' })).status, 409);
   const article = { operation: 'save', title: 'Kebijakan Rhorium', tags: 'rhorium', text: 'Panduan Rhorium khusus petugas TIAL.', roles: ['HD'], modules: ['TIAL'], published: false };

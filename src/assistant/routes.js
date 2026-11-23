@@ -128,27 +128,28 @@ function createRoutes({ http, store = createStore(process.env.HDWORK2_ASSISTANT_
   router.post('/test', burst, wrap(true, (req, res) => external(req, res, async signal => {
     const state = await store.get();
     if (!state.apiKey) throw new AssistantError(400, 'Simpan API key terlebih dahulu.');
-    const response = await provider(state, '/models', undefined, signal);
-    if (!Array.isArray(response?.data)) throw new AssistantError(502, 'Format daftar model belum kompatibel.');
-    const ids = [...new Set(response.data.map(entry => entry?.id).filter(id => typeof id === 'string' &&
-      /^[a-zA-Z0-9_.:/@+-]{1,160}$/.test(id) && !id.includes(state.apiKey)))];
-    const modelVerified = Boolean(state.model && ids.includes(state.model));
-    if (modelVerified) {
-      const probe = await provider(state, '/chat/completions', {
-        model: state.model, messages: [{ role: 'user', content: 'Jawab hanya: OK' }], max_tokens: 32
-      }, signal);
-      if (typeof probe?.choices?.[0]?.message?.content !== 'string' || !probe.choices[0].message.content.trim()) {
-        throw new AssistantError(502, 'Model tidak mengembalikan jawaban teks.');
-      }
+    if (!state.model) {
+      const response = await provider(state, '/models', undefined, signal);
+      if (!Array.isArray(response?.data)) throw new AssistantError(502, 'Daftar model tidak tersedia. Masukkan ID model secara manual.');
+      const ids = [...new Set(response.data.map(entry => entry?.id).filter(id => typeof id === 'string' &&
+        /^[a-zA-Z0-9_.:/@+-]{1,160}$/.test(id) && !id.includes(state.apiKey)))];
+      if (!res.destroyed) res.json({ models: ids.slice(0, 200), modelVerified: false });
+      return;
+    }
+    const probe = await provider(state, '/chat/completions', {
+      model: state.model, messages: [{ role: 'user', content: 'Jawab hanya: OK' }], max_tokens: 32
+    }, signal);
+    if (typeof probe?.choices?.[0]?.message?.content !== 'string' || !probe.choices[0].message.content.trim()) {
+      throw new AssistantError(502, 'Model tidak mengembalikan jawaban teks.');
     }
     if (res.destroyed || signal.aborted) return;
-    if (modelVerified && state.verified !== true) await store.update(current => {
+    if (state.verified !== true) await store.update(current => {
       if (current.baseUrl !== state.baseUrl || current.model !== state.model || current.apiKey !== state.apiKey) {
         throw new AssistantError(409, 'Konfigurasi berubah saat diuji. Jalankan uji lagi.');
       }
       return { ...current, verified: true };
     });
-    if (!res.destroyed) res.json({ models: ids.slice(0, 200), modelVerified });
+    if (!res.destroyed) res.json({ models: [], modelVerified: true });
   })));
   router.post('/chat', burst, wrap(false, (req, res) => external(req, res, async signal => {
     const state = await store.get();

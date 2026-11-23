@@ -43,14 +43,16 @@ export default function TanyaSettings() {
       }); }}>
         <label>Base URL<input type="url" required value={state.baseUrl} onChange={event => setState({ ...state, baseUrl: event.target.value })}/></label>
         <label>API Key<input type="password" autoComplete="off" placeholder={state.keyConfigured ? 'Tersimpan · isi untuk mengganti' : 'Masukkan API key'} value={key} onChange={event => setKey(event.target.value)}/></label>
-        <label>ID model<input list="tanya-models" value={state.model} onChange={event => setState({ ...state, model: event.target.value })}/></label>
-        <datalist id="tanya-models">{models.map(model => <option value={model} key={model}/>)}</datalist>
+        <label>ID model<input placeholder="Masukkan ID model" value={state.model} onChange={event => setState({ ...state, model: event.target.value })}/></label>
+        {models.length > 0 && <label>Pilih dari daftar penyedia<select value={models.includes(state.model) ? state.model : ''} onChange={event => setState({ ...state, model: event.target.value })}>
+          <option value="">Pilih model…</option>{models.map(model => <option value={model} key={model}>{model}</option>)}
+        </select></label>}
         <label className="tanya-check"><input type="checkbox" checked={state.enabled} onChange={event => setState({ ...state, enabled: event.target.checked })}/> Aktifkan Tanya Yanto</label>
         <button type="submit">Simpan pengaturan</button>
         <button type="button" onClick={() => void run(async () => {
           const result = await tanyaRequest<{ models: string[]; modelVerified: boolean }>('/test', {});
-          setModels(result.models);
-          setNotice(result.modelVerified ? 'Daftar model dan jawaban teks terverifikasi.' : `${result.models.length} ID model diterima. Pilih dan simpan model, lalu uji lagi.`);
+          if (!result.modelVerified) setModels(result.models);
+          setNotice(result.modelVerified ? 'Model berhasil mengembalikan jawaban teks.' : result.models.length ? `${result.models.length} ID model diterima. Pilih dan simpan model, lalu uji lagi.` : 'Daftar model kosong. Masukkan ID model secara manual.');
         })}>Uji konfigurasi tersimpan</button>
       </form>
       <h3>Knowledge Base</h3>
