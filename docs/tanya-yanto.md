@@ -33,6 +33,8 @@ Jalankan tahap ini setelah kandidat tersedia di PC kantor. Persiapan memakai wor
 
 Server hanya menerima aktivasi setelah respons teks model diverifikasi untuk kombinasi Base URL, API key, dan model yang tersimpan. Perubahan konfigurasi tersebut saat asisten aktif harus disimpan dalam keadaan nonaktif dan diuji kembali.
 
+Permintaan daftar model memiliki batas 15 detik. Permintaan jawaban teks dan verifikasi model memiliki batas 45 detik di server dan 50 detik di browser.
+
 ## Knowledge Base dan privasi
 
 Artikel awal meliputi alur ambil/ambil alih order, tindakan selesai dan eskalasi, duplikat, Catatan HD, Live Chat, Rekap, bobot, dan status kerja. Artikel memiliki judul, tag, teks, role, modul, dan status terbit. Modul kosong berlaku untuk semua modul dalam role yang dipilih. Backend hanya menambahkan paling banyak empat artikel terbit yang sesuai role, modul, dan istilah pertanyaan. Tinjau panduan saat alur operasional berubah.

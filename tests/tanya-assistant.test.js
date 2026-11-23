@@ -36,6 +36,26 @@ test('provider rejects unsafe targets and mixed public/private DNS before connec
   }), { status: 502 });
 });
 
+test('provider gives inference a longer deadline while keeping discovery bounded', async t => {
+  const config = { baseUrl: 'https://provider.net', apiKey: 'fixture' };
+  for (const [endpoint, expected] of [['/chat/completions', 45_000], ['/models', 15_000]]) {
+    const deadline = new AbortController();
+    const timeout = t.mock.method(AbortSignal, 'timeout', milliseconds => {
+      assert.equal(milliseconds, expected);
+      return deadline.signal;
+    });
+    try {
+      await assert.rejects(providerRequest(config, endpoint, undefined, undefined, {
+        resolve: async () => { deadline.abort(); return []; },
+        request: () => assert.fail('expired DNS lookup must not open a connection')
+      }), { status: 504 });
+      assert.equal(timeout.mock.callCount(), 1);
+    } finally {
+      timeout.mock.restore();
+    }
+  }
+});
+
 test('assistant RBAC, knowledge, general conversation, safe failure, backup and restart', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tanya-test-'));
   const secret = 'synthetic-provider-key';

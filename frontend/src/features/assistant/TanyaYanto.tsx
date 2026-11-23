@@ -79,7 +79,7 @@ export default function TanyaYanto({ minimized, minimize, close, admin }: {
       const history = messages.slice(-6);
       while (history.length && new Blob([JSON.stringify({ question, history })]).size > 28 * 1024) history.splice(0, 2);
       const { answer } = await tanyaRequest<{answer: string}>('/chat', { question, history },
-        AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]));
+        controller.signal);
       setMessages(current => [...current, { role: 'user' as const, content: question }, { role: 'assistant' as const, content: answer }].slice(-24));
       setDraft('');
     } catch (cause) {

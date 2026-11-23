@@ -47,7 +47,7 @@ function untilAborted(promise, signal) {
 
 async function providerRequest(config, endpoint, body, signal, { resolve = lookup, request = https.request } = {}) {
   const url = new URL(baseUrl(config.baseUrl) + endpoint);
-  const deadline = AbortSignal.timeout(15000);
+  const deadline = AbortSignal.timeout(endpoint === '/chat/completions' ? 45_000 : 15_000);
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
   try {
     const addresses = await untilAborted(resolve(url.hostname, { all: true }), combined);
