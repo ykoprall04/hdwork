@@ -3,7 +3,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { AssistantError } = require('./provider');
-const { seed } = require('./knowledge');
+const { seed, upgradeDefaultGuides } = require('./knowledge');
 
 const MAX_FILE = 2 * 1024 * 1024;
 const initial = () => ({ schema: 1, enabled: false, verified: false, baseUrl: 'https://api.dinero.web.id/v1', model: '', apiKey: '', articles: structuredClone(seed) });
@@ -63,7 +63,7 @@ function createStore(directory, { seal = bytes => dpapi('Protect', bytes), open 
     const data = JSON.parse((await open(await fs.readFile(file))).toString('utf8'));
     if (data.schema !== 1 || typeof data.enabled !== 'boolean' || typeof data.apiKey !== 'string' ||
         typeof data.model !== 'string' || typeof data.baseUrl !== 'string' || !Array.isArray(data.articles)) throw Error('Invalid state version');
-    return data;
+    return { ...data, articles: upgradeDefaultGuides(data.articles) };
   }
   async function write(name, data) {
     const parent = await folder();

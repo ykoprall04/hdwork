@@ -56,6 +56,20 @@ test('provider gives inference a longer deadline while keeping discovery bounded
   }
 });
 
+test('Super Admin can find HD order guides without module grants and keeps custom visibility', () => {
+  const { seed, selectKnowledge, upgradeDefaultGuides } = require('../src/assistant/knowledge');
+  const pick = seed.find(article => article.id === 'ambil-order');
+  const legacy = { ...pick, roles: ['HD'], modules: ['TIAL', 'REQ', 'LOGIC_PSB', 'LOGIC_MO'],
+    text: pick.text.replace('Prosedur untuk petugas HD dengan akses modul terkait. ', '') };
+  assert.deepEqual(upgradeDefaultGuides([legacy]), [pick]);
+  const unpublished = { ...legacy, published: false };
+  assert.deepEqual(upgradeDefaultGuides([unpublished]), [unpublished]);
+  const user = { role: 'SUPER_ADMIN', modules: [] };
+  assert.match(selectKnowledge(seed, user, 'cara ambil orderan ya di web ini')[0].text, /PICK/);
+  assert.match(selectKnowledge(seed, user, 'cara ambil alih orderan dari orang lain')[0].text, /SEMUA ORDER.*AMBIL ALIH/);
+  assert.deepEqual(selectKnowledge(seed, user, 'Mengapa hujan turun?'), []);
+});
+
 test('assistant RBAC, knowledge, general conversation, safe failure, backup and restart', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tanya-test-'));
   const secret = 'synthetic-provider-key';
