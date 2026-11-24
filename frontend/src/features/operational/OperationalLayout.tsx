@@ -59,7 +59,7 @@ export default function OperationalLayout({ user, local, onLogout, children }: P
     <a href="#operational-main" className="op-skip">Langsung ke konten</a>
     {!checkIn && <aside className="op-sidebar" aria-label="Sidebar">{brand}{navigation(collapsed)}<div className="op-sidebar-bottom">{launcher(collapsed)}<Button variant="ghost" className="w-full min-h-11" onClick={toggle} aria-label={collapsed ? 'Perlebar sidebar' : 'Ciutkan sidebar'} aria-expanded={!collapsed}>{collapsed ? <PanelLeftOpen /> : <><PanelLeftClose /><span>Ciutkan sidebar</span></>}</Button></div></aside>}
     {assistantAllowed && assistant !== 'closed' && <Suspense fallback={<p className="fixed bottom-4 left-4 z-[85] rounded-lg border bg-card p-3" role="status">Memuat Tanya Yanto…</p>}>
-      <TanyaYanto key={user.id} admin={user.role === 'SUPER_ADMIN'} minimized={checkIn || assistant === 'minimized'} minimize={() => setAssistant('minimized')} close={() => setAssistant('closed')} />
+      <TanyaYanto key={user.id} accountName={user.name} admin={user.role === 'SUPER_ADMIN'} minimized={checkIn || assistant === 'minimized'} minimize={() => setAssistant('minimized')} close={() => setAssistant('closed')} />
     </Suspense>}
     <div className="op-body" data-checkin={checkIn} data-jobs={pathname === '/jobs'}>
       <header className="op-topbar">

@@ -12,7 +12,8 @@ const fit = (box: Box) => {
   return { width, height, x: Math.max(8, Math.min(box.x, innerWidth - width - 8)), y: Math.max(8, Math.min(box.y, innerHeight - height - 8)) };
 };
 
-export default function TanyaYanto({ minimized, minimize, close, admin }: {
+export default function TanyaYanto({ minimized, minimize, close, admin, accountName }: {
+  accountName: string;
   minimized: boolean; minimize: () => void; close: () => void; admin: boolean;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -103,7 +104,7 @@ export default function TanyaYanto({ minimized, minimize, close, admin }: {
     </header>
     {settings ? <TanyaSettings/> : <>
       <div className="tanya-history" ref={history} role="log" aria-label="Percakapan Tanya Yanto" tabIndex={0}>
-        <p className="tanya-message" data-role="assistant">Halo! Ada yang bisa saya bantu?</p>
+        <p className="tanya-message" data-role="assistant">Halo{accountName.trim() ? ' ' + accountName.trim() : ''}<br />Ada yang bisa saya bantu?</p>
         {messages.map((message, index) => <p key={index} className="tanya-message" data-role={message.role}><span className="sr-only">{message.role === 'user' ? 'Anda: ' : 'Tanya Yanto: '}</span>{message.content}</p>)}
         {busy && <><p className="tanya-message" data-role="user">{draft}</p><p role="status" className="tanya-message" data-role="assistant">Sedang menjawab…</p></>}
       </div>

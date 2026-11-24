@@ -62,6 +62,7 @@ const base = process.env.HD_PREVIEW_URL || 'http://127.0.0.1:5203';
     assert.equal(requests.length, 0);
     await launch.click();
     await panel.waitFor();
+    assert.equal(await panel.locator('.tanya-message').first().innerText(), 'Halo Yayan Demo\nAda yang bisa saya bantu?');
     assert.equal(fetchedChunk, true);
     assert.equal(requests.length, 0);
     assert.equal(await panel.getByRole('button', { name: 'Pengaturan Tanya Yanto' }).count(), 1);
