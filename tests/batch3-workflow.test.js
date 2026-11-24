@@ -89,3 +89,17 @@ test('process list projects full INET, SN ONT and config_psb purpose only in Pro
  assert.ok(finished.data.every(order=>!Object.hasOwn(order,'purpose')&&!Object.hasOwn(order,'inet')&&!Object.hasOwn(order,'snOnt')));
  assert.ok(!JSON.stringify(finished).includes('12345678'));
 });
+
+test('incoming TIAL and LOGIC list sorts oldest first before applying page offsets',async()=>{
+ const {reader}=require('../src/operations/read');
+ const calls=[],read=reader({async execute(sql,values){calls.push({sql,values});return [[]];}});
+ const actor={...user,modules:['TIAL','LOGIC_PSB']};
+ for(const area of ['TIAL','LOGIC']){
+  await read.list({area,tab:'incoming',page:'2',q:'fixture'},actor);
+  const {sql,values}=calls.at(-1);
+  assert.match(sql,/ORDER BY o.telegram_timestamp ASC,o.id ASC LIMIT 26 OFFSET \?$/);
+  assert.equal(values.at(-1),25);
+ }
+ await read.list({area:'LOGIC',tab:'finished'},actor);
+ assert.match(calls.at(-1).sql,/ORDER BY o.telegram_timestamp DESC,o.id DESC/);
+});

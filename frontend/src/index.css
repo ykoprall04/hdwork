@@ -926,3 +926,30 @@ body {
 .op-work-panel[data-workflow-detail] .op-chat-composer { flex: 0 0 auto; max-height: max(140px, 50dvh); }
 .op-work-panel[data-workflow-detail] .op-chat-history { min-height: 96px; }
 .op-history-start { flex: 0 0 1px; }
+
+.op-incoming-command {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--command-accent, var(--muted-foreground)) 36%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--command-accent, var(--muted-foreground)) 16%, transparent);
+  color: var(--foreground);
+}
+.op-incoming-command[data-command="config_psb"] { --command-accent: #3187ff; }
+.op-incoming-command[data-command="order"] { --command-accent: #7ad500; }
+.op-incoming-command:is([data-command="mo"], [data-command="req"]) { --command-accent: #eab308; }
+
+@media (max-width: 767px) {
+  .op-order-table[data-incoming-layout] tr { grid-template-columns: minmax(0, 1fr) auto; }
+  .op-order-table[data-incoming-layout] td:first-child { grid-column: 1; }
+  .op-order-table[data-incoming-layout] .op-incoming-actions { width: auto; justify-self: end; }
+}
+
+@media (min-width: 768px) {
+  .op-order-table[data-incoming-layout] td[data-label] { padding-block: 8px; vertical-align: top; }
+  .op-incoming-line { display: flex; min-height: 1.75rem; align-items: center; }
+  .op-order-table[data-incoming-layout] td:is([data-label="Petugas"], [data-label="Waktu masuk"]) .op-incoming-line {
+    display: block;
+    line-height: 1.75rem;
+  }
+}

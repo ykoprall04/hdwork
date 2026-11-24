@@ -71,14 +71,14 @@ function useWorkRead<T>(key: string, scope: string, enabled: boolean, load: (sig
  return {data:enabled&&result?.key===key?result.data:null,loading:enabled&&loading,error:enabled?error:'',refresh};
 }
 
-export function useWorkData<T>(path:string,{area='ALL',page=1,enabled=true}:{area?:string;page?:number;enabled?:boolean}={}){
+export function useWorkData<T>(path:string,{area='ALL',page=1,enabled=true,oldestFirst=false}:{area?:string;page?:number;enabled?:boolean;oldestFirst?:boolean}={}){
  const {user}=useAuth();const scope=scopeKey(user);
  const [arrival,setArrival]=useState(false);
  const load=useCallback((signal:AbortSignal)=>request<T>(path,undefined,signal),[path]);
  const result=useWorkRead(scope+'|'+path,scope,enabled,load);
  const {refresh}=result;
  useEffect(()=>{setArrival(false);},[path,scope,enabled]);
- useEffect(()=>{if(!enabled)return;return subscribeLive(operationsBase+'/events',e=>{if(e.modules?.length&&!areaIncludes(area,e.modules))return;if(e.arrival&&page>1){setArrival(true);if(!e.changed&&!e.reset)return;}void refresh();});},[refresh,scope,enabled,area,page]);
+ useEffect(()=>{if(!enabled)return;return subscribeLive(operationsBase+'/events',e=>{if(e.modules?.length&&!areaIncludes(area,e.modules))return;if(e.arrival&&page>1&&!oldestFirst){setArrival(true);if(!e.changed&&!e.reset)return;}void refresh();});},[refresh,scope,enabled,area,page,oldestFirst]);
  return {...result,arrival};
 }
 export function useMyActiveWork(area:string,enabled=true){

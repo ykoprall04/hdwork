@@ -18,7 +18,8 @@ function reader(pool){return {
  async list(query,user){
   const f=filters(query,user),w=where(f,user);
   const process=f.tab==='process';
-  const sort=process?'o.started_at DESC,o.id DESC':'o.telegram_timestamp DESC,o.id DESC';
+  const oldestFirst=f.tab==='incoming'&&['TIAL','LOGIC'].includes(f.area);
+  const sort=process?'o.started_at DESC,o.id DESC':oldestFirst?'o.telegram_timestamp ASC,o.id ASC':'o.telegram_timestamp DESC,o.id DESC';
   const purposeField="JSON_EXTRACT(o.command_fields,'$.KETERANGAN')";
   const purpose=process?`,CASE WHEN o.command='config_psb' AND JSON_TYPE(${purposeField})='STRING' THEN JSON_UNQUOTE(${purposeField}) END AS psb_purpose`:'';
   const serial=process?`,CASE WHEN JSON_TYPE(JSON_EXTRACT(o.command_fields,'$."SN ONT BARU"'))='STRING' THEN JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."SN ONT BARU"')) END AS sn_ont_baru,

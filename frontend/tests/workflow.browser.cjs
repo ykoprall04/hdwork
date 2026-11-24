@@ -30,7 +30,30 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
  });
  const base=process.env.HD_PREVIEW_URL||'http://127.0.0.1:5192';const live=async event=>page.evaluate(event=>window.__sources.filter(s=>!s.__closed).forEach(s=>s.dispatchEvent(new MessageEvent('change',{data:JSON.stringify(event)}))),event);
  await page.goto(base+'/work/B2C/TIAL');await page.getByRole('button',{name:'PICK',exact:true}).waitFor();assert.equal(await page.locator('.op-status-bar').count(),0);assert.equal(await page.locator('.op-counts').count(),0);assert.equal(await page.getByRole('heading',{name:'Daftar pekerjaan TIAL',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:/Suara/}).count(),0);for(const label of ['ORDER MASUK','DUPLIKAT MENUNGGU','PROSES CEK','SELESAI'])assert.equal(await page.getByRole('button',{name:label,exact:true}).count(),1);await page.getByRole('button',{name:'Menu akun'}).click();assert.equal(await page.getByLabel('Status kerja').inputValue(),'ONLINE');await page.getByLabel('Status kerja').selectOption('SIBUK');await page.waitForURL('**/jobs');await page.goto(base+'/work/B2C');await page.getByRole('button',{name:/Suara nonaktif/}).waitFor();await page.goto(base+'/work/B2C/TIAL');await page.getByRole('button',{name:'PICK',exact:true}).waitFor();
- await page.getByRole('button',{name:'Berikutnya',exact:true}).click();await page.getByRole('link',{name:'SC-'+second.slice(0,8),exact:true}).waitFor();const before=calls.filter(c=>c.path==='/api/operations/orders').length;await live({arrival:true,changed:false,modules:['TIAL']});await page.getByRole('button',{name:'Ada order baru'}).waitFor();assert.equal(calls.filter(c=>c.path==='/api/operations/orders').length,before);await page.getByRole('button',{name:'Ada order baru'}).click();await page.getByRole('button',{name:'PICK',exact:true}).click();await page.getByRole('button',{name:'PROSES CEK',exact:true}).click();
+ assert.deepEqual(await page.getByRole('columnheader').allTextContents(),['Identifier order','Aksi','Kategori','Status','Petugas','Waktu masuk']);
+ assert.equal(await page.locator('.op-incoming-command[data-command="order"]').first().innerText(),'/ORDER');
+ const initialViewport=page.viewportSize();
+ for(const width of [1280,360]){
+  await page.setViewportSize({width,height:900});
+  const pick=page.getByRole('button',{name:'PICK',exact:true});
+  const layout=await pick.evaluate(button=>{
+   const link=button.closest('tr').querySelector('a');
+   const label=link.textContent;
+   const before=button.getBoundingClientRect();
+   try{
+    link.textContent='DGPS'.repeat(180);
+    const longLink=link.getBoundingClientRect(),after=button.getBoundingClientRect();
+    const detailsAligned=innerWidth<768||[...button.closest('tr').querySelectorAll('.op-incoming-line')].every(cell=>{
+     const bounds=cell.getBoundingClientRect();
+     return Math.abs(bounds.top-after.top)<2 && bounds.height>=after.height;
+    });
+    return {detailsAligned,wrapped:longLink.height>32,y:Math.abs(after.top-before.top),x:Math.abs(after.right-before.right)};
+   }finally{link.textContent=label;}
+  });
+  assert.ok(layout.detailsAligned&&layout.wrapped&&layout.y<2&&layout.x<2,JSON.stringify({width,...layout}));
+ }
+ await page.setViewportSize(initialViewport);
+ await page.getByRole('button',{name:'Berikutnya',exact:true}).click();await page.getByRole('link',{name:'SC-'+second.slice(0,8),exact:true}).waitFor();const refreshPage=page.waitForResponse(response=>{const url=new URL(response.url());return url.pathname==='/api/operations/orders'&&url.searchParams.get('page')==='2';});await live({arrival:true,changed:false,modules:['TIAL']});await refreshPage;await page.getByRole('button',{name:'Sebelumnya'}).click();assert.equal(await page.getByRole('button',{name:'Ada order baru'}).count(),0);await page.getByRole('button',{name:'PICK',exact:true}).click();await page.getByRole('button',{name:'PROSES CEK',exact:true}).click();
  await page.getByRole('columnheader',{name:'Identifier Order',exact:true}).waitFor();assert.equal(await page.getByLabel('Tanggal mulai').count(),0);assert.equal(await page.getByLabel('Tanggal akhir').count(),0);assert.equal(await page.getByRole('button',{name:/reset filter/i}).count(),0);assert.equal(await page.getByRole('columnheader').count(),4);assert.equal(await page.getByRole('link',{name:'SC-'+id.slice(0,8),exact:true}).count(),1);assert.equal(await page.getByRole('link',{name:'SC-'+other.slice(0,8),exact:true}).count(),0);
  await page.getByText('Filter lanjutan',{exact:true}).click();await page.getByLabel('Cakupan proses').selectOption('false');await page.getByRole('link',{name:'SC-'+other.slice(0,8),exact:true}).waitFor();assert.equal(await page.getByRole('columnheader').count(),6);assert.equal(await page.getByRole('columnheader',{name:'Petugas'}).count(),1);
  const ownRow=page.getByRole('link',{name:'SC-'+id.slice(0,8),exact:true}).locator('xpath=ancestor::tr');assert.equal(await ownRow.getByRole('button',{name:'AMBIL ALIH',exact:true}).count(),0);
