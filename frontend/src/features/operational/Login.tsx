@@ -2,16 +2,26 @@ import {cookieMode,cookieFetch,setCsrf} from './cookie-http';
 import {API_URL} from '@/config/api';
 import AuthLayout from '../workspace-ui/AuthLayout';
 import { Section } from '../operations/components';
-import { useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { loginRequest } from '@/services/auth.service';
+const NightLogin = lazy(() => import('./login-night/NightLogin'));
+
 export default function Login() {
   const { login } = useAuth(); const navigate = useNavigate();
   const [username, setUsername] = useState(''), [password, setPassword] = useState('');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark') ||
+    (localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark');
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => setDark(root.classList.contains('dark')));
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy) return; setBusy(true); setError('');
     try {
@@ -22,5 +32,7 @@ export default function Login() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Login gagal'); }
     finally { setBusy(false); }
   }
-  return <AuthLayout home="/preview/login" linkLabel="Buka lingkungan DEMO" notice={<><strong className="block text-foreground">WORKSPACE OPERASIONAL</strong>Masuk untuk mengelola pekerjaan sesuai akses akun Anda. Pilih status kerja saat check-in.</>}><Section title="Selamat datang kembali" description="Masuk dengan akun HD Work 2.0."><form className="mt-6 space-y-4" onSubmit={event => { void submit(event); }}><label className="block text-sm">Username<input required autoComplete="username" className="mt-2 block min-h-10 w-full rounded-lg border bg-background px-3 py-2" value={username} onChange={event => setUsername(event.target.value)} /></label><label className="block text-sm">Password<input required autoComplete="current-password" type="password" className="mt-2 block min-h-10 w-full rounded-lg border bg-background px-3 py-2" value={password} onChange={event => setPassword(event.target.value)} /></label>{error && <p role="alert" className="text-sm text-destructive">{error}</p>}<Button disabled={busy} className="w-full" type="submit">{busy ? 'Memverifikasi…' : 'Masuk workspace'}<ArrowRight /></Button></form><p className="mt-4 text-xs text-muted-foreground">{cookieMode?<Link to="/register" className="text-primary underline">Daftar Akun</Link>:"Hubungi Super Admin untuk akun."}</p></Section></AuthLayout>;
+  const form = <Section title="Selamat datang kembali" description="Masuk dengan akun HD Work 2.0."><form className="mt-6 space-y-4" onSubmit={event => { void submit(event); }}><label className="block text-sm">Username<input required autoComplete="username" className="mt-2 block min-h-10 w-full rounded-lg border bg-background px-3 py-2" value={username} onChange={event => setUsername(event.target.value)} /></label><label className="block text-sm">Password<input required autoComplete="current-password" type="password" className="mt-2 block min-h-10 w-full rounded-lg border bg-background px-3 py-2" value={password} onChange={event => setPassword(event.target.value)} /></label>{error && <p role="alert" className="text-sm text-destructive">{error}</p>}<Button disabled={busy} className="w-full" type="submit">{busy ? 'Memverifikasi…' : 'Masuk workspace'}<ArrowRight /></Button></form><p className="mt-4 text-xs text-muted-foreground">{cookieMode?<Link to="/register" className="text-primary underline">Daftar Akun</Link>:"Hubungi Super Admin untuk akun."}</p></Section>;
+  if (dark) return <Suspense fallback={null}><NightLogin>{form}</NightLogin></Suspense>;
+  return <AuthLayout home="/preview/login" linkLabel="Buka lingkungan DEMO" notice={<><strong className="block text-foreground">WORKSPACE OPERASIONAL</strong>Masuk untuk mengelola pekerjaan sesuai akses akun Anda. Pilih status kerja saat check-in.</>}>{form}</AuthLayout>;
 }

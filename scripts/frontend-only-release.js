@@ -3,7 +3,7 @@ const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('n
 const digest=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const fail=code=>{throw Error(code);};
 const within=(a,b)=>a===b||a.startsWith(b+path.sep);
-const safeName=name=>name==='index.html'||name==='favicon.svg'||name==='icons.svg'||/^assets\/[A-Za-z0-9_.-]+\.(?:js|css|woff2?|ttf|svg|png|jpg|webp|ico)$/.test(name);
+const safeName=name=>name==='index.html'||name==='favicon.svg'||name==='icons.svg'||/^assets\/[A-Za-z0-9_.-]+\.(?:js|css|woff2?|ttf|svg|png|jpg|webp|ico)$/.test(name)||/^assets\/HDWork-night-loop-[\w-]{8,}\.mp4$/.test(name);
 async function directory(value){const resolved=path.resolve(value);if((await fs.realpath(resolved)).toLowerCase()!==resolved.toLowerCase()||(await fs.lstat(resolved)).isSymbolicLink())fail('SYMLINK_DIRECTORY_REJECTED');return resolved;}
 async function inventory(root){
  root=await directory(root);const files={};

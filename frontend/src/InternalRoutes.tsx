@@ -16,10 +16,12 @@ import { CheckInGate, LocalCheckInProvider, OperationalCheckIn } from '@/feature
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import SessionProvider from '@/features/operational/SessionProvider';
 import { useOperationalSession } from '@/features/operational/session-state';
-import OperationalLogin from '@/features/operational/Login';
+import { lazy } from 'react';
 import Shell, { Jobs, B2cHome, Unavailable } from '@/features/operational/Shell';
 import B2cStagingPage from '@/pages/B2cStagingPage';
 import { Button } from '@/components/ui/button';
+const OperationalLogin = lazy(() => import('@/features/operational/Login'));
+
 function LocalLayout() { return <LocalCheckInProvider><Outlet /></LocalCheckInProvider>; }
 function Guard() {
   const { status, error, retry } = useOperationalSession();
