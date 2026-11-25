@@ -1,3 +1,4 @@
+import { useMarkOrderOpened } from './order-opened';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, X } from 'lucide-react';
@@ -86,6 +87,7 @@ export default function OrderWorkPanel({ id, orders, onSelect, onClose, onChange
   const detail = useWorkData<Detail>(`/orders/${id}`);
   const position = orders.findIndex(order => order.id === id);
   const order = detail.data?.data;
+  useMarkOrderOpened(order, user?.id, compactWorkflow && !detail.error);
   const requestClose = () => { if (confirmChatNavigation()) onClose(); };
   const requestMobileBack = () => { if (confirmChatNavigation()) onMobileBack?.(); };
   useEffect(() => { panel.current?.focus(); }, [id]);

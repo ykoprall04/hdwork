@@ -1,5 +1,5 @@
 export type Feedback={status:string;deliveryId:string;errorCode:string|null};
-export type Work={inet?:string|null;snOnt?:string|null;purpose?:string;feedback?:Feedback|null;id:string;command:string;module:string;status:string;decision:string|null;duplicateOf:string|null;ownerId:number|null;ownerName:string|null;finalName:string|null;version:number;scIn:string|null;inetMasked:string|null;receivedAt:string;startedAt:string|null;finishedAt:string|null;note:string|null};
+export type Work={escalated?:boolean;inet?:string|null;snOnt?:string|null;purpose?:string;feedback?:Feedback|null;id:string;command:string;module:string;status:string;decision:string|null;duplicateOf:string|null;ownerId:number|null;ownerName:string|null;finalName:string|null;version:number;scIn:string|null;inetMasked:string|null;receivedAt:string;startedAt:string|null;finishedAt:string|null;note:string|null};
 export type WorkList={data:Work[];page:number;hasMore:boolean;serverNow:string};
 export type Detail={data:Work;capabilities?:{escalate:boolean;completionConfirmation:boolean};originalMessage?:string|null;fields?:Record<string,string|null>;requestText?:string|null;previous:Work|null;history:{id:string;action:string;from:string;to:string;actor:string;at:string;note:string|null;previousOwnerId:number|null;previousOwnerName?:string|null;ownerId:number|null}[];page:number;hasMore:boolean;serverNow:string};
 export function duration(start:string|null,now:number){if(!start||!Number.isFinite(now)||!Number.isFinite(Date.parse(start)))return '—';const seconds=Math.max(0,Math.floor((now-Date.parse(start))/1000));return [Math.floor(seconds/3600),Math.floor(seconds/60)%60].map(n=>String(n).padStart(2,'0')).join(':');}
@@ -14,3 +14,9 @@ export const labels:Record<string,string>={ACTION_REJECTED:'TINDAKAN DITOLAK',WE
 export function scopeKey(user:{id:number;role:string;modules?:string[]}|null){return JSON.stringify([user?.id,user?.role,[...(user?.modules||[])].sort()]);}
 
 export function workDuration(order:Pick<Work,'startedAt'|'finishedAt'|'status'>,now:number){return duration(order.startedAt,order.finishedAt?Date.parse(order.finishedAt):order.status==='IN_PROGRESS'?now:NaN);}
+
+
+export function minutesSince(receivedAt: string, now: number) {
+  const received = Date.parse(receivedAt);
+  return Number.isFinite(received) && Number.isFinite(now) ? `${Math.max(0, Math.floor((now - received) / 60_000))} menit` : '—';
+}

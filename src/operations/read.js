@@ -19,14 +19,18 @@ function reader(pool){return {
   const f=filters(query,user),w=where(f,user);
   const process=f.tab==='process';
   const oldestFirst=f.tab==='incoming'&&['TIAL','LOGIC'].includes(f.area);
-  const sort=process?'o.started_at DESC,o.id DESC':oldestFirst?'o.telegram_timestamp ASC,o.id ASC':'o.telegram_timestamp DESC,o.id DESC';
+  const stableProcess=process&&['TIAL','LOGIC'].includes(f.area);
+  const processFields=stableProcess?`,COALESCE((SELECT MIN(a.created_at) FROM hd2_audit a
+    WHERE a.order_id=o.id AND a.to_status='IN_PROGRESS' AND (a.from_status IS NULL OR a.from_status<>'IN_PROGRESS')),o.started_at) AS first_process_at,
+    EXISTS(SELECT 1 FROM hd2_audit a WHERE a.order_id=o.id AND a.action='ESCALATE' AND a.created_at>=o.started_at) AS escalated`:'';
+  const sort=stableProcess?'first_process_at DESC,o.id DESC':process?'o.started_at DESC,o.id DESC':oldestFirst?'o.telegram_timestamp ASC,o.id ASC':'o.telegram_timestamp DESC,o.id DESC';
   const purposeField="JSON_EXTRACT(o.command_fields,'$.KETERANGAN')";
   const purpose=process?`,CASE WHEN o.command='config_psb' AND JSON_TYPE(${purposeField})='STRING' THEN JSON_UNQUOTE(${purposeField}) END AS psb_purpose`:'';
   const serial=process?`,CASE WHEN JSON_TYPE(JSON_EXTRACT(o.command_fields,'$."SN ONT BARU"'))='STRING' THEN JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."SN ONT BARU"')) END AS sn_ont_baru,
    CASE WHEN JSON_TYPE(JSON_EXTRACT(o.command_fields,'$."SN ONT"'))='STRING' THEN JSON_UNQUOTE(JSON_EXTRACT(o.command_fields,'$."SN ONT"')) END AS sn_ont,
    CASE WHEN o.command='mo' THEN o.raw_text END AS mo_original`:'';
-  const [rows]=await pool.execute(`SELECT ${projection}${purpose}${serial}${joins} WHERE ${w.sql} ORDER BY ${sort} LIMIT 26 OFFSET ?`,[...w.values,(f.page-1)*25]);
-  const data=rows.slice(0,25).map(row=>({...dto(row),...(process?{inet:row.inet||null,snOnt:processSerial(row)}:{}),...(process&&row.command==='config_psb'&&row.psb_purpose?{purpose:row.psb_purpose}:{})}));
+  const [rows]=await pool.execute(`SELECT ${projection}${purpose}${serial}${processFields}${joins} WHERE ${w.sql} ORDER BY ${sort} LIMIT 26 OFFSET ?`,[...w.values,(f.page-1)*25]);
+  const data=rows.slice(0,25).map(row=>({...dto(row),...(stableProcess?{escalated:Number(row.escalated)===1}:{}),...(process?{inet:row.inet||null,snOnt:processSerial(row)}:{}),...(process&&row.command==='config_psb'&&row.psb_purpose?{purpose:row.psb_purpose}:{})}));
   await attachFeedback(pool,data);
   return {data,page:f.page,hasMore:rows.length>25,serverNow:new Date().toISOString()};
  },

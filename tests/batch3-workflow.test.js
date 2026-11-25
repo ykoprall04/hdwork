@@ -103,3 +103,17 @@ test('incoming TIAL and LOGIC list sorts oldest first before applying page offse
  await read.list({area:'LOGIC',tab:'finished'},actor);
  assert.match(calls.at(-1).sql,/ORDER BY o.telegram_timestamp DESC,o.id DESC/);
 });
+
+test('process queue uses the first transition and projects audited escalation',async()=>{
+ const {reader}=require('../src/operations/read');
+ const read=reader({async execute(sql){
+  if(sql.includes('hd2_web_requests'))return [[]];
+  assert.match(sql,/MIN\(a.created_at\)/);
+  assert.match(sql,/a.from_status<>'IN_PROGRESS'/);
+  assert.match(sql,/a.action='ESCALATE'/);
+  assert.match(sql,/ORDER BY first_process_at DESC,o.id DESC LIMIT/);
+  return [[{id:randomUUID(),telegram_timestamp:1700000000,escalated:1}]];
+ }});
+ const result=await read.list({area:'TIAL',tab:'process'},user);
+ assert.equal(result.data[0].escalated,true);
+});

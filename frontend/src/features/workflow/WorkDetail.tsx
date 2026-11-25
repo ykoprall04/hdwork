@@ -1,3 +1,4 @@
+import { useMarkOrderOpened } from './order-opened';
 import PageHeader from '../workspace-ui/PageHeader';
 import WorkStatusBadge from './WorkStatusBadge';
 import {useEffect,useRef,useState} from 'react';
@@ -14,6 +15,7 @@ import {FeedbackStatus,WorkTimer} from './OperationalStatus';
 const time=(s:string|null)=>s?new Date(s).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})+' WIB':'—';
 export default function WorkDetail(){const {id=''}=useParams();return <Content key={id} id={id}/>;}
 function Content({id}:{id:string}){const {user}=useAuth();const [page,setPage]=useState(1),[notice,setNotice]=useState('');const {data,loading,error,refresh}=useWorkData<Detail>(`/orders/${id}?page=${page}`,{page});const now=useServerClock(data?.serverNow);const oldOwner=useRef<number|null|undefined>(undefined);
+ useMarkOrderOpened(data?.data,user?.id,!error);
  useEffect(()=>{if(!data)return;const before=oldOwner.current;oldOwner.current=data.data.ownerId;if(before!==undefined&&String(before)===String(user?.id)&&String(data.data.ownerId)!==String(user?.id))void Promise.resolve().then(()=>setNotice('Penanggung jawab telah berubah. DONE/GAGAL hanya untuk pemilik terbaru.'));},[data,user?.id]);
  return <><div className="flex flex-wrap items-start justify-between gap-3"><PageHeader eyebrow="Ruang kerja · Detail" title="Detail Order" description="Informasi, tindakan, dan riwayat pekerjaan."/>{data&&<FormatVlanButton key={`${user?.id}:${id}`} id={id} command={data.data.command} disabled={!!error}/>}</div><Link className="text-primary underline" to={data&&['ASSUREN','B2B','REPLACEMENT'].includes(data.data.module)?`/work/${data.data.module}`:data&&['LOGIC_PSB','LOGIC_MO'].includes(data.data.module)?'/work/B2C/LOGIC':'/work/B2C/TIAL'}>Kembali ke daftar pekerjaan</Link>
  {error&&<div role="alert"><p>{error}</p><Button onClick={()=>void refresh()}>Coba lagi</Button></div>}{loading&&!data&&<p role="status">Memuat detail…</p>}{notice&&<p role="status" className="rounded-lg border p-3 text-sm">{notice}</p>}
