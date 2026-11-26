@@ -100,6 +100,11 @@ export default function OrderWorkPanel({ id, orders, onSelect, onClose, onChange
   }, [onClose]);
   async function refresh() { await Promise.all([detail.refresh(), onChange()]); }
   function move(index: number) { if (orders[index] && confirmChatNavigation()) onSelect(orders[index].id); }
+  const liveChatEnabled = import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true';
+  const pinActions = embedded && compactWorkflow;
+  const actions = order && (detail.error
+    ? <p>Detail belum terverifikasi. Muat ulang sebelum melakukan tindakan.</p>
+    : <Actions key={`${user?.id}:${id}`} order={order} refresh={refresh} escalationEnabled={detail.data?.capabilities?.escalate===true} />);
   return <aside ref={panel} data-workflow-detail={compactWorkflow || undefined} tabIndex={-1} role={embedded ? 'region' : 'dialog'} aria-modal={embedded ? undefined : 'false'} aria-labelledby="order-panel-heading" className={embedded ? 'op-work-panel op-process-detail' : 'op-work-panel'}>
     <header className="op-work-panel-header">{embedded ? <><div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><h2 id="order-panel-heading" className="text-sm font-semibold">Detail Pekerjaan</h2>{order && <WorkStatusBadge status={order.status} decision={order.decision}/>}</div><div className="flex items-center gap-1"><FormatVlanButton key={`${user?.id}:${id}`} id={id} command={order?.command} disabled={!!detail.error}/><Button variant="ghost" className="min-h-11 min-w-11 md:hidden" size="icon" aria-label="Kembali ke daftar pekerjaan" onClick={requestMobileBack}><ArrowLeft/></Button><Button variant="ghost" className="min-h-11 min-w-11" size="icon" aria-label="Tutup ruang kerja" onClick={requestClose}><X /></Button></div></> : <><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-widest text-primary">Ruang kerja · {order?.module || 'Order'}</p><h2 id="order-panel-heading" className="mt-1 truncate text-lg font-semibold">{order?.scIn || order?.inetMasked || 'Detail pekerjaan'}</h2></div><FormatVlanButton key={`${user?.id}:${id}`} id={id} command={order?.command} disabled={!!detail.error}/><Button variant="ghost" className="min-h-11 min-w-11" size="icon" aria-label="Tutup panel order" onClick={requestClose}><X /></Button>
       <nav aria-label="Pindah order" className="flex w-full items-center justify-between gap-2"><Button variant="outline" disabled={position <= 0} onClick={() => move(position - 1)}><ArrowLeft />Order sebelumnya</Button><span className="text-xs text-muted-foreground">{position < 0 ? 'Order terpilih' : `${position + 1} / ${orders.length}`}</span><Button variant="outline" disabled={position < 0 || position >= orders.length - 1} onClick={() => move(position + 1)}>Order berikutnya<ArrowRight /></Button></nav></>}
@@ -113,9 +118,13 @@ export default function OrderWorkPanel({ id, orders, onSelect, onClose, onChange
         {user?.role==='HD'&&user.username!=='trial_yanto'&&<HdNote key={`${user.id}:${id}`} order={order} verified={!detail.error} compact={compactWorkflow}/>}
         {!embedded && <Link className="text-sm text-primary underline" to={`/orders/${id}`}>Buka halaman detail lengkap</Link>}
         </div>
-        {import.meta.env.VITE_HDWORK2_LIVE_CHAT === 'true' ? <OrderChat key={`${user?.id}:${id}`} id={id} order={detail.error ? undefined : order} onChange={refresh} originalMessage={detail.data?.originalMessage||detail.data?.requestText||undefined} hideHeading={embedded} scrollHistory={compactWorkflow} actions={detail.error ? <p>Detail belum terverifikasi. Muat ulang sebelum melakukan tindakan.</p> : <Actions key={`${user?.id}:${id}`} order={order} refresh={refresh} escalationEnabled={detail.data?.capabilities?.escalate===true} />} /> : <><p>Live chat belum diaktifkan pada build ini.</p>{!detail.error && <Actions key={`${user?.id}:${id}`} order={order} refresh={refresh} escalationEnabled={detail.data?.capabilities?.escalate===true}/>}</>}
+        {liveChatEnabled ? <OrderChat key={`${user?.id}:${id}`} id={id} order={detail.error ? undefined : order} onChange={refresh} originalMessage={detail.data?.originalMessage||detail.data?.requestText||undefined} hideHeading={embedded} scrollHistory={compactWorkflow} actions={pinActions ? undefined : actions} /> : <>
+          <p>Live chat belum diaktifkan pada build ini.</p>
+          {!pinActions && !detail.error && actions}
+        </>}
 
       </>}
     </div>
+    {pinActions && actions && <section aria-label="Tindakan pekerjaan" className="op-chat-action-bar op-work-panel-actions">{actions}</section>}
   </aside>;
 }

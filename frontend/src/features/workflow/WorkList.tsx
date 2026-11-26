@@ -104,7 +104,23 @@ export default function WorkList(){
  {processWorkspaceVisible?<div className="op-process-workspace" data-selected={Boolean(selectedOrder)}>
   <aside className="op-process-work-list" aria-label="Pekerjaan Saya"><header className="flex items-center justify-between gap-2"><div><h2 className="font-semibold">Pekerjaan Saya</h2><p className="text-xs text-muted-foreground">Order aktif milik Anda</p></div><Button variant="ghost" size="sm" onClick={closePanel}>Kembali ke tabel</Button></header><input aria-label="Cari pekerjaan saya" className="w-full rounded-lg border bg-background p-2 text-sm" placeholder="Cari order, INET, atau SN…" value={mySearch} onChange={event=>setMySearch(event.target.value)}/>
    {mineWork.loading&&!mineWork.data.length&&<p role="status" className="text-xs">Memuat pekerjaan…</p>}{mineWork.error&&<p role="alert" className="text-xs">{mineWork.error}<Button variant="outline" onClick={()=>void mineWork.refresh()}>Coba lagi</Button></p>}
-   <ul className="op-process-work-items">{privateOrders.map(order=><li key={order.id}><button type="button" data-unopened={processLayout&&isUnopenedOrder(order,user?.id)||undefined} data-selected={selectedOrder===order.id} aria-current={selectedOrder===order.id?'true':undefined} onClick={()=>selectPrivate(order.id)}><span className="block break-all font-medium">{order.scIn||order.inetMasked||'Order /'+order.command}</span><span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">{processLayout?commandBadge(order.command):`${order.module} /${order.command}`}<WorkTimer order={order} now={now}/>{processFlags(order)}</span></button></li>)}</ul>
+   <ul className="op-process-work-items">{privateOrders.map(order=>{
+    const inet=order.inet??order.inetMasked;
+    return <li key={order.id}><button type="button" data-unopened={processLayout&&isUnopenedOrder(order,user?.id)||undefined} data-selected={selectedOrder===order.id} aria-current={selectedOrder===order.id?'true':undefined} onClick={()=>selectPrivate(order.id)}>
+     <span className="block break-all font-medium">{order.scIn||order.inetMasked||'Order /'+order.command}</span>
+     <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      {processLayout?commandBadge(order.command):`${order.module} /${order.command}`}
+      <span className={processLayout?'ml-auto shrink-0 tabular-nums':undefined}><WorkTimer order={order} now={now}/></span>
+      {!processLayout&&processFlags(order)}
+     </span>
+     {processLayout&&<>
+      {(inet||order.snOnt)&&<span className="mt-1 flex flex-wrap gap-x-2 gap-y-1 break-all text-xs text-muted-foreground">
+       {inet&&<span>INET {inet}</span>}{order.snOnt&&<span>SN {order.snOnt}</span>}
+      </span>}
+      {processFlags(order)}
+     </>}
+    </button></li>;
+   })}</ul>
    {!mineWork.loading&&!mineWork.error&&!privateOrders.length&&<Empty text={mySearch?'Tidak ada order yang cocok.':'Tidak ada pekerjaan aktif.'}/>}
   </aside>
   {selectedOrder?<OrderWorkPanel embedded compactWorkflow={compactWorkflow} id={selectedOrder} orders={mineWork.data} onSelect={selectPrivate} onClose={closePanel} onMobileBack={()=>setSelectedOrder(null)} onChange={async()=>{await Promise.all([refresh(),mineWork.refresh()]);}}/>:<div className="op-process-work-empty"><p>Pilih pekerjaan untuk melihat detail.</p><Button variant="outline" onClick={closePanel}>Kembali ke tabel PROSES CEK</Button></div>}

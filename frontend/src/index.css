@@ -856,7 +856,7 @@ body {
 .op-page:has(.op-process-workspace-card)>*+* { margin-top:0; }
 .op-process-workspace-card { display:flex; flex:1; min-height:0; overflow:hidden; gap:0!important; padding:0!important; }
 .op-process-workspace-card-content { display:flex; flex:1; min-width:0; min-height:0; overflow:hidden; padding:0!important; }
-.op-process-workspace { display: grid; grid-template-columns: minmax(0,3fr) minmax(0,7fr); height: min(72dvh,820px); min-height: 520px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.op-process-workspace { display: grid; grid-template-columns: minmax(0,3fr) minmax(0,7fr); grid-template-rows: minmax(0,1fr); height: min(72dvh,820px); min-height: 520px; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
 .op-process-workspace { flex:1; height:100%; min-height:0; }
 .op-process-work-list { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; overflow: hidden; padding: 14px; border-right: 1px solid var(--border); }
 .op-process-work-items { min-height: 0; overflow-y: auto; }
@@ -889,6 +889,13 @@ body {
 .op-process-detail .op-chat-composer form { flex:0 1 auto; }
 .op-process-detail .op-chat-composer textarea { height:44px; min-height:40px; max-height:64px; resize:vertical; }
 .op-process-detail .op-chat-action-bar { flex:0 0 auto; margin-top:8px; padding-top:8px; }
+.op-process-detail .op-work-panel-actions {
+  margin: 0;
+  padding: 8px 16px;
+  max-height: 40%;
+  overflow-y: auto;
+  background: var(--card);
+}
 @media (max-width: 767px) {
  .op-body:has(.op-process-workspace-card) { height:100dvh; }
  .op-main:has(.op-process-workspace-card) { padding:8px; }
